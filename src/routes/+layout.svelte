@@ -1,11 +1,14 @@
 <script>
-	import favicon from '$lib/assets/favicon.svg';
+	import '../app.css';
+	import AppShell from '$lib/shell/components/layout/AppShell.svelte';
 
-	let { children } = $props();
+	let { data, children } = $props();
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
+	<title>{data.projectName} - Provenance Tracker</title>
 </svelte:head>
 
-{@render children()}
+<AppShell projectName={data.projectName}>
+	{@render children()}
+</AppShell>

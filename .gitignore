@@ -1,17 +1,16 @@
 node_modules
 
-# Output
+# Build output
+dist/
+build/
+.svelte-kit/
 .output
 .vercel
 .netlify
 .wrangler
-/.svelte-kit
-/build
 
-# Database
-data/*.db
-data/*.db-journal
-data/*.db-wal
+# Local runtime storage (downloaded archival images, cached data, legacy SQLite files)
+data/
 
 # Test images (local only)
 test-images/
@@ -19,6 +18,14 @@ test-images/
 # OS
 .DS_Store
 Thumbs.db
+
+# Editor / tool config (per-user)
+.claude/
+.vscode/
+.idea/
+
+# Internal docs (specs, briefs, planning — not for public repo)
+Documents/
 
 # Env
 .env

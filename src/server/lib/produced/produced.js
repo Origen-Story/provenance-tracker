@@ -1,0 +1,78 @@
+import { db } from '../../db/index.js';
+import { producedAssets } from '../../db/schema.js';
+import { eq, desc, asc, sql, count, and } from 'drizzle-orm';
+import { PRODUCED_ENRICHMENT_CONDITION, getProducedMissingFields } from '../dashboard.js';
+
+export async function listProducedAssets(projectId, {
+	search = '', assetType = '', enrichment = '', sortBy = 'createdAt', sortDir = 'desc', limit = 100, offset = 0
+} = {}) {
+	const conditions = [eq(producedAssets.projectId, projectId)];
+	if (enrichment === 'incomplete') conditions.push(PRODUCED_ENRICHMENT_CONDITION);
+
+	if (search) {
+		conditions.push(
+			sql`(${producedAssets.name} ILIKE ${`%${search}%`} OR ${producedAssets.description} ILIKE ${`%${search}%`} OR ${producedAssets.creator} ILIKE ${`%${search}%`})`
+		);
+	}
+	if (assetType) conditions.push(eq(producedAssets.assetType, assetType));
+
+	const sortCols = {
+		createdAt: producedAssets.createdAt,
+		name: producedAssets.name,
+		recordingDate: producedAssets.recordingDate,
+		assetType: producedAssets.assetType
+	};
+	const col = sortCols[sortBy] ?? producedAssets.createdAt;
+	const dir = sortDir === 'asc' ? asc : desc;
+
+	const [rows, [{ total }]] = await Promise.all([
+		db.select().from(producedAssets).where(and(...conditions)).orderBy(dir(col)).limit(limit).offset(offset),
+		db.select({ total: count() }).from(producedAssets).where(and(...conditions))
+	]);
+
+	const enrichedRows = rows.map(r => ({ ...r, missingFields: getProducedMissingFields(r) }));
+	return { assets: enrichedRows, total: Number(total) };
+}
+
+export async function getProducedAsset(id) {
+	const [row] = await db.select().from(producedAssets).where(eq(producedAssets.id, id)).limit(1);
+	return row || null;
+}
+
+export async function createProducedAsset(projectId, data) {
+	const [row] = await db.insert(producedAssets).values({
+		projectId,
+		name: data.name || '',
+		filename: data.filename || '',
+		filePath: data.filePath,
+		fileHash: data.fileHash || '',
+		fileSize: data.fileSize || 0,
+		mimeType: data.mimeType || '',
+		assetType: data.assetType || 'audio',
+		description: data.description || '',
+		creator: data.creator || '',
+		recordingDate: data.recordingDate || '',
+		location: data.location || '',
+		equipment: data.equipment || '',
+		usageNotes: data.usageNotes || '',
+		exifJson: data.exifJson || '{}',
+		c2paJson: data.c2paJson || null
+	}).returning();
+	return row;
+}
+
+export async function updateProducedAsset(id, updates) {
+	const allowed = ['name', 'description', 'creator', 'recordingDate', 'location', 'equipment', 'usageNotes', 'assetType'];
+	const filtered = {};
+	for (const key of allowed) {
+		if (updates[key] !== undefined) filtered[key] = updates[key];
+	}
+	if (Object.keys(filtered).length) {
+		await db.update(producedAssets).set({ ...filtered, updatedAt: sql`now()` }).where(eq(producedAssets.id, id));
+	}
+	return getProducedAsset(id);
+}
+
+export async function deleteProducedAsset(id) {
+	await db.delete(producedAssets).where(eq(producedAssets.id, id));
+}

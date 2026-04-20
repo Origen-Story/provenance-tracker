@@ -1,9 +1,10 @@
-/** @type {import('drizzle-kit').Config} */
-export default {
-	schema: './src/lib/core/db/schema.js',
-	out: './src/lib/core/db/migrations',
-	dialect: 'sqlite',
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+	schema: './src/server/db/schema.js',
+	out: './src/server/db/migrations',
+	dialect: 'postgresql',
 	dbCredentials: {
-		url: './data/provenance.db'
+		url: process.env.DATABASE_URL
 	}
-};
+});

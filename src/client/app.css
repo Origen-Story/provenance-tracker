@@ -1,0 +1,67 @@
+@import 'tailwindcss';
+
+/* Origen Story — Barcelona Sunset Palette */
+/* Light mode defaults */
+:root {
+	--os-bg: #fafaf8;
+	--os-sidebar: #f2f1ed;
+	--os-card: #ffffff;
+	--os-card-hover: #f5f4f0;
+	--os-border: #e8e5e0;
+	--os-text: #1a1a1a;
+	--os-heading: #0a0a0a;
+	--os-muted: #6b6b6b;
+	--os-green: #1a7a4a;
+	--os-green-hover: #1f8d55;
+	--os-gold: #a07830;
+	--os-blue: #2a6a9e;
+	--os-red: #a83232;
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+	:root {
+		--os-bg: #0e0e0e;
+		--os-sidebar: #111111;
+		--os-card: #171717;
+		--os-card-hover: #1e1e1e;
+		--os-border: #222222;
+		--os-text: #e8e8e8;
+		--os-heading: #f5f5f5;
+		--os-muted: #888888;
+		--os-green: #5cb88a;
+		--os-green-hover: #6dc99a;
+		--os-gold: #d4a054;
+		--os-blue: #5a9fd4;
+		--os-red: #d45a5a;
+	}
+}
+
+@theme inline {
+	--color-app-bg: var(--os-bg);
+	--color-sidebar-bg: var(--os-sidebar);
+	--color-card-bg: var(--os-card);
+	--color-card-hover: var(--os-card-hover);
+	--color-border: var(--os-border);
+	--color-text-primary: var(--os-heading);
+	--color-text-secondary: var(--os-muted);
+	--color-accent: var(--os-green);
+	--color-accent-hover: var(--os-green-hover);
+	--color-success: var(--os-green);
+	--color-warning: var(--os-gold);
+	--color-danger: var(--os-red);
+	/* Platform badge colors repurposed from brand palette */
+	--color-midjourney: var(--os-blue);
+	--color-comfyui: var(--os-gold);
+	--color-freepik: var(--os-blue);
+	--color-meta-ai: var(--os-blue);
+}
+
+html {
+	background-color: var(--os-bg);
+	color: var(--os-text);
+}
+
+body {
+	font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}

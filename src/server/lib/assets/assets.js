@@ -1,0 +1,182 @@
+import { db } from '../../db/index.js';
+import { assets, generationParams, assetMetadata, projects } from '../../db/schema.js';
+import { eq, desc, asc, sql, count, and, ilike } from 'drizzle-orm';
+import { getAIMissingFields } from '../dashboard.js';
+
+/**
+ * Generate next asset ID for a project, e.g. "GAIA-007"
+ */
+async function nextAssetId(projectId) {
+	const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+	const prefix = project?.assetIdPrefix || 'ASSET';
+	const [{ value }] = await db
+		.select({ value: count() })
+		.from(assets)
+		.where(eq(assets.projectId, projectId));
+	const num = String(Number(value) + 1).padStart(3, '0');
+	return `${prefix}-${num}`;
+}
+
+function empty(col) {
+	return sql`(${col} IS NULL OR ${col} = '')`;
+}
+
+export async function listAssets(projectId, {
+	search = '', assetType = '', platform = '', enrichment = '', sortBy = 'createdAt', sortDir = 'desc', limit = 100, offset = 0
+} = {}) {
+	const conditions = [eq(assets.projectId, projectId)];
+	if (search) {
+		conditions.push(
+			sql`(${assets.assetId} ILIKE ${`%${search}%`} OR ${assets.description} ILIKE ${`%${search}%`} OR ${assets.notes} ILIKE ${`%${search}%`})`
+		);
+	}
+	if (assetType) conditions.push(eq(assets.assetType, assetType));
+	if (platform) conditions.push(eq(assets.platform, platform));
+
+	// AI enrichment filter needs a join to check prompt
+	const needsJoin = enrichment === 'incomplete';
+	if (needsJoin) {
+		conditions.push(sql`(${assets.platform} = 'unknown' OR ${empty(assets.generationDate)} OR ${empty(assets.digitalSourceType)} OR ${empty(generationParams.prompt)})`);
+	}
+
+	const sortCols = {
+		createdAt: assets.createdAt,
+		assetId: assets.assetId,
+		platform: assets.platform,
+		generationDate: assets.generationDate
+	};
+	const col = sortCols[sortBy] || assets.createdAt;
+	const order = sortDir === 'asc' ? asc(col) : desc(col);
+
+	let rowsQuery = db.select().from(assets);
+	let countQuery = db.select({ value: count() }).from(assets);
+	if (needsJoin) {
+		rowsQuery = rowsQuery.leftJoin(generationParams, eq(generationParams.assetId, assets.id));
+		countQuery = countQuery.leftJoin(generationParams, eq(generationParams.assetId, assets.id));
+	}
+
+	const [rawRows, [{ value: total }]] = await Promise.all([
+		rowsQuery.where(and(...conditions)).orderBy(order).limit(limit).offset(offset),
+		countQuery.where(and(...conditions))
+	]);
+
+	// When joined, drizzle nests as { assets: {...}, generation_params: {...} }
+	const rows = needsJoin ? rawRows.map(r => r.assets) : rawRows;
+
+	// Fetch generation params for all rows to compute missingFields
+	const assetIds = rows.map(r => r.id);
+	let gpMap = {};
+	if (assetIds.length) {
+		const gps = await db.select().from(generationParams).where(sql`${generationParams.assetId} IN (${sql.join(assetIds.map(id => sql`${id}`), sql`, `)})`);
+		for (const gp of gps) gpMap[gp.assetId] = gp;
+	}
+
+	const enrichedRows = rows.map(r => ({ ...r, missingFields: getAIMissingFields(r, gpMap[r.id]) }));
+	return { assets: enrichedRows, total: Number(total) };
+}
+
+export async function getAsset(id) {
+	const [row] = await db.select().from(assets).where(eq(assets.id, id));
+	if (!row) return null;
+
+	const params = await db.select().from(generationParams).where(eq(generationParams.assetId, id));
+	const metadata = await db.select().from(assetMetadata).where(eq(assetMetadata.assetId, id));
+
+	return { ...row, generationParams: params[0] || null, metadata };
+}
+
+export async function createAsset(projectId, data) {
+	const assetId = await nextAssetId(projectId);
+
+	const [row] = await db.insert(assets).values({
+		projectId,
+		assetId,
+		description: data.description || '',
+		filePath: data.filePath,
+		fileHash: data.fileHash || '',
+		fileSize: data.fileSize || 0,
+		mimeType: data.mimeType || '',
+		assetType: data.assetType || 'image',
+		platform: data.platform || 'unknown',
+		digitalSourceType: data.digitalSourceType || '',
+		generationDate: data.generationDate || '',
+		notes: data.notes || ''
+	}).returning();
+
+	// Save generation params if provided
+	if (data.generationParams) {
+		const gp = data.generationParams;
+		await db.insert(generationParams).values({
+			assetId: row.id,
+			prompt: gp.prompt || '',
+			negativePrompt: gp.negativePrompt || '',
+			modelName: gp.modelName || '',
+			modelVersion: gp.modelVersion || '',
+			seed: gp.seed || '',
+			steps: gp.steps || 0,
+			cfgScale: gp.cfgScale || '',
+			sampler: gp.sampler || '',
+			scheduler: gp.scheduler || '',
+			width: gp.width || 0,
+			height: gp.height || 0,
+			aspectRatio: gp.aspectRatio || '',
+			stylize: gp.stylize || '',
+			loras: gp.loras || '[]',
+			otherParams: gp.otherParams || '{}'
+		});
+	}
+
+	// Save raw metadata blobs
+	const metaInserts = [];
+	if (data.exifJson) metaInserts.push({ assetId: row.id, metadataType: 'exif', rawJson: data.exifJson });
+	if (data.c2paJson) metaInserts.push({ assetId: row.id, metadataType: 'c2pa', rawJson: data.c2paJson });
+	if (data.pngChunksJson) metaInserts.push({ assetId: row.id, metadataType: 'png_chunks', rawJson: data.pngChunksJson });
+	if (data.platformJson) metaInserts.push({ assetId: row.id, metadataType: 'platform', rawJson: data.platformJson });
+	if (metaInserts.length) await db.insert(assetMetadata).values(metaInserts);
+
+	return getAsset(row.id);
+}
+
+export async function updateAsset(id, data) {
+	const updates = {};
+	const allowed = ['description', 'notes', 'digitalSourceType', 'generationDate', 'platform', 'assetType'];
+	for (const key of allowed) {
+		if (data[key] !== undefined) updates[key] = data[key];
+	}
+	if (Object.keys(updates).length) {
+		await db.update(assets).set({ ...updates, updatedAt: sql`now()` }).where(eq(assets.id, id));
+	}
+
+	// Update generation params if provided
+	if (data.generationParams) {
+		const gp = data.generationParams;
+		const existing = await db.select().from(generationParams).where(eq(generationParams.assetId, id));
+		if (existing.length) {
+			await db.update(generationParams).set({
+				prompt: gp.prompt ?? existing[0].prompt,
+				negativePrompt: gp.negativePrompt ?? existing[0].negativePrompt,
+				modelName: gp.modelName ?? existing[0].modelName,
+				modelVersion: gp.modelVersion ?? existing[0].modelVersion,
+				seed: gp.seed ?? existing[0].seed,
+				steps: gp.steps ?? existing[0].steps,
+				cfgScale: gp.cfgScale ?? existing[0].cfgScale,
+				sampler: gp.sampler ?? existing[0].sampler,
+				scheduler: gp.scheduler ?? existing[0].scheduler,
+				width: gp.width ?? existing[0].width,
+				height: gp.height ?? existing[0].height,
+				aspectRatio: gp.aspectRatio ?? existing[0].aspectRatio,
+				stylize: gp.stylize ?? existing[0].stylize,
+				loras: gp.loras ?? existing[0].loras,
+				otherParams: gp.otherParams ?? existing[0].otherParams
+			}).where(eq(generationParams.assetId, id));
+		} else {
+			await db.insert(generationParams).values({ assetId: id, ...gp });
+		}
+	}
+
+	return getAsset(id);
+}
+
+export async function deleteAsset(id) {
+	await db.delete(assets).where(eq(assets.id, id));
+}

@@ -1,0 +1,1 @@
+ALTER TABLE "search_jobs" ADD COLUMN "titles_fetched" integer DEFAULT 0;

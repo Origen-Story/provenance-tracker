@@ -19,7 +19,10 @@ import { getGroupByGroupId } from './groups.js';
 
 const log = createLogger('search-jobs');
 const POLL_INTERVAL_MS = 2000;
-const LEASE_SECONDS = 120;    // longer than candidate queue — a single job can take minutes
+const LEASE_SECONDS = 300;    // longer than candidate queue — a single job can take minutes.
+                              // Long enough to tolerate the image-info fetch phase for a ~10k
+                              // title search at ~1 req/s, in case a stretch of batches stalls
+                              // and no progress update fires for a while.
 
 let _running = false;
 let _timer = null;
@@ -178,6 +181,7 @@ export async function retryJob(id) {
 			keywordsDone: 0,
 			categoriesDone: 0,
 			uniqueTitles: 0,
+			titlesFetched: 0,
 			candidatesInserted: 0,
 			skippedLicense: 0,
 			skippedDuplicate: 0,

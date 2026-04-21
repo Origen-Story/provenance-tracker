@@ -195,8 +195,13 @@ function DetailModal({ candidate, onClose, onApprove, onReject, onFlag, onRetry,
 export function JobProgress({ job, onCancel, onDismiss, onRetry, cancelling, retrying }) {
 	const active = ['queued', 'running'].includes(job.status);
 	const retryable = ['failed', 'cancelled'].includes(job.status);
-	const totalSteps = (job.keywordsTotal || 0) + (job.categoriesTotal || 0);
-	const doneSteps = (job.keywordsDone || 0) + (job.categoriesDone || 0);
+	// Each keyword/category/image-info-batch counts as one step. Image-info batches of 50 titles
+	// each are only known once the keyword+category phase completes (uniqueTitles is populated),
+	// so the bar lengthens when the fetch phase appears — honest and matches what's happening.
+	const fetchBatchesTotal = job.uniqueTitles ? Math.ceil(job.uniqueTitles / 50) : 0;
+	const fetchBatchesDone = Math.ceil((job.titlesFetched || 0) / 50);
+	const totalSteps = (job.keywordsTotal || 0) + (job.categoriesTotal || 0) + fetchBatchesTotal;
+	const doneSteps = (job.keywordsDone || 0) + (job.categoriesDone || 0) + fetchBatchesDone;
 	const pct = totalSteps > 0 ? Math.round((doneSteps / totalSteps) * 100) : 0;
 	const barColor = job.status === 'failed' ? 'bg-red-500' : job.status === 'cancelled' ? 'bg-amber-500' : job.status === 'completed' ? 'bg-emerald-500' : 'bg-accent';
 
@@ -236,7 +241,9 @@ export function JobProgress({ job, onCancel, onDismiss, onRetry, cancelling, ret
 			</div>
 			{job.status === 'running' && (
 				<p className="text-[11px] text-text-secondary mt-1">
-					{job.keywordsDone || 0}/{job.keywordsTotal || 0} keywords · {job.categoriesDone || 0}/{job.categoriesTotal || 0} categories · {job.uniqueTitles || 0} unique titles · {job.candidatesInserted || 0} inserted
+					{job.keywordsDone || 0}/{job.keywordsTotal || 0} keywords · {job.categoriesDone || 0}/{job.categoriesTotal || 0} categories · {job.uniqueTitles || 0} unique titles
+					{job.uniqueTitles > 0 && ` · ${job.titlesFetched || 0}/${job.uniqueTitles} fetched`}
+					{' · '}{job.candidatesInserted || 0} inserted
 				</p>
 			)}
 			{job.status === 'completed' && (job.skippedLicense > 0 || job.skippedDuplicate > 0 || job.skippedExisting > 0) && (
@@ -266,6 +273,8 @@ export default function SearchPage() {
 	const statusFilter = searchParams.get('status') || 'pending';
 	const tierFilter = searchParams.get('licenseTier') || '';
 	const searchTypeFilter = searchParams.get('searchType') || '';
+	const sort = searchParams.get('sort') || 'createdAt-desc';
+	const [sortBy, sortDir] = sort.split('-');
 
 	// Fetch groups list
 	const { data: groups } = useQuery({
@@ -288,7 +297,7 @@ export default function SearchPage() {
 
 	// Fetch candidates
 	const { data, isLoading } = useQuery({
-		queryKey: ['searchCandidates', { searchGroupId: groupFilter, status: statusFilter, licenseTier: tierFilter, searchType: searchTypeFilter, search: searchParams.get('search') || '', page, pageSize }],
+		queryKey: ['searchCandidates', { searchGroupId: groupFilter, status: statusFilter, licenseTier: tierFilter, searchType: searchTypeFilter, search: searchParams.get('search') || '', sort, page, pageSize }],
 		queryFn: () => {
 			const p = new URLSearchParams();
 			if (groupFilter) p.set('searchGroupId', groupFilter);
@@ -296,6 +305,8 @@ export default function SearchPage() {
 			if (tierFilter) p.set('licenseTier', tierFilter);
 			if (searchTypeFilter) p.set('searchType', searchTypeFilter);
 			if (searchParams.get('search')) p.set('search', searchParams.get('search'));
+			p.set('sortBy', sortBy);
+			p.set('sortDir', sortDir);
 			p.set('limit', String(pageSize));
 			p.set('offset', String((page - 1) * pageSize));
 			return fetch(`/api/search/candidates?${p}`).then(r => r.json());
@@ -559,6 +570,15 @@ export default function SearchPage() {
 					<option value="">All sources</option>
 					<option value="keyword">Keyword results</option>
 					<option value="category">Category results</option>
+				</select>
+				<select value={sort} onChange={e => setFilter('sort', e.target.value === 'createdAt-desc' ? '' : e.target.value)}
+					className="bg-card-bg border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent"
+					title="Undated items sort to one end — flip direction to see them.">
+					<option value="createdAt-desc">Newest added</option>
+					<option value="createdAt-asc">Oldest added</option>
+					<option value="originalDate-asc">Date: oldest first</option>
+					<option value="originalDate-desc">Date: newest first</option>
+					<option value="title-asc">Title: A–Z</option>
 				</select>
 				<button onClick={applySearch}
 					className="px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors">

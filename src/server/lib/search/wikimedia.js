@@ -5,8 +5,17 @@
 
 import { throttledFetch } from './rate-limiter.js';
 import { USER_AGENT } from '../user-agent.js';
+import { createLogger } from '../logger.js';
+
+const log = createLogger('wikimedia');
 
 const API_URL = 'https://commons.wikimedia.org/w/api.php';
+
+// Abort any single API request that hangs longer than this. Node's undici fetch
+// has no default request timeout, so a stalled TCP connection can hang forever
+// — which is fatal inside a long-running search job because one dead call
+// blocks all progress updates and the job's lease then expires.
+const REQUEST_TIMEOUT_MS = 60_000;
 
 // Use POST so long parameter lists (e.g. 50 pipe-joined titles in getImageInfo)
 // don't blow past server URL length limits (we saw a 414 URI Too Long on GET).
@@ -25,7 +34,8 @@ async function apiCall(params) {
 			'User-Agent': USER_AGENT,
 			'Content-Type': 'application/x-www-form-urlencoded'
 		},
-		body
+		body,
+		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
 	});
 	if (!res.ok) throw new Error(`Wikimedia API error: ${res.status}`);
 	return res.json();
@@ -132,35 +142,57 @@ export async function getCategoryMembers(categoryTitle, { depth = 2, maxFiles = 
 
 /**
  * Fetch detailed image info for an array of page titles.
- * Handles batching internally (50 titles per API call).
- * Returns normalized candidate objects.
+ * Batches 50 titles per API call. Per-batch failures are logged and skipped —
+ * one transient Wikimedia hiccup in the middle of a 6k-title fetch must not
+ * kill the whole job, since the caller can't cheaply re-derive the title list.
+ *
+ * `onBatch({ fetched, total, failed })` is called after every batch attempt
+ * (success OR failure) so the caller can update progress and extend its lease.
  */
-export async function getImageInfo(titles) {
+export async function getImageInfo(titles, onBatch) {
+	const BATCH_SIZE = 50;
 	const results = [];
-	const batches = [];
-	for (let i = 0; i < titles.length; i += 50) {
-		batches.push(titles.slice(i, i + 50));
+	let fetched = 0;
+	let failed = 0;
+
+	for (let i = 0; i < titles.length; i += BATCH_SIZE) {
+		const batch = titles.slice(i, i + BATCH_SIZE);
+		try {
+			const data = await apiCall({
+				action: 'query',
+				titles: batch.join('|'),
+				prop: 'imageinfo|categories',
+				iiprop: 'url|size|extmetadata|mime',
+				iiurlwidth: '300', // request 300px thumbnail
+				cllimit: '50'
+			});
+
+			const pages = data.query?.pages || {};
+			for (const page of Object.values(pages)) {
+				if (!page.imageinfo?.length) continue;
+				const info = page.imageinfo[0];
+				const ext = info.extmetadata || {};
+
+				const candidate = normalizeCandidate(page, info, ext);
+				results.push(candidate);
+			}
+		} catch (err) {
+			failed++;
+			log.warn(`Batch starting at title ${i} failed (${batch.length} titles): ${err.message}`);
+		}
+
+		fetched += batch.length;
+		if (onBatch) {
+			try {
+				await onBatch({ fetched, total: titles.length, failed });
+			} catch {
+				// Progress callbacks must never abort the fetch — swallow errors here.
+			}
+		}
 	}
 
-	for (const batch of batches) {
-		const data = await apiCall({
-			action: 'query',
-			titles: batch.join('|'),
-			prop: 'imageinfo|categories',
-			iiprop: 'url|size|extmetadata|mime',
-			iiurlwidth: '300', // request 300px thumbnail
-			cllimit: '50'
-		});
-
-		const pages = data.query?.pages || {};
-		for (const page of Object.values(pages)) {
-			if (!page.imageinfo?.length) continue;
-			const info = page.imageinfo[0];
-			const ext = info.extmetadata || {};
-
-			const candidate = normalizeCandidate(page, info, ext);
-			results.push(candidate);
-		}
+	if (failed > 0) {
+		log.warn(`getImageInfo done: ${failed} of ${Math.ceil(titles.length / BATCH_SIZE)} batches failed (up to ${failed * BATCH_SIZE} titles skipped)`);
 	}
 
 	return results;

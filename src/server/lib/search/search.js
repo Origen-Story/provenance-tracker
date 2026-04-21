@@ -77,7 +77,13 @@ export async function executeGroupSearch(projectId, group, jobId) {
 
 	const uniqueTitles = [...titleSource.keys()];
 	log.info(`Fetching image info for ${uniqueTitles.length} unique titles...`);
-	const candidates = await getImageInfo(uniqueTitles);
+	// Per-batch progress keeps the job lease fresh (updateProgress extends it)
+	// and lets the UI show a counter so a 6k-title fetch doesn't look stalled.
+	// Also checks cancellation so Cancel is responsive during this phase.
+	const candidates = await getImageInfo(uniqueTitles, async ({ fetched }) => {
+		await updateProgress(jobId, { titlesFetched: fetched });
+		await checkCancelled();
+	});
 	log.info(`Got info for ${candidates.length} images`);
 
 	for (const c of candidates) {

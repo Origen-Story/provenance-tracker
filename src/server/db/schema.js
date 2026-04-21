@@ -166,6 +166,7 @@ export const searchJobs = pgTable('search_jobs', {
 	categoriesTotal: integer('categories_total').default(0),
 	categoriesDone: integer('categories_done').default(0),
 	uniqueTitles: integer('unique_titles').default(0),
+	titlesFetched: integer('titles_fetched').default(0),    // image-info batches completed (each batch = 50 titles)
 	candidatesInserted: integer('candidates_inserted').default(0),
 	skippedLicense: integer('skipped_license').default(0),
 	skippedDuplicate: integer('skipped_duplicate').default(0),

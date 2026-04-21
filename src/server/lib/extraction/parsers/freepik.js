@@ -2,7 +2,28 @@
  * Parse Freepik / Pikaso AI image metadata.
  * Freepik embeds generation data in XMP and EXIF fields.
  */
-export function parseFreepik(exifTags, chunks) {
+
+export const id = 'freepik';
+
+// Fields we typically see on Freepik / Pikaso exports. Low coverage may mean
+// Freepik rebranded their Software tag or moved fields into new XMP locations.
+export const coreFields = ['prompt', 'modelName', 'width', 'height'];
+
+export function detect(exifTags, chunks) {
+	const creator = (exifTags?.Creator || exifTags?.Artist || exifTags?.['XMP:Creator'] || '').toLowerCase();
+	const software = (exifTags?.Software || exifTags?.['XMP:Software'] || '').toLowerCase();
+	const copyright = (exifTags?.Copyright || exifTags?.['XMP:Rights'] || '').toLowerCase();
+
+	return (
+		creator.includes('freepik') ||
+		creator.includes('pikaso') ||
+		software.includes('freepik') ||
+		software.includes('pikaso') ||
+		copyright.includes('freepik')
+	);
+}
+
+export function parse(exifTags, chunks) {
 	const result = {
 		platform: 'freepik',
 		prompt: '',
@@ -59,16 +80,3 @@ export function parseFreepik(exifTags, chunks) {
 	return result;
 }
 
-export function isFreepik(exifTags, chunks) {
-	const creator = (exifTags?.Creator || exifTags?.Artist || exifTags?.['XMP:Creator'] || '').toLowerCase();
-	const software = (exifTags?.Software || exifTags?.['XMP:Software'] || '').toLowerCase();
-	const copyright = (exifTags?.Copyright || exifTags?.['XMP:Rights'] || '').toLowerCase();
-
-	return (
-		creator.includes('freepik') ||
-		creator.includes('pikaso') ||
-		software.includes('freepik') ||
-		software.includes('pikaso') ||
-		copyright.includes('freepik')
-	);
-}

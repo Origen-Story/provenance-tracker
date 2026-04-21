@@ -3,8 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader.jsx';
 
-const PLATFORM_LABELS = { freepik: 'Freepik', comfyui: 'ComfyUI', midjourney: 'Midjourney', unknown: 'Unknown' };
-const PLATFORM_COLORS = { freepik: 'text-blue-400', comfyui: 'text-purple-400', midjourney: 'text-yellow-400', unknown: 'text-text-secondary' };
+const PLATFORM_LABELS = { freepik: 'Freepik', comfyui: 'ComfyUI', midjourney: 'Midjourney', firefly: 'Adobe Firefly', elevenlabs: 'ElevenLabs', 'topaz-video-ai': 'Topaz Video AI', unknown: 'Unknown' };
+const PLATFORM_COLORS = { freepik: 'text-blue-400', comfyui: 'text-purple-400', midjourney: 'text-yellow-400', firefly: 'text-rose-400', elevenlabs: 'text-emerald-400', 'topaz-video-ai': 'text-cyan-400', unknown: 'text-text-secondary' };
 
 export default function AIAssetList() {
 	const [searchParams, setSearchParams] = useSearchParams();
@@ -13,15 +13,17 @@ export default function AIAssetList() {
 	const assetType = searchParams.get('assetType') || '';
 
 	const enrichment = searchParams.get('enrichment') || '';
+	const novelty = searchParams.get('novelty') || '';
 
 	const { data, isLoading } = useQuery({
-		queryKey: ['assets', { search: searchParams.get('search') || '', platform, assetType, enrichment }],
+		queryKey: ['assets', { search: searchParams.get('search') || '', platform, assetType, enrichment, novelty }],
 		queryFn: () => {
 			const params = new URLSearchParams();
 			if (searchParams.get('search')) params.set('search', searchParams.get('search'));
 			if (platform) params.set('platform', platform);
 			if (assetType) params.set('assetType', assetType);
 			if (enrichment) params.set('enrichment', enrichment);
+			if (novelty) params.set('novelty', novelty);
 			return fetch(`/api/assets?${params}`).then(r => r.json());
 		}
 	});
@@ -80,6 +82,15 @@ export default function AIAssetList() {
 					</svg>
 					{enrichment ? 'Showing incomplete' : 'Needs enrichment'}
 				</button>
+				<select value={novelty} onChange={e => setFilter('novelty', e.target.value)}
+					className={`border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent ${
+						novelty ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-card-bg border-border text-text-primary'
+					}`}>
+					<option value="">Extraction: all</option>
+					<option value="novel">Novel (unknown or low coverage)</option>
+					<option value="unknown">Unknown platform</option>
+					<option value="low-coverage">Low coverage (&lt;60%)</option>
+				</select>
 				<Link to="/import?type=ai-assets"
 					className="px-4 py-2 bg-card-bg border border-border hover:bg-card-hover text-text-primary rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
 					<svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -93,7 +104,7 @@ export default function AIAssetList() {
 				<p className="text-text-secondary text-sm">Loading…</p>
 			) : assetList.length === 0 ? (
 				<div className="text-center py-20 text-text-secondary">
-					{(searchParams.get('search') || platform || assetType) ? (
+					{(searchParams.get('search') || platform || assetType || enrichment || novelty) ? (
 						<>
 							<p>No assets match your filters.</p>
 							<button onClick={() => setSearchParams({}, { replace: true })} className="text-accent hover:text-accent-hover text-sm mt-2 block mx-auto">
@@ -111,10 +122,17 @@ export default function AIAssetList() {
 				<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
 					{assetList.map(asset => {
 						const incomplete = asset.missingFields?.length > 0;
+						const assetNovel = asset.platform === 'unknown' || (asset.extractionCoverage != null && asset.extractionCoverage < 60);
 						return (
 						<Link key={asset.id} to={`/assets/${asset.id}`}
-							className={`bg-card-bg border rounded-lg overflow-hidden hover:border-accent/40 transition-colors block ${incomplete ? 'border-amber-500/40' : 'border-border'}`}>
+							className={`bg-card-bg border rounded-lg overflow-hidden hover:border-accent/40 transition-colors block ${assetNovel ? 'border-amber-500/40' : incomplete ? 'border-amber-500/40' : 'border-border'}`}>
 							<div className="aspect-video bg-card-hover flex items-center justify-center overflow-hidden relative">
+								{assetNovel && (
+									<div className="absolute top-2 left-2 z-10 bg-amber-500/90 text-white text-[10px] font-medium px-1.5 py-0.5 rounded"
+										title={asset.platform === 'unknown' ? 'Unknown platform' : `Coverage ${asset.extractionCoverage}%`}>
+										novel
+									</div>
+								)}
 								{incomplete && (
 									<div className="absolute top-2 right-2 z-10 bg-amber-500/90 text-white text-[10px] font-medium px-1.5 py-0.5 rounded" title={`Missing: ${asset.missingFields.join(', ')}`}>
 										{asset.missingFields.length} missing

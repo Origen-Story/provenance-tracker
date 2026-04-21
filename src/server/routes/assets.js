@@ -1,9 +1,16 @@
 import { Router } from 'express';
-import { listAssets, getAsset, createAsset, updateAsset, deleteAsset } from '../lib/assets/assets.js';
+import { listAssets, getAsset, createAsset, updateAsset, deleteAsset, getNoveltyStats, reExtractAsset } from '../lib/assets/assets.js';
 import { extractAIAsset } from '../lib/extraction/ai-extraction.js';
 import { getActiveProject } from '../lib/projects.js';
 
 const router = Router();
+
+// Novelty stats — count of unknown-platform + low-coverage assets for the dashboard.
+router.get('/novelty', async (req, res) => {
+	const project = await getActiveProject();
+	if (!project) return res.status(400).json({ error: 'No active project' });
+	res.json(await getNoveltyStats(project.id));
+});
 
 // Extract metadata from a local file path (preview before saving)
 router.post('/extract', async (req, res) => {
@@ -21,9 +28,9 @@ router.get('/', async (req, res) => {
 	const project = await getActiveProject();
 	if (!project) return res.status(400).json({ error: 'No active project' });
 
-	const { search = '', assetType = '', platform = '', enrichment = '', sort = 'createdAt', dir = 'desc', limit = 100, offset = 0 } = req.query;
+	const { search = '', assetType = '', platform = '', enrichment = '', novelty = '', sort = 'createdAt', dir = 'desc', limit = 100, offset = 0 } = req.query;
 	const result = await listAssets(project.id, {
-		search, assetType, platform, enrichment, sortBy: sort, sortDir: dir,
+		search, assetType, platform, enrichment, novelty, sortBy: sort, sortDir: dir,
 		limit: parseInt(limit), offset: parseInt(offset)
 	});
 	res.json(result);
@@ -41,6 +48,17 @@ router.post('/', async (req, res) => {
 	try {
 		const asset = await createAsset(project.id, req.body);
 		res.status(201).json(asset);
+	} catch (err) {
+		res.status(400).json({ error: err.message });
+	}
+});
+
+// Replay current parsers against stored raw metadata — lets parser improvements
+// flow back to previously-imported assets without re-reading the file from disk.
+router.post('/:id/re-extract', async (req, res) => {
+	try {
+		const asset = await reExtractAsset(parseInt(req.params.id));
+		res.json(asset);
 	} catch (err) {
 		res.status(400).json({ error: err.message });
 	}

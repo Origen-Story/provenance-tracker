@@ -16,6 +16,7 @@ import ProducedDetail from './pages/produced/ProducedDetail.jsx';
 import ManifestBuilder from './pages/ai-assets/ManifestBuilder.jsx';
 import Export from './pages/ai-assets/Export.jsx';
 import SearchPage from './pages/search/SearchPage.jsx';
+import GroupsManager from './pages/search/GroupsManager.jsx';
 
 function RequireProject({ children }) {
 	const { data: project, isLoading, isFetching } = useQuery({
@@ -58,6 +59,7 @@ export default function App() {
 					<Route path="archival" element={<ArchivalList />} />
 					<Route path="archival/:id" element={<ArchivalDetail />} />
 					<Route path="search" element={<SearchPage />} />
+					<Route path="search/groups" element={<GroupsManager />} />
 					<Route path="manifest" element={<ManifestBuilder />} />
 					<Route path="export" element={<Export />} />
 				</Route>

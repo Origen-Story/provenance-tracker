@@ -40,6 +40,13 @@ export default function Dashboard() {
 	const hasAI = modules.includes('ai_assets');
 	const hasArchival = modules.includes('archival');
 
+	const { data: novelty } = useQuery({
+		queryKey: ['noveltyStats'],
+		queryFn: () => fetch('/api/assets/novelty').then(r => r.json()),
+		enabled: !!project && hasAI,
+		staleTime: 10000
+	});
+
 	return (
 		<div>
 			<PageHeader
@@ -74,8 +81,8 @@ export default function Dashboard() {
 			<div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
 				{/* === Enrichment status === */}
 				<div className="bg-card-bg border border-border rounded-lg p-5">
-					<h3 className="text-sm font-semibold text-text-primary mb-3">Needs enrichment</h3>
-					{isLoading ? <p className="text-xs text-text-secondary">Loading...</p> : stats?.needsEnrichment?.total === 0 ? (
+					<h3 className="text-sm font-semibold text-text-primary mb-3">Needs attention</h3>
+					{isLoading ? <p className="text-xs text-text-secondary">Loading...</p> : (stats?.needsEnrichment?.total === 0 && !novelty?.novel) ? (
 						<p className="text-sm text-success">All assets are enriched</p>
 					) : (
 						<div className="space-y-2">
@@ -95,6 +102,20 @@ export default function Dashboard() {
 								<Link to="/archival?enrichment=incomplete" className="flex items-center justify-between text-sm hover:bg-card-hover rounded px-2 py-1.5 -mx-2 transition-colors">
 									<span className="text-text-secondary">Archival — missing metadata</span>
 									<span className="text-amber-400 font-medium">{stats.needsEnrichment.archival}</span>
+								</Link>
+							)}
+							{hasAI && novelty?.unknown > 0 && (
+								<Link to="/assets?novelty=unknown" className="flex items-center justify-between text-sm hover:bg-card-hover rounded px-2 py-1.5 -mx-2 transition-colors"
+									title="AI assets where no parser matched — may be a new platform or format change">
+									<span className="text-text-secondary">AI — unknown platform</span>
+									<span className="text-amber-400 font-medium">{novelty.unknown}</span>
+								</Link>
+							)}
+							{hasAI && novelty?.lowCoverage > 0 && (
+								<Link to="/assets?novelty=low-coverage" className="flex items-center justify-between text-sm hover:bg-card-hover rounded px-2 py-1.5 -mx-2 transition-colors"
+									title={`Recognized platform but parser filled <${novelty.threshold}% of core fields — format may have drifted`}>
+									<span className="text-text-secondary">AI — low extraction coverage</span>
+									<span className="text-amber-400 font-medium">{novelty.lowCoverage}</span>
 								</Link>
 							)}
 						</div>

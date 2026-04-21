@@ -2,7 +2,24 @@
  * Parse Midjourney image metadata.
  * Midjourney embeds the prompt and job info in EXIF Description/UserComment.
  */
-export function parseMidjourney(exifTags, chunks) {
+
+export const id = 'midjourney';
+
+// Fields a typical MidJourney export populates. If most are empty after parse(),
+// the Description/UserComment format likely changed and the parser needs an update.
+export const coreFields = ['prompt', 'modelVersion', 'aspectRatio'];
+
+export function detect(exifTags, chunks) {
+	const desc = exifTags?.Description || exifTags?.ImageDescription || exifTags?.UserComment || '';
+	const software = exifTags?.Software || '';
+	return (
+		software.toLowerCase().includes('midjourney') ||
+		/--v\s+\d/.test(desc) ||
+		/--ar\s+[\d:]+/.test(desc)
+	);
+}
+
+export function parse(exifTags, chunks) {
 	const result = {
 		platform: 'midjourney',
 		prompt: '',
@@ -55,12 +72,3 @@ export function parseMidjourney(exifTags, chunks) {
 	return result;
 }
 
-export function isMidjourney(exifTags, chunks) {
-	const desc = exifTags?.Description || exifTags?.ImageDescription || exifTags?.UserComment || '';
-	const software = exifTags?.Software || '';
-	return (
-		software.toLowerCase().includes('midjourney') ||
-		/--v\s+\d/.test(desc) ||
-		/--ar\s+[\d:]+/.test(desc)
-	);
-}

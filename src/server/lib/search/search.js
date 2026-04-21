@@ -6,78 +6,95 @@
 import { db } from '../../db/index.js';
 import { searchCandidates, archivalAssets } from '../../db/schema.js';
 import { eq, and, desc, asc, sql, count, inArray } from 'drizzle-orm';
+import { createLogger } from '../logger.js';
 import { searchFiles, getCategoryMembers, getImageInfo } from './wikimedia.js';
 import { downloadAndExtract } from '../archival/extraction.js';
 import { createArchivalAsset } from '../archival/archival.js';
+import { updateProgress, isCancelled, markCompleted } from './search-jobs.js';
+
+const log = createLogger('search');
+
+class CancelledError extends Error {
+	constructor() { super('Search cancelled'); this.code = 'CANCELLED'; }
+}
 
 // ---------------------------------------------------------------------------
-// Execute search for a stop
+// Execute search for a group
 // ---------------------------------------------------------------------------
 
-export async function executeStopSearch(projectId, stopConfig) {
-	const { stopId, stopName, keywords, categories } = stopConfig;
+/**
+ * Run Wikimedia keyword + category search for a group.
+ * Called by the search-jobs worker. Writes progress to the job row as it goes
+ * and checks for external cancellation between iterations.
+ *
+ * `jobId` is required — this is the row in search_jobs whose counters we update
+ * and whose status we poll for cancellation.
+ */
+export async function executeGroupSearch(projectId, group, jobId) {
+	if (!jobId) throw new Error('executeGroupSearch requires a jobId');
+	const { groupId, groupName, keywords, categories } = group;
 
-	// 1. Collect page titles from keyword searches (all languages)
-	const allKeywords = [
-		...(keywords.en || []),
-		...(keywords.ca || []),
-		...(keywords.es || [])
-	];
+	// Flatten all language buckets — language keys are free-form, so iterate the dict.
+	const allKeywords = [];
+	for (const terms of Object.values(keywords || {})) {
+		if (Array.isArray(terms)) allKeywords.push(...terms);
+	}
+	const cats = categories || [];
 
 	// Track which query found each title (first one wins)
-	const titleSource = new Map(); // title → { type: 'keyword'|'category', query: string }
-	let searchCount = 0;
+	const titleSource = new Map();
 
-	console.log(`[search] Starting search for "${stopName}" (${allKeywords.length} keywords, ${(categories || []).length} categories)`);
+	log.info(`Starting search for "${groupName}" (${allKeywords.length} keywords, ${cats.length} categories)`);
 
-	for (const keyword of allKeywords) {
+	async function checkCancelled() {
+		if (await isCancelled(jobId)) throw new CancelledError();
+	}
+
+	for (let i = 0; i < allKeywords.length; i++) {
+		await checkCancelled();
+		const keyword = allKeywords[i];
 		const titles = await searchFiles(keyword, { maxResults: 200 });
 		for (const t of titles) {
 			if (!titleSource.has(t)) titleSource.set(t, { type: 'keyword', query: keyword });
 		}
-		searchCount++;
-		console.log(`[search] Keyword ${searchCount}/${allKeywords.length}: "${keyword}" → ${titles.length} results (${titleSource.size} unique total)`);
+		await updateProgress(jobId, { keywordsDone: i + 1, uniqueTitles: titleSource.size });
+		log.info(`Keyword ${i + 1}/${allKeywords.length}: "${keyword}" → ${titles.length} results (${titleSource.size} unique total)`);
 	}
 
-	// 2. Collect page titles from category crawls
-	for (let i = 0; i < (categories || []).length; i++) {
-		const cat = categories[i];
-		console.log(`[search] Category ${i + 1}/${categories.length}: "${cat}" (crawling depth 2)...`);
+	for (let i = 0; i < cats.length; i++) {
+		await checkCancelled();
+		const cat = cats[i];
+		log.info(`Category ${i + 1}/${cats.length}: "${cat}" (crawling depth 2)...`);
 		const titles = await getCategoryMembers(cat, { depth: 2, maxFiles: 2000 });
 		for (const t of titles) {
 			if (!titleSource.has(t)) titleSource.set(t, { type: 'category', query: cat.replace('Category:', '') });
 		}
-		console.log(`[search]   → ${titles.length} files found (${titleSource.size} unique total)`);
+		await updateProgress(jobId, { categoriesDone: i + 1, uniqueTitles: titleSource.size });
+		log.info(`  → ${titles.length} files found (${titleSource.size} unique total)`);
 	}
+
+	await checkCancelled();
 
 	const uniqueTitles = [...titleSource.keys()];
-	console.log(`[search] Fetching image info for ${uniqueTitles.length} unique titles...`);
-
-	// 3. Fetch image info in batches
+	log.info(`Fetching image info for ${uniqueTitles.length} unique titles...`);
 	const candidates = await getImageInfo(uniqueTitles);
-	console.log(`[search] Got info for ${candidates.length} images`);
+	log.info(`Got info for ${candidates.length} images`);
 
-	// Attach source info to each candidate
 	for (const c of candidates) {
-		// Match by finding the title in our source map
 		const pageTitle = `File:${c.title}`;
 		const source = titleSource.get(pageTitle);
-		if (source) {
-			c.searchQuery = `[${source.type}] ${source.query}`;
-		}
+		if (source) c.searchQuery = `[${source.type}] ${source.query}`;
 	}
 
-	// 4. Filter out red-tier licenses
 	const usable = candidates.filter(c => c.licenseTier !== 'red');
 	const skippedLicense = candidates.length - usable.length;
 
-	// 5. Dedup against existing search_candidates for this project
+	// Dedup against existing search_candidates + archival_assets
 	const existingCandidates = await db.select({ sourcePageUrl: searchCandidates.sourcePageUrl })
 		.from(searchCandidates)
 		.where(eq(searchCandidates.projectId, projectId));
 	const existingUrls = new Set(existingCandidates.map(r => r.sourcePageUrl));
 
-	// 6. Dedup against archival_assets for this project
 	const existingArchival = await db.select({ sourceUrl: archivalAssets.sourceUrl })
 		.from(archivalAssets)
 		.where(eq(archivalAssets.projectId, projectId));
@@ -88,33 +105,38 @@ export async function executeStopSearch(projectId, stopConfig) {
 	let skippedExisting = 0;
 
 	for (const c of usable) {
-		if (existingUrls.has(c.sourcePageUrl)) {
-			skippedDuplicate++;
-			continue;
-		}
-		if (archivalUrls.has(c.sourcePageUrl)) {
-			skippedExisting++;
-			continue;
-		}
-		existingUrls.add(c.sourcePageUrl); // prevent dups within this batch
+		if (existingUrls.has(c.sourcePageUrl)) { skippedDuplicate++; continue; }
+		if (archivalUrls.has(c.sourcePageUrl)) { skippedExisting++; continue; }
+		existingUrls.add(c.sourcePageUrl);
 		toInsert.push({
 			projectId,
-			stopId,
-			stopName,
+			searchGroupId: groupId,
+			searchGroupName: groupName,
 			source: 'wikimedia',
 			...c,
 			status: 'pending'
 		});
 	}
 
-	// 7. Batch insert
-	if (toInsert.length > 0) {
-		for (let i = 0; i < toInsert.length; i += 100) {
-			await db.insert(searchCandidates).values(toInsert.slice(i, i + 100));
-		}
+	// Insert in batches so a crash mid-run doesn't lose everything.
+	let insertedSoFar = 0;
+	for (let i = 0; i < toInsert.length; i += 100) {
+		await checkCancelled();
+		const chunk = toInsert.slice(i, i + 100);
+		await db.insert(searchCandidates).values(chunk);
+		insertedSoFar += chunk.length;
+		await updateProgress(jobId, { candidatesInserted: insertedSoFar });
 	}
 
-	console.log(`[search] Done! Inserted ${toInsert.length}, skipped ${skippedLicense} (license), ${skippedDuplicate} (dup candidates), ${skippedExisting} (already in archive)`);
+	await markCompleted(jobId, {
+		uniqueTitles: uniqueTitles.length,
+		candidatesInserted: toInsert.length,
+		skippedLicense,
+		skippedDuplicate,
+		skippedExisting
+	});
+
+	log.info(`Done. Inserted ${toInsert.length}, skipped ${skippedLicense} (license), ${skippedDuplicate} (dup candidates), ${skippedExisting} (already in archive)`);
 
 	return {
 		totalSearched: uniqueTitles.length,
@@ -123,8 +145,8 @@ export async function executeStopSearch(projectId, stopConfig) {
 		skippedDuplicate,
 		skippedExisting,
 		inserted: toInsert.length,
-		searchesRun: searchCount,
-		categoriesCrawled: (categories || []).length
+		searchesRun: allKeywords.length,
+		categoriesCrawled: cats.length
 	};
 }
 
@@ -133,12 +155,12 @@ export async function executeStopSearch(projectId, stopConfig) {
 // ---------------------------------------------------------------------------
 
 export async function listCandidates(projectId, {
-	stopId = '', status = '', licenseTier = '', search = '', searchType = '',
+	searchGroupId = '', status = '', licenseTier = '', search = '', searchType = '',
 	sortBy = 'createdAt', sortDir = 'desc', limit = 100, offset = 0
 } = {}) {
 	const conditions = [eq(searchCandidates.projectId, projectId)];
 
-	if (stopId) conditions.push(eq(searchCandidates.stopId, stopId));
+	if (searchGroupId) conditions.push(eq(searchCandidates.searchGroupId, searchGroupId));
 	if (status) conditions.push(eq(searchCandidates.status, status));
 	if (licenseTier) conditions.push(eq(searchCandidates.licenseTier, licenseTier));
 	if (searchType === 'keyword') {
@@ -196,7 +218,7 @@ export async function updateCandidateStatus(id, status, rejectionReason = '') {
 
 export async function bulkUpdateStatus(ids, status, rejectionReason = '') {
 	if (!ids.length) return 0;
-	const result = await db.update(searchCandidates)
+	await db.update(searchCandidates)
 		.set({ status, rejectionReason, updatedAt: sql`now()` })
 		.where(inArray(searchCandidates.id, ids));
 	return ids.length;
@@ -206,10 +228,6 @@ export async function bulkUpdateStatus(ids, status, rejectionReason = '') {
 // Approval flow (enqueue-only — actual download runs in queue.js worker)
 // ---------------------------------------------------------------------------
 
-/**
- * Enqueue a single candidate for background download.
- * Just flips status to 'processing' — the queue worker picks it up.
- */
 export async function enqueueApproval(candidateId) {
 	const candidate = await getCandidate(candidateId);
 	if (!candidate) throw new Error('Candidate not found');
@@ -244,18 +262,15 @@ export async function enqueueBulk(ids) {
  * Called by the queue worker. Throws on any failure — caller decides retry/permanent classification.
  */
 export async function processOne(projectId, candidate, projectStoragePath) {
-	// Download full-res image and extract metadata
 	const extracted = await downloadAndExtract(candidate.imageUrl, projectStoragePath);
 
-	// Check for duplicate by file hash
 	if (extracted.fileHash) {
 		const [existing] = await db.select({ id: archivalAssets.id, name: archivalAssets.name })
 			.from(archivalAssets)
 			.where(and(eq(archivalAssets.projectId, projectId), eq(archivalAssets.fileHash, extracted.fileHash)))
 			.limit(1);
 		if (existing) {
-			// Duplicate is a permanent outcome — mark rejected here so the worker's error branch
-			// only has to log (not decide what to do).
+			// Duplicate is permanent — mark rejected here so the worker's error branch just logs.
 			await db.update(searchCandidates)
 				.set({
 					status: 'rejected',
@@ -268,14 +283,12 @@ export async function processOne(projectId, candidate, projectStoragePath) {
 		}
 	}
 
-	// Parse dimensions for medium guess
 	let medium = 'photograph';
 	const desc = (candidate.description || '').toLowerCase();
 	if (desc.includes('map') || desc.includes('plan') || desc.includes('plano')) medium = 'map';
 	else if (desc.includes('drawing') || desc.includes('illustration') || desc.includes('dibuix')) medium = 'illustration';
 	else if (desc.includes('document') || desc.includes('letter') || desc.includes('carta')) medium = 'document';
 
-	// Create archival asset
 	const asset = await createArchivalAsset(projectId, {
 		name: candidate.title || extracted.filename,
 		filename: extracted.filename,
@@ -285,8 +298,8 @@ export async function processOne(projectId, candidate, projectStoragePath) {
 		mimeType: extracted.mimeType,
 		sourceUrl: candidate.sourcePageUrl,
 		imageUrl: candidate.imageUrl || '',
-		searchGroupId: candidate.stopId || '',
-		searchGroupName: candidate.stopName || '',
+		searchGroupId: candidate.searchGroupId || '',
+		searchGroupName: candidate.searchGroupName || '',
 		accessDate: new Date().toISOString().slice(0, 10),
 		creator: candidate.author || extracted.suggestedCreator || '',
 		institution: 'Wikimedia Commons',
@@ -308,27 +321,26 @@ export async function processOne(projectId, candidate, projectStoragePath) {
 
 export async function getCandidateStats(projectId) {
 	const rows = await db.select({
-		stopId: searchCandidates.stopId,
-		stopName: searchCandidates.stopName,
+		searchGroupId: searchCandidates.searchGroupId,
+		searchGroupName: searchCandidates.searchGroupName,
 		status: searchCandidates.status,
 		count: count()
 	})
 		.from(searchCandidates)
 		.where(eq(searchCandidates.projectId, projectId))
-		.groupBy(searchCandidates.stopId, searchCandidates.stopName, searchCandidates.status);
+		.groupBy(searchCandidates.searchGroupId, searchCandidates.searchGroupName, searchCandidates.status);
 
-	// Group by stop
-	const byStop = {};
+	const byGroup = {};
 	for (const r of rows) {
-		if (!byStop[r.stopId]) {
-			byStop[r.stopId] = { stopId: r.stopId, stopName: r.stopName, pending: 0, processing: 0, approved: 0, rejected: 0, flagged: 0, failed: 0, total: 0 };
+		if (!byGroup[r.searchGroupId]) {
+			byGroup[r.searchGroupId] = { searchGroupId: r.searchGroupId, searchGroupName: r.searchGroupName, pending: 0, processing: 0, approved: 0, rejected: 0, flagged: 0, failed: 0, total: 0 };
 		}
 		const n = Number(r.count);
-		byStop[r.stopId][r.status] = (byStop[r.stopId][r.status] || 0) + n;
-		byStop[r.stopId].total += n;
+		byGroup[r.searchGroupId][r.status] = (byGroup[r.searchGroupId][r.status] || 0) + n;
+		byGroup[r.searchGroupId].total += n;
 	}
 
-	return Object.values(byStop);
+	return Object.values(byGroup);
 }
 
 // ---------------------------------------------------------------------------

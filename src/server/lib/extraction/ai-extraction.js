@@ -2,41 +2,52 @@ import path from 'path';
 import { extractExif } from './exif.js';
 import { extractC2pa } from './c2pa.js';
 import { extractPngChunks } from './png-chunks.js';
-import { isFreepik, parseFreepik } from './parsers/freepik.js';
-import { isComfyUI, parseComfyUI } from './parsers/comfyui.js';
-import { isMidjourney, parseMidjourney } from './parsers/midjourney.js';
+import { parsers } from './parsers/index.js';
 import { computeFileHash, getMimeType, getFileSize } from '../core/file-utils.js';
 
-/**
- * Detect platform from EXIF tags and PNG chunks.
- */
-function detectPlatform(exifTags, chunks) {
-	if (isComfyUI(exifTags, chunks)) return 'comfyui';
-	if (isMidjourney(exifTags, chunks)) return 'midjourney';
-	if (isFreepik(exifTags, chunks)) return 'freepik';
-	return 'unknown';
-}
-
-/**
- * Run the platform-specific parser.
- */
-function parsePlatform(platform, exifTags, chunks) {
-	if (platform === 'freepik') return parseFreepik(exifTags, chunks);
-	if (platform === 'comfyui') return parseComfyUI(exifTags, chunks);
-	if (platform === 'midjourney') return parseMidjourney(exifTags, chunks);
-
-	// Generic fallback
+// Walk the registered parsers in priority order; first detect() match wins.
+// Falls back to a generic EXIF-only shape so callers always get the same fields.
+//
+// Returns `coverage` as a 0–100 integer reflecting how many of the parser's
+// declared `coreFields` got populated. Low coverage on a recognized platform
+// usually means the source format drifted and the parser needs updating —
+// novelty detection uses this plus `platform === 'unknown'` to flag for review.
+//
+// Exported so re-extraction can replay it against stored raw metadata without
+// re-reading the file from disk — the key property that lets parser updates
+// flow back to previously-imported assets.
+export function detectAndParse(exifTags, chunks) {
+	for (const p of parsers) {
+		if (p.detect(exifTags, chunks)) {
+			const data = p.parse(exifTags, chunks);
+			return { platform: p.id, coverage: computeCoverage(p, data), data };
+		}
+	}
 	return {
 		platform: 'unknown',
-		prompt: exifTags?.Description || exifTags?.ImageDescription || '',
-		negativePrompt: '',
-		modelName: exifTags?.Software || '',
-		modelVersion: '',
-		seed: '',
-		width: exifTags?.ImageWidth || exifTags?.ExifImageWidth || 0,
-		height: exifTags?.ImageHeight || exifTags?.ExifImageHeight || 0,
-		otherParams: {}
+		coverage: 0,
+		data: {
+			platform: 'unknown',
+			prompt: exifTags?.Description || exifTags?.ImageDescription || '',
+			negativePrompt: '',
+			modelName: exifTags?.Software || '',
+			modelVersion: '',
+			seed: '',
+			width: exifTags?.ImageWidth || exifTags?.ExifImageWidth || 0,
+			height: exifTags?.ImageHeight || exifTags?.ExifImageHeight || 0,
+			otherParams: {}
+		}
 	};
+}
+
+function computeCoverage(parser, data) {
+	const fields = parser.coreFields || [];
+	if (fields.length === 0) return 100;
+	const populated = fields.filter(f => {
+		const v = data?.[f];
+		return v !== undefined && v !== null && v !== '' && v !== 0;
+	}).length;
+	return Math.round((populated / fields.length) * 100);
 }
 
 /**
@@ -66,8 +77,7 @@ export async function extractAIAsset(filePath) {
 	const filename = path.basename(filePath);
 	const assetType = getAssetType(mimeType);
 
-	const platform = detectPlatform(exifTags, pngChunks);
-	const platformData = parsePlatform(platform, exifTags, pngChunks);
+	const { platform, coverage, data: platformData } = detectAndParse(exifTags, pngChunks);
 
 	// Build clean EXIF summary (exclude noise)
 	const skipKeys = new Set(['SourceFile', 'ExifToolVersion', 'FileInodeChangeDate', 'FilePermissions']);
@@ -93,6 +103,7 @@ export async function extractAIAsset(filePath) {
 		mimeType,
 		assetType,
 		platform,
+		extractionCoverage: coverage,
 		generationDate,
 		// Platform-parsed fields (pre-fill the form)
 		suggestedPrompt: platformData.prompt || '',

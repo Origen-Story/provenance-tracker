@@ -8,15 +8,24 @@ import { USER_AGENT } from '../user-agent.js';
 
 const API_URL = 'https://commons.wikimedia.org/w/api.php';
 
+// Use POST so long parameter lists (e.g. 50 pipe-joined titles in getImageInfo)
+// don't blow past server URL length limits (we saw a 414 URI Too Long on GET).
+// MediaWiki's action=query accepts POST; format/origin stay in the query string.
 async function apiCall(params) {
 	const url = new URL(API_URL);
 	url.searchParams.set('format', 'json');
 	url.searchParams.set('origin', '*');
+	const body = new URLSearchParams();
 	for (const [k, v] of Object.entries(params)) {
-		url.searchParams.set(k, v);
+		body.set(k, v);
 	}
 	const res = await throttledFetch(url.toString(), {
-		headers: { 'User-Agent': USER_AGENT }
+		method: 'POST',
+		headers: {
+			'User-Agent': USER_AGENT,
+			'Content-Type': 'application/x-www-form-urlencoded'
+		},
+		body
 	});
 	if (!res.ok) throw new Error(`Wikimedia API error: ${res.status}`);
 	return res.json();

@@ -1,0 +1,591 @@
+[
+  {
+    "groupId": "stop_1",
+    "groupName": "Hospital de la Santa Creu",
+    "keywords": {
+      "en": [
+        "Hospital de la Santa Creu Barcelona",
+        "Antoni Gaudí funeral 1926",
+        "Gaudí funeral procession",
+        "Gaudí death 1926",
+        "Gaudí tram accident",
+        "Gaudí deathbed",
+        "Hospital de la Santa Creu courtyard",
+        "National Library of Catalonia historic",
+        "Barcelona Raval 1900s",
+        "Barcelona 1868 revolution"
+      ],
+      "ca": [
+        "Hospital de la Santa Creu Barcelona antic",
+        "Enterrament Gaudí 1926",
+        "Processó fúnebre Gaudí",
+        "Biblioteca de Catalunya antic",
+        "Raval Barcelona antic"
+      ],
+      "es": [
+        "Hospital de la Santa Cruz Barcelona antiguo",
+        "Funeral Gaudí 1926",
+        "Procesión fúnebre Gaudí Barcelona",
+        "Barrio del Raval Barcelona antiguo"
+      ]
+    },
+    "categories": [
+      "Category:Hospital de la Santa Creu",
+      "Category:Funeral of Antoni Gaudí",
+      "Category:Biblioteca de Catalunya"
+    ],
+    "notes": "",
+    "sortOrder": 0
+  },
+  {
+    "groupId": "walking_1",
+    "groupName": "The Student Soldier (1874-1878)",
+    "keywords": {
+      "en": [
+        "Antoni Gaudí young portrait",
+        "Gaudí student portrait 1870s",
+        "Barcelona School of Architecture 1870s",
+        "Escola d'Arquitectura Barcelona",
+        "Elies Rogent architect",
+        "Third Carlist War Spain",
+        "Barcelona 1870s photographs"
+      ],
+      "ca": [
+        "Gaudí jove retrat",
+        "Escola Provincial d'Arquitectura Barcelona",
+        "Elies Rogent arquitecte",
+        "Tercera Guerra Carlina"
+      ],
+      "es": [
+        "Gaudí joven retrato",
+        "Escuela de Arquitectura Barcelona 1870",
+        "Tercera Guerra Carlista"
+      ]
+    },
+    "categories": [
+      "Category:Antoni Gaudí",
+      "Category:Portraits of Antoni Gaudí",
+      "Category:Third Carlist War"
+    ],
+    "notes": "",
+    "sortOrder": 1
+  },
+  {
+    "groupId": "stop_2",
+    "groupName": "Plaça de Sant Felip Neri",
+    "keywords": {
+      "en": [
+        "Plaça Sant Felip Neri Barcelona",
+        "Sant Felip Neri bombing 1938",
+        "Sant Felip Neri church Barcelona",
+        "Barcelona Civil War bombing",
+        "Barcelona coppersmiths guild",
+        "Joan Llimona painter",
+        "Joan Llimona Barcelona"
+      ],
+      "ca": [
+        "Plaça de Sant Felip Neri Barcelona antic",
+        "Bombardeig Sant Felip Neri 1938",
+        "Gremi calderers Barcelona",
+        "Joan Llimona pintor"
+      ],
+      "es": [
+        "Plaza San Felipe Neri Barcelona",
+        "Bombardeo San Felipe Neri 1938",
+        "Guerra Civil Barcelona bombardeo"
+      ]
+    },
+    "categories": [
+      "Category:Plaça de Sant Felip Neri",
+      "Category:Bombing of Barcelona",
+      "Category:Joan Llimona"
+    ],
+    "notes": "",
+    "sortOrder": 2
+  },
+  {
+    "groupId": "stop_3",
+    "groupName": "Carrer del Call, 11 — First Workshop",
+    "keywords": {
+      "en": [
+        "Carrer del Call Barcelona historic",
+        "Jewish Quarter Barcelona medieval",
+        "El Call Barcelona",
+        "Gaudí first workshop",
+        "Josefa Moreu Gaudí",
+        "Mataró Workers Cooperative Gaudí",
+        "Cooperativa Obrera Mataroní",
+        "Llorenç Matamala sculptor"
+      ],
+      "ca": [
+        "Carrer del Call Barcelona antic",
+        "Call jueu Barcelona",
+        "Cooperativa Obrera Mataronina Gaudí",
+        "Llorenç Matamala escultor"
+      ],
+      "es": [
+        "Barrio judío Barcelona antiguo",
+        "Cooperativa Obrera Mataronesa Gaudí"
+      ]
+    },
+    "categories": [
+      "Category:El Call (Barcelona)",
+      "Category:Jewish history of Barcelona"
+    ],
+    "notes": "",
+    "sortOrder": 3
+  },
+  {
+    "groupId": "stop_4",
+    "groupName": "Plaça Reial — First Successes",
+    "keywords": {
+      "en": [
+        "Plaça Reial Barcelona historic",
+        "Gaudí lampposts Plaça Reial",
+        "Gaudí streetlamps Barcelona",
+        "Plaça Reial lampposts",
+        "Barcelona 1880s photographs",
+        "Joan Martorell architect Barcelona",
+        "Sagrada Família early construction",
+        "Francisco de Paula del Villar architect"
+      ],
+      "ca": [
+        "Plaça Reial Barcelona antic",
+        "Fanals Gaudí Plaça Reial",
+        "Joan Martorell arquitecte",
+        "Sagrada Família primers anys"
+      ],
+      "es": [
+        "Plaza Real Barcelona antiguo",
+        "Farolas Gaudí Plaza Real",
+        "Sagrada Familia primeras obras"
+      ]
+    },
+    "categories": [
+      "Category:Plaça Reial",
+      "Category:Lampposts by Antoni Gaudí",
+      "Category:Streetlights in Barcelona"
+    ],
+    "notes": "",
+    "sortOrder": 4
+  },
+  {
+    "groupId": "walking_2",
+    "groupName": "Heartbreak and Grief (1879-1884)",
+    "keywords": {
+      "en": [
+        "Gaudí family photograph",
+        "Barcelona Raval 1880s",
+        "Antoni Gaudí 1880s portrait"
+      ],
+      "ca": [
+        "Família Gaudí fotografia",
+        "Raval Barcelona anys 1880"
+      ],
+      "es": [
+        "Familia Gaudí fotografía"
+      ]
+    },
+    "categories": [
+      "Category:Portraits of Antoni Gaudí",
+      "Category:Antoni Gaudí"
+    ],
+    "notes": "",
+    "sortOrder": 5
+  },
+  {
+    "groupId": "stop_5",
+    "groupName": "Palau Güell",
+    "keywords": {
+      "en": [
+        "Palau Güell construction",
+        "Palau Güell Barcelona historic",
+        "Palau Güell interior",
+        "Palau Güell rooftop chimneys",
+        "Palau Güell facade",
+        "Eusebi Güell portrait",
+        "Eusebi Güell photograph",
+        "Paris 1878 Universal Exhibition",
+        "Paris 1878 Exposition Universelle Spanish Pavilion",
+        "Esteban Comella glove case Gaudí",
+        "Carrer Nou de la Rambla Barcelona historic"
+      ],
+      "ca": [
+        "Palau Güell Barcelona antic",
+        "Palau Güell construcció",
+        "Eusebi Güell retrat",
+        "Exposició Universal París 1878",
+        "Carrer Nou de la Rambla antic"
+      ],
+      "es": [
+        "Palacio Güell Barcelona antiguo",
+        "Palacio Güell construcción",
+        "Eusebi Güell retrato",
+        "Exposición Universal París 1878"
+      ]
+    },
+    "categories": [
+      "Category:Palau Güell",
+      "Category:Interior of Palau Güell",
+      "Category:Eusebi Güell",
+      "Category:Exposition Universelle (1878)"
+    ],
+    "notes": "",
+    "sortOrder": 6
+  },
+  {
+    "groupId": "walking_3",
+    "groupName": "Park Güell (1900-1914)",
+    "keywords": {
+      "en": [
+        "Park Güell construction",
+        "Park Güell early photographs",
+        "Park Güell historic",
+        "Park Güell Jujol bench",
+        "Park Güell serpentine bench",
+        "Park Güell Doric columns",
+        "Muntanya Pelada Barcelona",
+        "Park Güell dragon fountain",
+        "Gaudí house Park Güell"
+      ],
+      "ca": [
+        "Park Güell construcció",
+        "Park Güell antic",
+        "Park Güell banc ondulat",
+        "Muntanya Pelada Barcelona"
+      ],
+      "es": [
+        "Parque Güell construcción",
+        "Parque Güell antiguo",
+        "Parque Güell banco serpentino"
+      ]
+    },
+    "categories": [
+      "Category:Park Güell",
+      "Category:History of Park Güell",
+      "Category:Serpentine bench at Park Güell"
+    ],
+    "notes": "",
+    "sortOrder": 7
+  },
+  {
+    "groupId": "stop_6",
+    "groupName": "Casa Calvet",
+    "keywords": {
+      "en": [
+        "Casa Calvet Barcelona",
+        "Casa Calvet Gaudí",
+        "Casa Calvet facade",
+        "Casa Calvet furniture",
+        "Bishop Torras i Bages",
+        "Josep Torras i Bages portrait",
+        "Francesc Berenguer architect",
+        "Gaudí 1890s portrait",
+        "Spanish American War 1898",
+        "Disaster of 98 Spain"
+      ],
+      "ca": [
+        "Casa Calvet Barcelona",
+        "Bisbe Torras i Bages retrat",
+        "Francesc Berenguer arquitecte",
+        "Desastre del 98"
+      ],
+      "es": [
+        "Casa Calvet Barcelona",
+        "Obispo Torras y Bages",
+        "Desastre del 98 España"
+      ]
+    },
+    "categories": [
+      "Category:Casa Calvet",
+      "Category:Josep Torras i Bages",
+      "Category:Spanish-American War"
+    ],
+    "notes": "",
+    "sortOrder": 8
+  },
+  {
+    "groupId": "walking_4",
+    "groupName": "Manzana de la Discòrdia",
+    "keywords": {
+      "en": [
+        "Manzana de la Discordia Barcelona",
+        "Block of Discord Barcelona",
+        "Casa Lleó Morera",
+        "Casa Amatller Barcelona",
+        "Lluís Domènech i Montaner portrait",
+        "Josep Puig i Cadafalch portrait",
+        "Passeig de Gràcia Barcelona historic",
+        "Passeig de Gràcia 1900s",
+        "Eixample Barcelona historic",
+        "Catalan Modernisme architecture"
+      ],
+      "ca": [
+        "Mansana de la Discòrdia Barcelona",
+        "Casa Lleó i Morera",
+        "Casa Amatller",
+        "Lluís Domènech i Montaner retrat",
+        "Josep Puig i Cadafalch retrat",
+        "Passeig de Gràcia Barcelona antic",
+        "Modernisme català arquitectura"
+      ],
+      "es": [
+        "Manzana de la Discordia Barcelona",
+        "Paseo de Gracia Barcelona antiguo",
+        "Modernismo catalán arquitectura"
+      ]
+    },
+    "categories": [
+      "Category:Illa de la Discòrdia",
+      "Category:Casa Lleó Morera",
+      "Category:Casa Amatller",
+      "Category:Lluís Domènech i Montaner",
+      "Category:Josep Puig i Cadafalch",
+      "Category:Passeig de Gràcia"
+    ],
+    "notes": "",
+    "sortOrder": 9
+  },
+  {
+    "groupId": "stop_7",
+    "groupName": "Casa Batlló",
+    "keywords": {
+      "en": [
+        "Casa Batlló construction",
+        "Casa Batlló historic Barcelona",
+        "Casa Batlló facade historic",
+        "Casa Batlló interior",
+        "Josep Maria Jujol architect",
+        "Josep Maria Jujol portrait",
+        "Joan Martorell architect portrait",
+        "Francesc Gaudí father coppersmith",
+        "Gaudí father portrait",
+        "Casa Batlló renovation 1904"
+      ],
+      "ca": [
+        "Casa Batlló Barcelona antic",
+        "Casa Batlló construcció",
+        "Josep Maria Jujol arquitecte",
+        "Joan Martorell arquitecte retrat"
+      ],
+      "es": [
+        "Casa Batlló Barcelona antiguo",
+        "Casa Batlló construcción",
+        "Josep Maria Jujol arquitecto"
+      ]
+    },
+    "categories": [
+      "Category:Casa Batlló",
+      "Category:History of Casa Batlló",
+      "Category:Josep Maria Jujol"
+    ],
+    "notes": "",
+    "sortOrder": 10
+  },
+  {
+    "groupId": "stop_8",
+    "groupName": "Casa Milà / La Pedrera",
+    "keywords": {
+      "en": [
+        "Casa Milà construction",
+        "La Pedrera construction",
+        "La Pedrera Barcelona historic",
+        "La Pedrera rooftop chimneys historic",
+        "Casa Milà facade construction",
+        "Pere Milà Roser Segimon",
+        "Gaudí Paris 1910 exhibition",
+        "Gaudí Grand Palais Paris 1910",
+        "Francesc Berenguer architect",
+        "La Pedrera wrought iron balconies"
+      ],
+      "ca": [
+        "Casa Milà Barcelona antic",
+        "La Pedrera construcció",
+        "La Pedrera xemeneies terrat",
+        "Gaudí exposició París 1910",
+        "Francesc Berenguer arquitecte"
+      ],
+      "es": [
+        "Casa Milà Barcelona antiguo",
+        "La Pedrera construcción",
+        "Gaudí exposición París 1910"
+      ]
+    },
+    "categories": [
+      "Category:Casa Milà",
+      "Category:Construction of Casa Milà",
+      "Category:Roof of Casa Milà"
+    ],
+    "notes": "",
+    "sortOrder": 11
+  },
+  {
+    "groupId": "walking_5",
+    "groupName": "The Rival's Towers / Cascade of Loss (1905-1918)",
+    "keywords": {
+      "en": [
+        "Casa de les Punxes Barcelona",
+        "Casa Terrades Barcelona",
+        "Puig i Cadafalch Casa de les Punxes",
+        "Mancomunitat de Catalunya",
+        "Gaudí niece Rosa Egea",
+        "Francesc Berenguer architect death",
+        "Bishop Torras i Bages death",
+        "Eusebi Güell death 1918"
+      ],
+      "ca": [
+        "Casa de les Punxes Barcelona antic",
+        "Casa Terrades",
+        "Mancomunitat de Catalunya",
+        "Puig i Cadafalch president Mancomunitat"
+      ],
+      "es": [
+        "Casa de las Punxes Barcelona",
+        "Mancomunidad de Cataluña"
+      ]
+    },
+    "categories": [
+      "Category:Casa de les Punxes",
+      "Category:Mancomunitat de Catalunya",
+      "Category:Josep Puig i Cadafalch"
+    ],
+    "notes": "",
+    "sortOrder": 12
+  },
+  {
+    "groupId": "stop_9",
+    "groupName": "Church of Sant Francesc de Sales",
+    "keywords": {
+      "en": [
+        "Convent de les Saleses Barcelona",
+        "Church Sant Francesc de Sales Barcelona",
+        "Joan Martorell architect church",
+        "Setmana Tràgica 1909 Barcelona",
+        "Tragic Week Barcelona 1909",
+        "Setmana Tràgica churches burning",
+        "Barcelona churches burning 1909",
+        "Francesc Ferrer i Guàrdia",
+        "Ferrer i Guàrdia execution",
+        "Gaudí arrest 1924",
+        "Jocs Florals Barcelona",
+        "Josep Brangulí photographer",
+        "Brangulí nuns Civil War Barcelona",
+        "Spanish Civil War Barcelona churches 1936"
+      ],
+      "ca": [
+        "Convent de les Saleses Barcelona",
+        "Setmana Tràgica 1909 Barcelona",
+        "Setmana Tràgica crema esglésies",
+        "Francesc Ferrer i Guàrdia",
+        "Jocs Florals Barcelona",
+        "Josep Brangulí fotògraf",
+        "Guerra Civil Barcelona esglésies 1936"
+      ],
+      "es": [
+        "Semana Trágica Barcelona 1909",
+        "Semana Trágica quema iglesias",
+        "Francisco Ferrer Guardia",
+        "Guerra Civil Barcelona iglesias 1936"
+      ]
+    },
+    "categories": [
+      "Category:Setmana Tràgica",
+      "Category:Tragic Week (Spain)",
+      "Category:Francesc Ferrer i Guàrdia",
+      "Category:Spanish Civil War in Barcelona",
+      "Category:Anticlerical violence during the Spanish Civil War"
+    ],
+    "notes": "",
+    "sortOrder": 13
+  },
+  {
+    "groupId": "stop_10",
+    "groupName": "Sagrada Família",
+    "keywords": {
+      "en": [
+        "Sagrada Família construction 1900s",
+        "Sagrada Família construction 1920s",
+        "Sagrada Família early construction",
+        "Sagrada Família Nativity Facade construction",
+        "Sagrada Família 1890s",
+        "Sagrada Família crypt",
+        "Gaudí workshop Sagrada Família",
+        "Gaudí workshop models",
+        "Gaudí plaster models",
+        "Gaudí last photograph",
+        "Gaudí burial crypt",
+        "Josep Maria Bocabella portrait",
+        "Francisco de Paula del Villar architect",
+        "Tower of Saint Barnabas Sagrada Família",
+        "Sagrada Família funeral procession 1926"
+      ],
+      "ca": [
+        "Sagrada Família construcció",
+        "Sagrada Família primers anys",
+        "Sagrada Família cripta",
+        "Taller Gaudí Sagrada Família",
+        "Gaudí maquetes",
+        "Gaudí última fotografia",
+        "Josep Maria Bocabella retrat"
+      ],
+      "es": [
+        "Sagrada Familia construcción",
+        "Sagrada Familia primeros años",
+        "Taller Gaudí Sagrada Familia",
+        "Gaudí última fotografía",
+        "Sagrada Familia cripta"
+      ]
+    },
+    "categories": [
+      "Category:Sagrada Família",
+      "Category:Construction of Sagrada Família",
+      "Category:Nativity façade of the Sagrada Família",
+      "Category:Crypt of the Sagrada Família",
+      "Category:History of the Sagrada Família",
+      "Category:Antoni Gaudí"
+    ],
+    "notes": "",
+    "sortOrder": 14
+  },
+  {
+    "groupId": "general",
+    "groupName": "General / Cross-Stop",
+    "keywords": {
+      "en": [
+        "Antoni Gaudí portrait",
+        "Antoni Gaudí photograph",
+        "Gaudí drawings architectural",
+        "Barcelona 1900 panoramic",
+        "Barcelona Eixample 1900s",
+        "Barcelona Gothic Quarter 1900s",
+        "Catalan Modernisme",
+        "Barcelona modernisme architecture",
+        "Barcelona map 1900"
+      ],
+      "ca": [
+        "Antoni Gaudí retrat",
+        "Barcelona panoràmica 1900",
+        "Modernisme català",
+        "Eixample Barcelona antic",
+        "Barri Gòtic Barcelona antic"
+      ],
+      "es": [
+        "Antoni Gaudí retrato",
+        "Barcelona panorámica 1900",
+        "Modernismo catalán"
+      ]
+    },
+    "categories": [
+      "Category:Antoni Gaudí",
+      "Category:Portraits of Antoni Gaudí",
+      "Category:Works of Antoni Gaudí",
+      "Category:Modernisme",
+      "Category:Architecture of Barcelona",
+      "Category:History of Barcelona",
+      "Category:Maps of Barcelona",
+      "Category:Old photographs of Barcelona"
+    ],
+    "notes": "",
+    "sortOrder": 15
+  }
+]

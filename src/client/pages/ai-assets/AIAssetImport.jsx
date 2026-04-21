@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-const PLATFORM_LABELS = { freepik: 'Freepik', comfyui: 'ComfyUI', midjourney: 'Midjourney', unknown: 'Unknown' };
+const PLATFORM_LABELS = { freepik: 'Freepik', comfyui: 'ComfyUI', midjourney: 'Midjourney', firefly: 'Adobe Firefly', elevenlabs: 'ElevenLabs', 'topaz-video-ai': 'Topaz Video AI', unknown: 'Unknown' };
 const DIGITAL_SOURCE_TYPES = [
 	{ value: 'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia', label: 'Trained Algorithmic Media (AI-generated)' },
 	{ value: 'http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicMedia', label: 'Algorithmic Media' },
@@ -170,6 +170,7 @@ export default function AIAssetImport() {
 			mimeType: extracted.mimeType,
 			assetType: extracted.assetType,
 			platform, description, notes, digitalSourceType, generationDate,
+			extractionCoverage: extracted.extractionCoverage ?? null,
 			exifJson: extracted.exifJson,
 			c2paJson: extracted.c2paJson,
 			pngChunksJson: extracted.pngChunksJson,
@@ -206,6 +207,7 @@ export default function AIAssetImport() {
 						description: '',
 						digitalSourceType: DIGITAL_SOURCE_TYPES[0].value,
 						generationDate: item.generationDate || '',
+						extractionCoverage: item.extractionCoverage ?? null,
 						exifJson: item.exifJson,
 						c2paJson: item.c2paJson,
 						pngChunksJson: item.pngChunksJson,
@@ -293,7 +295,7 @@ export default function AIAssetImport() {
 								<label className="block text-sm font-medium text-text-primary mb-1.5">Folder path</label>
 								<input type="text" value={folderPath} onChange={e => setFolderPath(e.target.value)}
 									onKeyDown={e => e.key === 'Enter' && folderPath.trim() && handleScan()}
-									placeholder="C:\Users\mattf\Pictures\gaia-atmosphere"
+									placeholder="C:\path\to\ai-images"
 									className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm" />
 								<p className="text-xs text-text-secondary mt-1">All supported files in this folder will be copied to managed storage and scanned.</p>
 							</div>
@@ -313,7 +315,7 @@ export default function AIAssetImport() {
 								<label className="block text-sm font-medium text-text-primary mb-1.5">File path</label>
 								<input type="text" value={pathInput} onChange={e => setPathInput(e.target.value)}
 									onKeyDown={e => e.key === 'Enter' && pathInput.trim() && handlePathExtract()}
-									placeholder="C:\Users\mattf\Pictures\gaia-001.png"
+									placeholder="C:\path\to\image.png"
 									className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm" />
 							</div>
 							<button onClick={handlePathExtract} disabled={!pathInput.trim() || extracting}

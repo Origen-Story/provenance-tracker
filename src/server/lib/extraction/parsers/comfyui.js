@@ -2,7 +2,19 @@
  * Parse ComfyUI PNG metadata.
  * ComfyUI stores workflow and prompt as JSON in PNG tEXt chunks.
  */
-export function parseComfyUI(exifTags, chunks) {
+
+export const id = 'comfyui';
+
+// Fields we expect to populate from a well-formed ComfyUI workflow.
+// Used by the dispatcher to compute extraction coverage — a low score flags
+// the asset for review (parser may be stale vs current ComfyUI output).
+export const coreFields = ['prompt', 'seed', 'modelName', 'sampler'];
+
+export function detect(exifTags, chunks) {
+	return !!(chunks?.prompt || chunks?.workflow);
+}
+
+export function parse(exifTags, chunks) {
 	const result = {
 		platform: 'comfyui',
 		prompt: '',
@@ -69,6 +81,3 @@ export function parseComfyUI(exifTags, chunks) {
 	return result;
 }
 
-export function isComfyUI(exifTags, chunks) {
-	return !!(chunks?.prompt || chunks?.workflow);
-}

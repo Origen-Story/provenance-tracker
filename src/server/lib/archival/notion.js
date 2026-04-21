@@ -2,6 +2,9 @@ import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import mime from 'mime-types';
+import { createLogger } from '../logger.js';
+
+const log = createLogger('notion');
 
 function truncName(str, max = 100) {
 	return str && str.length > max ? str.slice(0, max) : str;
@@ -47,7 +50,7 @@ export async function syncAssetToNotion(asset, project) {
 		} catch (err) {
 			// Page may have been moved/deleted — create a fresh one instead
 			if (err.code === 'validation_error' || err.code === 'object_not_found') {
-				console.log(`[notion] Page ${asset.notionPageId} is stale (${err.code}), creating new page`);
+				log.info(`Page ${asset.notionPageId} is stale (${err.code}), creating new page`);
 			} else {
 				throw err;
 			}

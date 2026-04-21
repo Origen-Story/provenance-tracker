@@ -1,0 +1,40 @@
+[
+  {
+    "groupId": "group_1",
+    "groupName": "Example Subject or Location",
+    "keywords": {
+      "en": [
+        "example keyword",
+        "another english keyword",
+        "specific person 1900s",
+        "location name photographs"
+      ],
+      "fr": [
+        "mot-clé exemple",
+        "autre mot-clé français"
+      ]
+    },
+    "categories": [
+      "Category:Example Wikimedia Category",
+      "Category:Another Category Name"
+    ],
+    "notes": "Optional notes about this group — time period, search strategy, or key sources to look for.",
+    "sortOrder": 0
+  },
+  {
+    "groupId": "group_2",
+    "groupName": "Another Topic",
+    "keywords": {
+      "en": [
+        "broad keyword",
+        "narrow specific term",
+        "place year photographs"
+      ]
+    },
+    "categories": [
+      "Category:Example Category"
+    ],
+    "notes": "",
+    "sortOrder": 1
+  }
+]

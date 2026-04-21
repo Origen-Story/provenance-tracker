@@ -1,44 +1,65 @@
 import { Router } from 'express';
 import { getActiveProject } from '../lib/projects.js';
-import { getStopById, STOPS } from '../lib/search/stops.js';
+import { createLogger } from '../lib/logger.js';
+import { listGroups, getGroupByGroupId } from '../lib/search/groups.js';
 import {
-	executeStopSearch, listCandidates, getCandidate, getCandidateStats,
+	listCandidates, getCandidate, getCandidateStats,
 	updateCandidateStatus, bulkUpdateStatus, enqueueApproval, enqueueBulk, deleteCandidate
 } from '../lib/search/search.js';
 import { retryCandidate } from '../lib/search/queue.js';
+import { enqueueSearch, getJob, listJobs, cancelJob, retryJob } from '../lib/search/search-jobs.js';
 
 const router = Router();
+const log = createLogger('search');
 
-// List available stops
-router.get('/stops', (req, res) => {
-	const stops = STOPS.map(s => ({
-		stopId: s.stopId,
-		stopName: s.stopName,
-		priority: s.priority,
-		targetCount: s.targetCount,
-		keywordCount: (s.keywords.en?.length || 0) + (s.keywords.ca?.length || 0) + (s.keywords.es?.length || 0),
-		categoryCount: s.categories?.length || 0
-	}));
-	res.json(stops);
-});
-
-// Execute search for a stop
+// Enqueue search for a group — returns a job id; client polls /jobs/:id for progress.
 router.post('/execute', async (req, res) => {
 	const project = await getActiveProject();
 	if (!project) return res.status(400).json({ error: 'No active project' });
 
-	const { stopId } = req.body;
-	if (!stopId) return res.status(400).json({ error: 'stopId required' });
+	const { groupId, stopId } = req.body;
+	const gid = groupId || stopId;
+	if (!gid) return res.status(400).json({ error: 'groupId required' });
 
-	const stopConfig = getStopById(stopId);
-	if (!stopConfig) return res.status(404).json({ error: 'Stop not found' });
+	const group = await getGroupByGroupId(project.id, gid);
+	if (!group) return res.status(404).json({ error: 'Group not found' });
 
 	try {
-		const result = await executeStopSearch(project.id, stopConfig);
-		res.json(result);
+		const job = await enqueueSearch(project.id, group);
+		res.json({ jobId: job.id, status: job.status, groupId: job.groupId, groupName: job.groupName });
 	} catch (err) {
 		res.status(500).json({ error: err.message });
 	}
+});
+
+// Get job progress (polled by UI while a search is in flight)
+router.get('/jobs/:id', async (req, res) => {
+	const job = await getJob(parseInt(req.params.id));
+	if (!job) return res.status(404).json({ error: 'Job not found' });
+	res.json(job);
+});
+
+// List recent jobs for the active project
+router.get('/jobs', async (req, res) => {
+	const project = await getActiveProject();
+	if (!project) return res.status(400).json({ error: 'No active project' });
+	const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+	const jobs = await listJobs(project.id, { limit });
+	res.json(jobs);
+});
+
+// Cancel a queued or running job
+router.post('/jobs/:id/cancel', async (req, res) => {
+	const job = await cancelJob(parseInt(req.params.id));
+	if (!job) return res.status(404).json({ error: 'Job not found or already finished' });
+	res.json(job);
+});
+
+// Retry a failed or cancelled job — re-queues it with counters reset to zero.
+router.post('/jobs/:id/retry', async (req, res) => {
+	const job = await retryJob(parseInt(req.params.id));
+	if (!job) return res.status(404).json({ error: 'Job not found or not in a retryable state' });
+	res.json(job);
 });
 
 // List candidates with filters
@@ -46,9 +67,14 @@ router.get('/candidates', async (req, res) => {
 	const project = await getActiveProject();
 	if (!project) return res.status(400).json({ error: 'No active project' });
 
-	const { stopId = '', status = '', licenseTier = '', search = '', searchType = '', sort = 'createdAt', dir = 'desc', limit = 100, offset = 0 } = req.query;
+	const {
+		searchGroupId = '', stopId = '',
+		status = '', licenseTier = '', search = '', searchType = '',
+		sort = 'createdAt', dir = 'desc', limit = 100, offset = 0
+	} = req.query;
 	const result = await listCandidates(project.id, {
-		stopId, status, licenseTier, search, searchType,
+		searchGroupId: searchGroupId || stopId,
+		status, licenseTier, search, searchType,
 		sortBy: sort, sortDir: dir,
 		limit: parseInt(limit), offset: parseInt(offset)
 	});
@@ -62,7 +88,7 @@ router.get('/candidates/:id', async (req, res) => {
 	res.json(candidate);
 });
 
-// Stats by stop + status
+// Stats by group + status
 router.get('/stats', async (req, res) => {
 	const project = await getActiveProject();
 	if (!project) return res.status(400).json({ error: 'No active project' });
@@ -110,7 +136,7 @@ router.post('/candidates/bulk-approve', async (req, res) => {
 	if (!ids?.length) return res.status(400).json({ error: 'ids required' });
 	try {
 		const count = await enqueueBulk(ids);
-		console.log(`[search] Enqueued ${count} candidates for approval`);
+		log.info(`Enqueued ${count} candidates for approval`);
 		res.json({ queued: count });
 	} catch (err) {
 		res.status(500).json({ error: err.message });

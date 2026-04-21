@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-const PLATFORM_LABELS = { freepik: 'Freepik', comfyui: 'ComfyUI', midjourney: 'Midjourney', unknown: 'Unknown' };
+const PLATFORM_LABELS = { freepik: 'Freepik', comfyui: 'ComfyUI', midjourney: 'Midjourney', firefly: 'Adobe Firefly', elevenlabs: 'ElevenLabs', 'topaz-video-ai': 'Topaz Video AI', unknown: 'Unknown' };
 const DIGITAL_SOURCE_TYPES = [
 	{ value: 'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia', label: 'Trained Algorithmic Media' },
 	{ value: 'http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicMedia', label: 'Algorithmic Media' },
@@ -59,6 +59,19 @@ export default function AIAssetDetail() {
 		}
 	});
 
+	const reExtract = useMutation({
+		mutationFn: () => fetch(`/api/assets/${id}/re-extract`, { method: 'POST' }).then(async r => {
+			const j = await r.json();
+			if (!r.ok) throw new Error(j.error || 'Re-extraction failed');
+			return j;
+		}),
+		onSuccess: () => {
+			qc.invalidateQueries({ queryKey: ['asset', id] });
+			qc.invalidateQueries({ queryKey: ['assets'] });
+			qc.invalidateQueries({ queryKey: ['noveltyStats'] });
+		}
+	});
+
 	const del = useMutation({
 		mutationFn: () => fetch(`/api/assets/${id}`, { method: 'DELETE' }).then(r => r.json()),
 		onSuccess: () => {
@@ -100,8 +113,19 @@ export default function AIAssetDetail() {
 	const gp = asset.generationParams;
 	const c2pa = asset.metadata?.find(m => m.metadataType === 'c2pa');
 	const exif = asset.metadata?.find(m => m.metadataType === 'exif');
+	const platformMeta = asset.metadata?.find(m => m.metadataType === 'platform');
+	const pngChunks = asset.metadata?.find(m => m.metadataType === 'png_chunks');
 	const c2paData = c2pa ? JSON.parse(c2pa.rawJson) : null;
 	const exifData = exif ? JSON.parse(exif.rawJson) : null;
+	const platformData = platformMeta ? JSON.parse(platformMeta.rawJson) : null;
+	const pngChunksData = pngChunks ? JSON.parse(pngChunks.rawJson) : null;
+
+	const coverage = asset.extractionCoverage;
+	const isNovel = asset.platform === 'unknown' || (coverage != null && coverage < 60);
+	const coverageColor = coverage == null ? 'text-text-secondary'
+		: coverage >= 80 ? 'text-success'
+		: coverage >= 60 ? 'text-text-primary'
+		: 'text-amber-400';
 
 	return (
 		<div>
@@ -129,6 +153,32 @@ export default function AIAssetDetail() {
 						<div className="flex justify-between"><span className="text-text-secondary">Size</span><span className="text-text-primary">{asset.fileSize ? (asset.fileSize / 1024).toFixed(0) + ' KB' : '—'}</span></div>
 						<div className="flex justify-between"><span className="text-text-secondary">Type</span><span className="text-text-primary capitalize">{asset.assetType}</span></div>
 						<div className="flex justify-between"><span className="text-text-secondary">Platform</span><span className="text-text-primary">{PLATFORM_LABELS[asset.platform] || asset.platform}</span></div>
+						<div className="flex justify-between">
+							<span className="text-text-secondary">Extraction coverage</span>
+							<span className={coverageColor}>{coverage == null ? '—' : `${coverage}%`}</span>
+						</div>
+					</div>
+
+					{/* Novelty + re-extract controls. Re-extract replays current parsers against stored
+					    raw metadata, so parser improvements can upgrade previously-imported assets. */}
+					<div className={`border rounded-lg p-3 ${isNovel ? 'bg-amber-500/5 border-amber-500/30' : 'bg-card-bg border-border'}`}>
+						{isNovel && (
+							<p className="text-xs text-amber-400 mb-2 flex items-center gap-1.5">
+								<svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+									<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+								</svg>
+								{asset.platform === 'unknown' ? 'Unknown platform — no parser matched' : `Low coverage (${coverage}%) — parser may need updating`}
+							</p>
+						)}
+						<button type="button" onClick={() => reExtract.mutate()} disabled={reExtract.isPending}
+							className="w-full px-3 py-1.5 text-xs rounded-md border border-border bg-card-hover hover:bg-card-bg text-text-primary disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+							<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+								<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+							</svg>
+							{reExtract.isPending ? 'Re-extracting…' : 'Re-extract metadata'}
+						</button>
+						{reExtract.isError && <p className="text-xs text-danger mt-2">{reExtract.error.message}</p>}
+						{reExtract.isSuccess && <p className="text-xs text-success mt-2">Re-extracted.</p>}
 					</div>
 
 					{/* C2PA panel */}
@@ -161,6 +211,35 @@ export default function AIAssetDetail() {
 							<div className="space-y-1.5 max-h-60 overflow-y-auto">
 								{Object.entries(exifData).slice(0, 40).map(([k, v]) => (
 									<MetaRow key={k} label={k} value={v} />
+								))}
+							</div>
+						</Section>
+					)}
+
+					{/* Parsed platform data — what the active parser extracted */}
+					{platformData && (
+						<Section title="Parsed platform data" defaultOpen={false}>
+							<div className="space-y-1.5 max-h-60 overflow-y-auto">
+								{Object.entries(platformData).map(([k, v]) => {
+									if (v === null || v === undefined || v === '' || v === 0) return null;
+									const display = typeof v === 'object' ? JSON.stringify(v) : v;
+									return <MetaRow key={k} label={k} value={display} />;
+								})}
+							</div>
+						</Section>
+					)}
+
+					{/* Raw PNG chunks — useful when platform='unknown' to see what parsers could target */}
+					{pngChunksData && Object.keys(pngChunksData).length > 0 && (
+						<Section title="PNG chunks (raw)" defaultOpen={false}>
+							<div className="space-y-2 max-h-60 overflow-y-auto">
+								{Object.entries(pngChunksData).map(([k, v]) => (
+									<div key={k}>
+										<p className="text-xs text-text-secondary mb-0.5">{k}</p>
+										<pre className="text-[10px] text-text-primary font-mono bg-card-hover rounded p-2 overflow-x-auto whitespace-pre-wrap break-all">
+											{typeof v === 'string' ? v : JSON.stringify(v, null, 2)}
+										</pre>
+									</div>
 								))}
 							</div>
 						</Section>

@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { getArchivalAsset, listArchivalAssets, markNotionSynced } from '../lib/archival/archival.js';
 import { getActiveProject } from '../lib/projects.js';
+import { createLogger } from '../lib/logger.js';
 import { syncAssetToNotion, isNotionConfigured } from '../lib/archival/notion.js';
 
 const router = Router();
+const log = createLogger('notion');
 
 router.get('/status', async (req, res) => {
 	const project = await getActiveProject();
@@ -20,12 +22,12 @@ router.post('/sync/:id', async (req, res) => {
 	}
 
 	try {
-		console.log(`[notion] Syncing asset ${asset.id}: "${asset.name?.slice(0, 40)}" (pageId: ${asset.notionPageId || 'new'})`);
+		log.info(`Syncing asset ${asset.id}: "${asset.name?.slice(0, 40)}" (pageId: ${asset.notionPageId || 'new'})`);
 		const { notionPageId } = await syncAssetToNotion(asset, project);
 		await markNotionSynced(asset.id, notionPageId);
 		res.json({ success: true, notionPageId });
 	} catch (err) {
-		console.error(`[notion] FAILED asset ${asset.id}: ${err.message}`);
+		log.error(`FAILED asset ${asset.id}: ${err.message}`);
 		res.status(500).json({ error: err.message });
 	}
 });
@@ -41,12 +43,12 @@ router.post('/sync-all', async (req, res) => {
 
 	for (const asset of assets) {
 		try {
-			console.log(`[notion] Syncing asset ${asset.id}: "${asset.name?.slice(0, 40)}" (pageId: ${asset.notionPageId || 'new'})`);
+			log.info(`Syncing asset ${asset.id}: "${asset.name?.slice(0, 40)}" (pageId: ${asset.notionPageId || 'new'})`);
 			const { notionPageId } = await syncAssetToNotion(asset, project);
 			await markNotionSynced(asset.id, notionPageId);
 			results.synced++;
 		} catch (err) {
-			console.error(`[notion] FAILED asset ${asset.id}: ${err.message}`);
+			log.error(`FAILED asset ${asset.id}: ${err.message}`);
 			results.failed++;
 			results.errors.push({ id: asset.id, name: asset.name, error: err.message });
 		}

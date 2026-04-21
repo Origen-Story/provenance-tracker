@@ -9,7 +9,7 @@ const ASSET_TYPES = [
 	{ value: 'archival', label: 'Archival Images', icon: 'archive', desc: 'Public domain images from archives', color: 'text-amber-400' }
 ];
 
-const PLATFORM_LABELS = { freepik: 'Freepik', comfyui: 'ComfyUI', midjourney: 'Midjourney', unknown: 'Unknown' };
+const PLATFORM_LABELS = { freepik: 'Freepik', comfyui: 'ComfyUI', midjourney: 'Midjourney', firefly: 'Adobe Firefly', elevenlabs: 'ElevenLabs', 'topaz-video-ai': 'Topaz Video AI', unknown: 'Unknown' };
 const DIGITAL_SOURCE_TYPES = [
 	{ value: 'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia', label: 'Trained Algorithmic Media (AI-generated)' },
 	{ value: 'http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicMedia', label: 'Algorithmic Media' },
@@ -497,7 +497,7 @@ export default function ImportHub() {
 								<label className="block text-sm font-medium text-text-primary mb-1.5">Folder path</label>
 								<input type="text" value={folderPath} onChange={e => setFolderPath(e.target.value)}
 									onKeyDown={e => e.key === 'Enter' && folderPath.trim() && handleScan()}
-									placeholder="P:\Resounding Histories\tours\year-of-gaudi-tour\archival-images"
+									placeholder="C:\path\to\archival-images"
 									className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm" />
 								<p className="text-xs text-text-secondary mt-1">All supported files will be copied to managed storage and scanned. Subdirectories are not included.</p>
 							</div>

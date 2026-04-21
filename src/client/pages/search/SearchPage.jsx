@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader.jsx';
 
 const TIER_STYLES = {
@@ -189,6 +189,66 @@ function DetailModal({ candidate, onClose, onApprove, onReject, onFlag, onRetry,
 }
 
 // ---------------------------------------------------------------------------
+// Search job progress — shared by SearchPage + GroupsManager via export
+// ---------------------------------------------------------------------------
+
+export function JobProgress({ job, onCancel, onDismiss, onRetry, cancelling, retrying }) {
+	const active = ['queued', 'running'].includes(job.status);
+	const retryable = ['failed', 'cancelled'].includes(job.status);
+	const totalSteps = (job.keywordsTotal || 0) + (job.categoriesTotal || 0);
+	const doneSteps = (job.keywordsDone || 0) + (job.categoriesDone || 0);
+	const pct = totalSteps > 0 ? Math.round((doneSteps / totalSteps) * 100) : 0;
+	const barColor = job.status === 'failed' ? 'bg-red-500' : job.status === 'cancelled' ? 'bg-amber-500' : job.status === 'completed' ? 'bg-emerald-500' : 'bg-accent';
+
+	return (
+		<div className="mt-3 bg-sidebar-bg rounded-lg px-3 py-2 text-sm">
+			<div className="flex items-center justify-between gap-3 mb-1.5">
+				<div className="flex items-center gap-2 min-w-0">
+					<span className="text-text-primary font-medium truncate">{job.groupName}</span>
+					<span className="text-xs text-text-secondary">
+						{job.status === 'queued' && 'queued'}
+						{job.status === 'running' && `${doneSteps}/${totalSteps} steps`}
+						{job.status === 'completed' && `done — ${job.candidatesInserted} new candidates`}
+						{job.status === 'failed' && `failed: ${job.lastError || 'unknown error'}`}
+						{job.status === 'cancelled' && 'cancelled'}
+					</span>
+				</div>
+				<div className="flex items-center gap-2 shrink-0">
+					{active && (
+						<button onClick={onCancel} disabled={cancelling}
+							className="text-xs text-text-secondary hover:text-red-400 disabled:opacity-40">
+							{cancelling ? 'Cancelling...' : 'Cancel'}
+						</button>
+					)}
+					{retryable && onRetry && (
+						<button onClick={onRetry} disabled={retrying}
+							className="text-xs text-accent hover:text-accent-hover disabled:opacity-40">
+							{retrying ? 'Retrying...' : 'Retry'}
+						</button>
+					)}
+					{!active && (
+						<button onClick={onDismiss} className="text-xs text-text-secondary hover:text-text-primary">Dismiss</button>
+					)}
+				</div>
+			</div>
+			<div className="h-1.5 bg-card-hover rounded overflow-hidden">
+				<div className={`h-full ${barColor} transition-all`} style={{ width: `${active ? pct : 100}%` }} />
+			</div>
+			{job.status === 'running' && (
+				<p className="text-[11px] text-text-secondary mt-1">
+					{job.keywordsDone || 0}/{job.keywordsTotal || 0} keywords · {job.categoriesDone || 0}/{job.categoriesTotal || 0} categories · {job.uniqueTitles || 0} unique titles · {job.candidatesInserted || 0} inserted
+				</p>
+			)}
+			{job.status === 'completed' && (job.skippedLicense > 0 || job.skippedDuplicate > 0 || job.skippedExisting > 0) && (
+				<p className="text-[11px] text-text-secondary mt-1">
+					skipped {job.skippedLicense || 0} (license), {job.skippedDuplicate || 0} (dup), {job.skippedExisting || 0} (already in archive)
+				</p>
+			)}
+		</div>
+	);
+}
+
+// ---------------------------------------------------------------------------
 // Main Page
 // ---------------------------------------------------------------------------
 
@@ -198,18 +258,19 @@ export default function SearchPage() {
 	const [search, setSearch] = useState(searchParams.get('search') || '');
 	const [selected, setSelected] = useState(new Set());
 	const [detailId, setDetailId] = useState(null);
+	const [activeJobId, setActiveJobId] = useState(null);
 	const pageSize = parseInt(searchParams.get('limit') || '60');
 	const page = parseInt(searchParams.get('page') || '1');
 
-	const stopFilter = searchParams.get('stopId') || '';
+	const groupFilter = searchParams.get('searchGroupId') || searchParams.get('stopId') || '';
 	const statusFilter = searchParams.get('status') || 'pending';
 	const tierFilter = searchParams.get('licenseTier') || '';
 	const searchTypeFilter = searchParams.get('searchType') || '';
 
-	// Fetch stops list
-	const { data: stops } = useQuery({
-		queryKey: ['searchStops'],
-		queryFn: () => fetch('/api/search/stops').then(r => r.json())
+	// Fetch groups list
+	const { data: groups } = useQuery({
+		queryKey: ['searchGroups'],
+		queryFn: () => fetch('/api/search-groups').then(r => r.json())
 	});
 
 	// Fetch stats first (polls while background approvals are in-flight)
@@ -227,10 +288,10 @@ export default function SearchPage() {
 
 	// Fetch candidates
 	const { data, isLoading } = useQuery({
-		queryKey: ['searchCandidates', { stopId: stopFilter, status: statusFilter, licenseTier: tierFilter, searchType: searchTypeFilter, search: searchParams.get('search') || '', page, pageSize }],
+		queryKey: ['searchCandidates', { searchGroupId: groupFilter, status: statusFilter, licenseTier: tierFilter, searchType: searchTypeFilter, search: searchParams.get('search') || '', page, pageSize }],
 		queryFn: () => {
 			const p = new URLSearchParams();
-			if (stopFilter) p.set('stopId', stopFilter);
+			if (groupFilter) p.set('searchGroupId', groupFilter);
 			if (statusFilter) p.set('status', statusFilter);
 			if (tierFilter) p.set('licenseTier', tierFilter);
 			if (searchTypeFilter) p.set('searchType', searchTypeFilter);
@@ -242,16 +303,45 @@ export default function SearchPage() {
 		refetchInterval: processingCount > 0 ? 5000 : false
 	});
 
-	// Execute search mutation
+	// Enqueue a search job — returns a jobId, then we poll /jobs/:id for progress.
 	const executeSearch = useMutation({
-		mutationFn: (stopId) => fetch('/api/search/execute', {
+		mutationFn: (groupId) => fetch('/api/search/execute', {
 			method: 'POST', headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ stopId })
-		}).then(r => r.json()),
-		onSuccess: () => {
+			body: JSON.stringify({ groupId })
+		}).then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Search enqueue failed'); return d; }),
+		onSuccess: (d) => setActiveJobId(d.jobId)
+	});
+
+	// Poll active job while queued/running; stop once it terminates.
+	const { data: activeJob } = useQuery({
+		queryKey: ['searchJob', activeJobId],
+		queryFn: () => fetch(`/api/search/jobs/${activeJobId}`).then(r => r.json()),
+		enabled: !!activeJobId,
+		refetchInterval: (q) => {
+			const j = q.state.data;
+			if (!j) return 2000;
+			return ['queued', 'running'].includes(j.status) ? 2000 : false;
+		}
+	});
+
+	// When a job finishes, refresh candidate views.
+	useEffect(() => {
+		if (!activeJob) return;
+		if (['completed', 'failed', 'cancelled'].includes(activeJob.status)) {
 			qc.invalidateQueries({ queryKey: ['searchCandidates'] });
 			qc.invalidateQueries({ queryKey: ['searchStats'] });
 		}
+	}, [activeJob?.id, activeJob?.status, qc]);
+
+	const cancelJobMut = useMutation({
+		mutationFn: (jobId) => fetch(`/api/search/jobs/${jobId}/cancel`, { method: 'POST' })
+			.then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d; })
+	});
+
+	const retryJobMut = useMutation({
+		mutationFn: (jobId) => fetch(`/api/search/jobs/${jobId}/retry`, { method: 'POST' })
+			.then(async r => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d; }),
+		onSuccess: (job) => { setActiveJobId(job.id); }
 	});
 
 	// Single approve
@@ -355,8 +445,8 @@ export default function SearchPage() {
 
 	const detailCandidate = detailId ? candidates.find(c => c.id === detailId) : null;
 
-	// Stop picker state
-	const [selectedStop, setSelectedStop] = useState('');
+	// Group picker state
+	const [selectedGroup, setSelectedGroup] = useState('');
 
 	return (
 		<div>
@@ -390,8 +480,8 @@ export default function SearchPage() {
 			{stats?.length > 0 && (
 				<div className="flex gap-2 mb-4 flex-wrap">
 					{stats.map(s => (
-						<div key={s.stopId} className="text-xs bg-card-bg border border-border rounded px-2.5 py-1.5">
-							<span className="text-text-secondary">{s.stopName}: </span>
+						<div key={s.searchGroupId} className="text-xs bg-card-bg border border-border rounded px-2.5 py-1.5">
+							<span className="text-text-secondary">{s.searchGroupName}: </span>
 							<span className="text-text-primary font-medium">{s.pending}</span>
 							<span className="text-text-secondary"> pending</span>
 							{(s.processing || 0) > 0 && <><span className="text-blue-400 ml-1">{s.processing}</span><span className="text-text-secondary"> in queue</span></>}
@@ -406,41 +496,34 @@ export default function SearchPage() {
 			<div className="bg-card-bg border border-border rounded-lg p-4 mb-6">
 				<div className="flex gap-3 items-end flex-wrap">
 					<div className="flex-1 min-w-48">
-						<label className="text-xs text-text-secondary mb-1 block">Search a stop</label>
-						<select value={selectedStop} onChange={e => setSelectedStop(e.target.value)}
+						<div className="flex items-center justify-between mb-1">
+							<label className="text-xs text-text-secondary">Search a group</label>
+							<Link to="/search/groups" className="text-xs text-accent hover:text-accent-hover">Manage groups →</Link>
+						</div>
+						<select value={selectedGroup} onChange={e => setSelectedGroup(e.target.value)}
 							className="w-full bg-sidebar-bg border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent">
-							<option value="">Select a stop...</option>
-							{(stops || []).map(s => (
-								<option key={s.stopId} value={s.stopId}>{s.stopName} ({s.keywordCount} keywords, {s.categoryCount} categories)</option>
+							<option value="">Select a group...</option>
+							{(groups || []).map(g => (
+								<option key={g.groupId} value={g.groupId}>{g.groupName} ({g.keywordCount} keywords, {g.categoryCount} categories)</option>
 							))}
 						</select>
 					</div>
 					<button
-						onClick={() => selectedStop && executeSearch.mutate(selectedStop)}
-						disabled={!selectedStop || executeSearch.isPending}
+						onClick={() => selectedGroup && executeSearch.mutate(selectedGroup)}
+						disabled={!selectedGroup || executeSearch.isPending || (activeJob && ['queued', 'running'].includes(activeJob.status))}
 						className="px-5 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-40 flex items-center gap-2">
-						{executeSearch.isPending ? (
-							<>
-								<svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>
-								Searching...
-							</>
-						) : (
-							<>
-								<svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-								Search Wikimedia
-							</>
-						)}
+						<svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+						Search Wikimedia
 					</button>
 				</div>
-				{executeSearch.data && !executeSearch.isPending && (
-					<div className="mt-3 text-sm text-text-secondary bg-sidebar-bg rounded-lg px-3 py-2">
-						Found <span className="text-text-primary font-medium">{executeSearch.data.totalWithInfo}</span> images,
-						inserted <span className="text-accent font-medium">{executeSearch.data.inserted}</span> new candidates.
-						{executeSearch.data.skippedLicense > 0 && <> Skipped {executeSearch.data.skippedLicense} (restricted license).</>}
-						{executeSearch.data.skippedDuplicate > 0 && <> {executeSearch.data.skippedDuplicate} already in candidates.</>}
-						{executeSearch.data.skippedExisting > 0 && <> {executeSearch.data.skippedExisting} already in archive.</>}
-					</div>
-				)}
+				{activeJob && <JobProgress
+					job={activeJob}
+					onCancel={() => cancelJobMut.mutate(activeJob.id)}
+					onDismiss={() => setActiveJobId(null)}
+					onRetry={() => retryJobMut.mutate(activeJob.id)}
+					cancelling={cancelJobMut.isPending}
+					retrying={retryJobMut.isPending}
+				/>}
 			</div>
 
 			{/* Filter bar */}
@@ -450,10 +533,10 @@ export default function SearchPage() {
 					placeholder="Search title, description, author..."
 					className="flex-1 min-w-48 bg-card-bg border border-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent"
 				/>
-				<select value={stopFilter} onChange={e => setFilter('stopId', e.target.value)}
+				<select value={groupFilter} onChange={e => setFilter('searchGroupId', e.target.value)}
 					className="bg-card-bg border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent">
-					<option value="">All stops</option>
-					{(stops || []).map(s => <option key={s.stopId} value={s.stopId}>{s.stopName}</option>)}
+					<option value="">All groups</option>
+					{(groups || []).map(g => <option key={g.groupId} value={g.groupId}>{g.groupName}</option>)}
 				</select>
 				<select value={statusFilter} onChange={e => setFilter('status', e.target.value)}
 					className="bg-card-bg border border-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent">
@@ -567,7 +650,7 @@ export default function SearchPage() {
 				<p className="text-text-secondary text-sm">Loading...</p>
 			) : candidates.length === 0 ? (
 				<div className="text-center py-20 text-text-secondary">
-					{(stopFilter || searchParams.get('search') || tierFilter) ? (
+					{(groupFilter || searchParams.get('search') || tierFilter) ? (
 						<>
 							<p>No candidates match your filters.</p>
 							<button onClick={() => setSearchParams({ status: 'pending' }, { replace: true })}
@@ -578,7 +661,7 @@ export default function SearchPage() {
 					) : statusFilter === 'pending' ? (
 						<>
 							<p className="mb-2">No pending candidates.</p>
-							<p className="text-sm">Select a stop above and click "Search Wikimedia" to find images.</p>
+							<p className="text-sm">Select a group above and click "Search Wikimedia" to find images.</p>
 						</>
 					) : (
 						<p>No candidates with status "{statusFilter}".</p>
@@ -623,8 +706,8 @@ export default function SearchPage() {
 										<p className="font-medium text-text-primary text-sm leading-tight truncate">{c.title || 'Untitled'}</p>
 										{c.author && <p className="text-xs text-text-secondary mt-0.5 truncate">{c.author}</p>}
 										<div className="flex items-center justify-between mt-2">
-											<span className="text-xs text-text-secondary truncate" title={c.searchQuery || c.stopName}>
-												{c.searchQuery ? c.searchQuery.replace(/^\[(keyword|category)\]\s*/, (_, type) => type === 'keyword' ? '🔑 ' : '📁 ') : c.stopName}
+											<span className="text-xs text-text-secondary truncate" title={c.searchQuery || c.searchGroupName}>
+												{c.searchQuery ? c.searchQuery.replace(/^\[(keyword|category)\]\s*/, (_, type) => type === 'keyword' ? '🔑 ' : '📁 ') : c.searchGroupName}
 											</span>
 											{c.status !== 'pending' && (() => {
 												const eff = effectiveStatus(c);

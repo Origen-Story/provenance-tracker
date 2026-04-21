@@ -12,9 +12,11 @@
 import { db } from '../../db/index.js';
 import { searchCandidates } from '../../db/schema.js';
 import { eq, and, sql, or, isNull, lte, asc } from 'drizzle-orm';
+import { createLogger } from '../logger.js';
 import { processOne } from './search.js';
 import { getActiveProject } from '../projects.js';
 
+const log = createLogger('queue');
 const POLL_INTERVAL_MS = 5000;     // one pickup attempt per tick (conservative to stay under Wikimedia rate limits)
 const LEASE_SECONDS = 60;          // claim window so crashes don't re-pick immediately
 const MAX_RETRIES = 5;
@@ -27,7 +29,7 @@ let _timer = null;
 
 export function startQueueWorker() {
 	if (_timer) return;
-	console.log(`[queue] Starting worker (poll every ${POLL_INTERVAL_MS}ms, max ${MAX_RETRIES} retries)`);
+	log.info(`Starting worker (poll every ${POLL_INTERVAL_MS}ms, max ${MAX_RETRIES} retries)`);
 	_timer = setInterval(tick, POLL_INTERVAL_MS);
 }
 
@@ -47,19 +49,19 @@ async function tick() {
 		if (!candidate) return;
 
 		const attempt = (candidate.retryCount || 0) + 1;
-		console.log(`[queue] PICK  candidate ${candidate.id} "${(candidate.title || '').slice(0, 60)}" (attempt ${attempt}/${MAX_RETRIES})`);
+		log.info(`PICK  candidate ${candidate.id} "${(candidate.title || '').slice(0, 60)}" (attempt ${attempt}/${MAX_RETRIES})`);
 
 		try {
 			const asset = await processOne(project.id, candidate, project.storagePath);
 			await db.update(searchCandidates)
 				.set({ status: 'approved', archivalAssetId: asset.id, lastError: '', updatedAt: sql`now()` })
 				.where(eq(searchCandidates.id, candidate.id));
-			console.log(`[queue] OK    candidate ${candidate.id} → asset ${asset.id}`);
+			log.info(`OK    candidate ${candidate.id} → asset ${asset.id}`);
 		} catch (err) {
 			await handleFailure(candidate, attempt, err);
 		}
 	} catch (err) {
-		console.error('[queue] tick error:', err.message);
+		log.error('tick error:', err.message);
 	} finally {
 		_running = false;
 	}
@@ -90,7 +92,7 @@ async function handleFailure(candidate, attempt, err) {
 
 	if (cls === 'permanent-duplicate') {
 		// processOne already set status='rejected' with the reason; nothing to do.
-		console.log(`[queue] DUP   candidate ${candidate.id} — ${msg}`);
+		log.info(`DUP   candidate ${candidate.id} — ${msg}`);
 		return;
 	}
 
@@ -98,7 +100,7 @@ async function handleFailure(candidate, attempt, err) {
 		await db.update(searchCandidates)
 			.set({ status: 'failed', lastError: msg, retryCount: attempt, updatedAt: sql`now()` })
 			.where(eq(searchCandidates.id, candidate.id));
-		console.log(`[queue] FAIL  candidate ${candidate.id} — permanent: ${msg}`);
+		log.warn(`FAIL  candidate ${candidate.id} — permanent: ${msg}`);
 		return;
 	}
 
@@ -107,7 +109,7 @@ async function handleFailure(candidate, attempt, err) {
 		await db.update(searchCandidates)
 			.set({ status: 'failed', lastError: msg, retryCount: attempt, updatedAt: sql`now()` })
 			.where(eq(searchCandidates.id, candidate.id));
-		console.log(`[queue] FAIL  candidate ${candidate.id} — gave up after ${attempt} attempts: ${msg}`);
+		log.warn(`FAIL  candidate ${candidate.id} — gave up after ${attempt} attempts: ${msg}`);
 		return;
 	}
 
@@ -123,7 +125,7 @@ async function handleFailure(candidate, attempt, err) {
 			updatedAt: sql`now()`
 		})
 		.where(eq(searchCandidates.id, candidate.id));
-	console.log(`[queue] RETRY candidate ${candidate.id} — attempt ${attempt}/${MAX_RETRIES} failed, next in ${waitSec}s: ${msg}`);
+	log.info(`RETRY candidate ${candidate.id} — attempt ${attempt}/${MAX_RETRIES} failed, next in ${waitSec}s: ${msg}`);
 }
 
 function classifyError(err) {
@@ -150,7 +152,7 @@ export async function releaseStaleLeases() {
 		))
 		.returning({ id: searchCandidates.id });
 	if (result.length > 0) {
-		console.log(`[queue] Released ${result.length} stale lease${result.length !== 1 ? 's' : ''} from prior run`);
+		log.info(`Released ${result.length} stale lease${result.length !== 1 ? 's' : ''} from prior run`);
 	}
 }
 

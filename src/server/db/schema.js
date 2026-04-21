@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, integer, boolean, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 
 export const projectConfig = pgTable('project_config', {
 	id: serial('id').primaryKey(),
@@ -43,6 +43,10 @@ export const assets = pgTable('assets', {
 	platform: text('platform').default('unknown'),
 	digitalSourceType: text('digital_source_type').default(''),
 	completeness: integer('completeness').default(0),
+	// How many of the detected parser's core fields got populated (0–100).
+	// `null` means extraction hasn't run (older rows pre-migration); 0 means
+	// platform='unknown' or no core fields survived. Drives novelty detection.
+	extractionCoverage: integer('extraction_coverage'),
 	generationDate: text('generation_date').default(''),
 	notes: text('notes').default(''),
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
@@ -151,11 +155,49 @@ export const producedAssets = pgTable('produced_assets', {
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
 });
 
+export const searchJobs = pgTable('search_jobs', {
+	id: serial('id').primaryKey(),
+	projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+	groupId: text('group_id').notNull().default(''),             // denormalized so deleting the group doesn't orphan
+	groupName: text('group_name').notNull().default(''),
+	status: text('status').notNull().default('queued'),          // queued | running | completed | failed | cancelled
+	keywordsTotal: integer('keywords_total').default(0),
+	keywordsDone: integer('keywords_done').default(0),
+	categoriesTotal: integer('categories_total').default(0),
+	categoriesDone: integer('categories_done').default(0),
+	uniqueTitles: integer('unique_titles').default(0),
+	candidatesInserted: integer('candidates_inserted').default(0),
+	skippedLicense: integer('skipped_license').default(0),
+	skippedDuplicate: integer('skipped_duplicate').default(0),
+	skippedExisting: integer('skipped_existing').default(0),
+	leaseUntil: timestamp('lease_until', { withTimezone: true }),
+	lastError: text('last_error').default(''),
+	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+	startedAt: timestamp('started_at', { withTimezone: true }),
+	completedAt: timestamp('completed_at', { withTimezone: true }),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
+});
+
+export const searchGroups = pgTable('search_groups', {
+	id: serial('id').primaryKey(),
+	projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+	groupId: text('group_id').notNull().default(''),           // stable identifier, user-editable, unique per project
+	groupName: text('group_name').notNull().default(''),       // display name
+	keywords: text('keywords').default('{}'),                  // JSON dict { lang: [terms] } — lang keys free-form
+	categories: text('categories').default('[]'),              // JSON array of Wikimedia category names
+	notes: text('notes').default(''),
+	sortOrder: integer('sort_order').default(0),
+	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
+}, (table) => ({
+	projectGroupIdx: uniqueIndex('search_groups_project_group_idx').on(table.projectId, table.groupId)
+}));
+
 export const searchCandidates = pgTable('search_candidates', {
 	id: serial('id').primaryKey(),
 	projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-	stopId: text('stop_id').notNull().default(''),
-	stopName: text('stop_name').notNull().default(''),
+	searchGroupId: text('search_group_id').notNull().default(''),
+	searchGroupName: text('search_group_name').notNull().default(''),
 	source: text('source').notNull().default('wikimedia'),
 	sourcePageUrl: text('source_page_url').notNull(),
 	imageUrl: text('image_url').notNull(),

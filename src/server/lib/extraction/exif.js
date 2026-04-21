@@ -1,5 +1,7 @@
 import { ExifTool } from 'exiftool-vendored';
+import { createLogger } from '../logger.js';
 
+const log = createLogger('exif');
 let exiftool = null;
 
 function getExifTool() {
@@ -19,7 +21,7 @@ export async function extractExif(filePath) {
 		const tags = await getExifTool().read(filePath);
 		return tags;
 	} catch (err) {
-		console.error(`EXIF extraction failed for ${filePath}:`, err.message);
+		log.error(`extraction failed for ${filePath}:`, err.message);
 		return null;
 	}
 }

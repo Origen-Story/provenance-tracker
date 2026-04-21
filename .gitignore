@@ -15,6 +15,9 @@ data/
 # Test images (local only)
 test-images/
 
+# Test fixtures (large local-only binary samples for parser development)
+test-fixtures/
+
 # OS
 .DS_Store
 Thumbs.db

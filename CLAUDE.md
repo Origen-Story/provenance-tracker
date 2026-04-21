@@ -60,7 +60,10 @@ npm run db:migrate       # Run pending migrations
 
 ## Database
 
-PostgreSQL (local install). Connection via `DATABASE_URL` in `.env`. Schema in `src/server/db/schema.js`. Use `npm run db:push` during development.
+PostgreSQL (local install). Connection via `DATABASE_URL` in `.env`. Schema in `src/server/db/schema.js`; committed migrations in `src/server/db/migrations/`.
+
+- **Local iteration** (solo dev DB): `npm run db:push` — fast diff-and-apply, bypasses migration tracking, can silently drop columns.
+- **Any shared or shipped DB**: change `schema.js` → `npm run db:generate` → review the new SQL file → commit → `npm run db:migrate` (or let fresh installs run `db:migrate` on first setup). The baseline through v0.1.0 is already tracked in `drizzle.__drizzle_migrations`.
 
 ### Tables
 

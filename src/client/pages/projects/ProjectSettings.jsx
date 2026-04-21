@@ -109,7 +109,7 @@ export default function ProjectSettings() {
 					<div>
 						<label className="block text-sm font-medium text-text-primary mb-1.5">Storage path <span className="text-text-secondary font-normal">(optional)</span></label>
 						<input type="text" value={storagePath} onChange={e => setStoragePath(e.target.value)}
-							placeholder="C:\Projects\Gaudi or leave blank for default"
+							placeholder="C:\Projects\my-project or leave blank for default"
 							className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm" />
 						<p className="text-xs text-text-secondary mt-1">Where downloaded images are saved. Defaults to <code className="bg-border/40 px-1 rounded">data/archival/images/</code> inside the app folder.</p>
 					</div>

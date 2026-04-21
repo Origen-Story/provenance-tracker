@@ -67,14 +67,14 @@ export default function NewProject() {
 								Project name <span className="text-danger">*</span>
 							</label>
 							<input type="text" value={name} onChange={e => setName(e.target.value)}
-								placeholder="Antoni Gaudí Documentary"
+								placeholder="My Documentary Project"
 								className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent"
 							/>
 						</div>
 						<div>
 							<label className="block text-sm font-medium text-text-primary mb-1.5">Description</label>
 							<textarea value={description} onChange={e => setDescription(e.target.value)}
-								placeholder="Self-guided audio tour of Gaudí's life and work"
+								placeholder="Brief description of the production"
 								rows={2}
 								className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent resize-none"
 							/>
@@ -82,15 +82,15 @@ export default function NewProject() {
 						<div>
 							<label className="block text-sm font-medium text-text-primary mb-1.5">Asset ID prefix</label>
 							<input type="text" value={prefix} onChange={e => setPrefix(e.target.value.toUpperCase())}
-								placeholder="GAUDI" maxLength={8}
+								placeholder="PROJ" maxLength={8}
 								className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent uppercase"
 							/>
-							<p className="text-xs text-text-secondary mt-1">Used for asset IDs, e.g. GAUDI-001</p>
+							<p className="text-xs text-text-secondary mt-1">Used for asset IDs, e.g. PROJ-001</p>
 						</div>
 						<div>
 							<label className="block text-sm font-medium text-text-primary mb-1.5">Storage path <span className="text-text-secondary font-normal">(optional)</span></label>
 							<input type="text" value={storagePath} onChange={e => setStoragePath(e.target.value)}
-								placeholder="C:\Projects\Gaudi or leave blank for default"
+								placeholder="C:\Projects\my-project or leave blank for default"
 								className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm"
 							/>
 							<p className="text-xs text-text-secondary mt-1">Where downloaded images are saved. Defaults to <code className="bg-border/40 px-1 rounded">data/archival/images/</code> inside the app folder.</p>

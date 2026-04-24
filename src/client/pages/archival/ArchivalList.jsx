@@ -1,42 +1,146 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/layout/PageHeader.jsx';
 
+// Client-side per-asset sync loop. One HTTP request per asset means a single
+// Notion hiccup or server blip can't torch the whole batch, and markNotionSynced
+// commits per-asset so progress survives a page refresh.
+const SYNC_DELAY_MS = 200;
+
 function SyncAllButton({ qc }) {
-	const [result, setResult] = useState(null);
+	const [phase, setPhase] = useState('idle'); // 'idle' | 'running' | 'done'
+	const [progress, setProgress] = useState({ done: 0, total: 0, failed: 0 });
+	const [errors, setErrors] = useState([]);
+	const [showErrors, setShowErrors] = useState(false);
+	const [forceAll, setForceAll] = useState(false);
+	const cancelRef = useRef(false);
 
 	const { data: notionStatus } = useQuery({
 		queryKey: ['notionStatus'],
 		queryFn: () => fetch('/api/notion/status').then(r => r.json())
 	});
 
-	const syncAll = useMutation({
-		mutationFn: () => fetch('/api/notion/sync-all', { method: 'POST' }).then(r => r.json()),
-		onSuccess: (data) => {
-			setResult(data);
-			qc.invalidateQueries({ queryKey: ['archival'] });
-		}
-	});
-
 	if (!notionStatus?.configured) return null;
 
+	async function runSync() {
+		cancelRef.current = false;
+		setPhase('running');
+		setErrors([]);
+		setShowErrors(false);
+		setProgress({ done: 0, total: 0, failed: 0 });
+
+		let assets;
+		try {
+			const res = await fetch('/api/archival?limit=5000');
+			const data = await res.json();
+			assets = data.assets || [];
+		} catch (err) {
+			setErrors([{ name: '(fetch asset list)', error: err.message }]);
+			setPhase('done');
+			return;
+		}
+
+		// Default: only sync assets that haven't been synced yet (picks up new
+		// additions + prior failures). Force mode re-pushes everything, e.g. when
+		// metadata changed and you want those edits to land in Notion.
+		if (!forceAll) assets = assets.filter(a => !a.notionSyncedAt);
+
+		setProgress({ done: 0, total: assets.length, failed: 0 });
+		const collected = [];
+
+		for (let i = 0; i < assets.length; i++) {
+			if (cancelRef.current) break;
+			const asset = assets[i];
+			try {
+				const res = await fetch(`/api/notion/sync/${asset.id}`, { method: 'POST' });
+				const body = await res.json().catch(() => ({}));
+				if (!res.ok || body.error) {
+					collected.push({ name: asset.name || `Asset ${asset.id}`, error: body.error || `HTTP ${res.status}` });
+					setProgress(p => ({ ...p, done: p.done + 1, failed: p.failed + 1 }));
+				} else {
+					setProgress(p => ({ ...p, done: p.done + 1 }));
+				}
+			} catch (err) {
+				collected.push({ name: asset.name || `Asset ${asset.id}`, error: err.message });
+				setProgress(p => ({ ...p, done: p.done + 1, failed: p.failed + 1 }));
+			}
+			if (i < assets.length - 1) await new Promise(r => setTimeout(r, SYNC_DELAY_MS));
+		}
+
+		setErrors(collected);
+		setPhase('done');
+		qc.invalidateQueries({ queryKey: ['archival'] });
+	}
+
+	function cancel() {
+		cancelRef.current = true;
+	}
+
+	function reset() {
+		setPhase('idle');
+		setErrors([]);
+		setShowErrors(false);
+		setProgress({ done: 0, total: 0, failed: 0 });
+	}
+
+	const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+
 	return (
-		<div className="flex items-center gap-3">
-			{result && (
-				<p className="text-xs text-text-secondary">
-					{result.synced} synced{result.failed > 0 ? `, ${result.failed} failed` : ''}
-				</p>
+		<div className="flex flex-col items-end gap-2">
+			<div className="flex items-center gap-3">
+				{phase === 'running' && (
+					<p className="text-xs text-text-secondary tabular-nums">
+						{progress.done} / {progress.total}{progress.failed > 0 ? ` · ${progress.failed} failed` : ''}
+					</p>
+				)}
+				{phase === 'done' && (
+					<p className="text-xs text-text-secondary">
+						{progress.done - progress.failed} synced{progress.failed > 0 ? `, ${progress.failed} failed` : ''}
+						{progress.failed > 0 && (
+							<button onClick={() => setShowErrors(s => !s)} className="ml-2 text-accent hover:text-accent-hover">
+								{showErrors ? 'hide' : 'details'}
+							</button>
+						)}
+					</p>
+				)}
+				{phase === 'running' ? (
+					<button onClick={cancel}
+						className="px-4 py-2 bg-card-bg border border-border hover:bg-card-hover text-text-primary rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+						Cancel
+					</button>
+				) : (
+					<>
+						<label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer" title="By default, only unsynced assets are processed. Enable to re-push everything (useful after editing metadata).">
+							<input type="checkbox" checked={forceAll} onChange={e => setForceAll(e.target.checked)} className="w-3.5 h-3.5 accent-accent" />
+							Resync all
+						</label>
+						<button onClick={() => { reset(); runSync(); }}
+							className="px-4 py-2 bg-card-bg border border-border hover:bg-card-hover text-text-primary rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+							<svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+								<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+								<path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+							</svg>
+							{forceAll ? 'Resync all to Notion' : (phase === 'done' ? 'Sync new + retry failed' : 'Sync to Notion')}
+						</button>
+					</>
+				)}
+			</div>
+			{phase === 'running' && progress.total > 0 && (
+				<div className="w-64 h-1 bg-card-bg border border-border rounded-full overflow-hidden">
+					<div className="h-full bg-accent transition-all" style={{ width: `${pct}%` }} />
+				</div>
 			)}
-			<button onClick={() => { setResult(null); syncAll.mutate(); }}
-				disabled={syncAll.isPending}
-				className="px-4 py-2 bg-card-bg border border-border hover:bg-card-hover text-text-primary rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-40">
-				<svg className={`w-4 h-4 ${syncAll.isPending ? 'animate-spin' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-					<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-					<path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-				</svg>
-				{syncAll.isPending ? 'Syncing…' : 'Sync all to Notion'}
-			</button>
+			{phase === 'done' && showErrors && errors.length > 0 && (
+				<div className="w-96 max-h-64 overflow-y-auto bg-card-bg border border-border rounded-lg p-3 text-xs space-y-1">
+					{errors.map((e, i) => (
+						<div key={i} className="flex gap-2">
+							<span className="text-text-primary truncate shrink-0 max-w-[40%]" title={e.name}>{e.name}</span>
+							<span className="text-danger truncate" title={e.error}>{e.error}</span>
+						</div>
+					))}
+				</div>
+			)}
 		</div>
 	);
 }

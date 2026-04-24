@@ -20,6 +20,7 @@ export default function ProjectSettings() {
 	const [storagePath, setStoragePath] = useState('');
 	const [notionEnabled, setNotionEnabled] = useState(false);
 	const [notionDbId, setNotionDbId] = useState('');
+	const [notionGroupProperty, setNotionGroupProperty] = useState('');
 	const [saved, setSaved] = useState(false);
 
 	useEffect(() => {
@@ -31,6 +32,7 @@ export default function ProjectSettings() {
 			setStoragePath(project.storagePath || '');
 			setNotionEnabled(project.notionEnabled || false);
 			setNotionDbId(project.notionArchivalDbId || '');
+			setNotionGroupProperty(project.notionGroupProperty || '');
 		}
 	}, [project]);
 
@@ -70,7 +72,8 @@ export default function ProjectSettings() {
 			storagePath,
 			modules: JSON.stringify(modules),
 			notionEnabled,
-			notionArchivalDbId: notionDbId
+			notionArchivalDbId: notionDbId,
+			notionGroupProperty
 		});
 	}
 
@@ -134,12 +137,23 @@ export default function ProjectSettings() {
 								<span className="text-sm text-text-primary">Enable Notion sync</span>
 							</label>
 							{notionEnabled && (
-								<div>
-									<label className="block text-sm font-medium text-text-primary mb-1.5">Notion Database ID</label>
-									<input type="text" value={notionDbId} onChange={e => setNotionDbId(e.target.value)}
-										placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-										className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm" />
-								</div>
+								<>
+									<div>
+										<label className="block text-sm font-medium text-text-primary mb-1.5">Notion Database ID</label>
+										<input type="text" value={notionDbId} onChange={e => setNotionDbId(e.target.value)}
+											placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+											className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm" />
+									</div>
+									<div>
+										<label className="block text-sm font-medium text-text-primary mb-1.5">Search-origin property <span className="text-text-secondary font-normal">(optional)</span></label>
+										<input type="text" value={notionGroupProperty} onChange={e => setNotionGroupProperty(e.target.value)}
+											placeholder="e.g. Source Search"
+											className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent text-sm" />
+										<p className="text-xs text-text-secondary mt-1">
+											Name of a <strong>Select</strong> or <strong>Text</strong> column in your Notion database. The app writes which search group originally found each asset here — a read-only audit trail. Leave blank to disable. Multi-select columns are deliberately skipped so your own triage fields stay untouched.
+										</p>
+									</div>
+								</>
 							)}
 						</div>
 					)}

@@ -70,12 +70,14 @@ router.get('/candidates', async (req, res) => {
 	const {
 		searchGroupId = '', stopId = '',
 		status = '', licenseTier = '', search = '', searchType = '',
-		sort = 'createdAt', dir = 'desc', limit = 100, offset = 0
+		sortBy, sortDir, sort, dir,      // accept both names; `sort`/`dir` are the older aliases
+		limit = 100, offset = 0
 	} = req.query;
 	const result = await listCandidates(project.id, {
 		searchGroupId: searchGroupId || stopId,
 		status, licenseTier, search, searchType,
-		sortBy: sort, sortDir: dir,
+		sortBy: sortBy || sort || 'createdAt',
+		sortDir: sortDir || dir || 'desc',
 		limit: parseInt(limit), offset: parseInt(offset)
 	});
 	res.json(result);

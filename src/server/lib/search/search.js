@@ -189,8 +189,40 @@ export async function listCandidates(projectId, {
 	const col = sortCols[sortBy] ?? searchCandidates.createdAt;
 	const dir = sortDir === 'asc' ? asc : desc;
 
+	// Exclude rawMetadata from the list response — it's a multi-KB Wikimedia extmetadata
+	// blob per row that the list UI never reads, only the detail view does. At 200/page
+	// it adds megabytes of wire + parse cost to every filter change.
+	const listCols = {
+		id: searchCandidates.id,
+		projectId: searchCandidates.projectId,
+		searchGroupId: searchCandidates.searchGroupId,
+		searchGroupName: searchCandidates.searchGroupName,
+		source: searchCandidates.source,
+		sourcePageUrl: searchCandidates.sourcePageUrl,
+		imageUrl: searchCandidates.imageUrl,
+		thumbnailUrl: searchCandidates.thumbnailUrl,
+		title: searchCandidates.title,
+		description: searchCandidates.description,
+		author: searchCandidates.author,
+		license: searchCandidates.license,
+		licenseUrl: searchCandidates.licenseUrl,
+		licenseTier: searchCandidates.licenseTier,
+		originalDate: searchCandidates.originalDate,
+		dimensions: searchCandidates.dimensions,
+		categories: searchCandidates.categories,
+		searchQuery: searchCandidates.searchQuery,
+		status: searchCandidates.status,
+		rejectionReason: searchCandidates.rejectionReason,
+		archivalAssetId: searchCandidates.archivalAssetId,
+		retryCount: searchCandidates.retryCount,
+		nextAttemptAt: searchCandidates.nextAttemptAt,
+		lastError: searchCandidates.lastError,
+		createdAt: searchCandidates.createdAt,
+		updatedAt: searchCandidates.updatedAt
+	};
+
 	const [rows, [{ total }]] = await Promise.all([
-		db.select().from(searchCandidates)
+		db.select(listCols).from(searchCandidates)
 			.where(and(...conditions))
 			.orderBy(dir(col))
 			.limit(limit)

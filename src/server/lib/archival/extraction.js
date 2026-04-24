@@ -64,10 +64,22 @@ export async function downloadAndExtract(sourceUrl, projectStoragePath = null) {
 
 	if (!filename) {
 		const urlPath = new URL(sourceUrl).pathname;
-		filename = path.basename(urlPath);
+		// Decode percent-encoding first so non-ASCII titles don't explode in length
+		// after sanitize (e.g. %C3%B3 → _C3_B3 adds 6 chars per vowel on every
+		// Catalan/Spanish title, easily blowing past Windows' 260-char MAX_PATH).
+		try { filename = decodeURIComponent(path.basename(urlPath)); }
+		catch { filename = path.basename(urlPath); }
 	}
 
 	filename = sanitizeFilename(filename || 'image');
+
+	// Cap stem length to keep the full path comfortably under Windows MAX_PATH (260).
+	// Storage root + uniqueness suffix + extension typically add ~80 chars; 120 leaves
+	// safe margin. Hash collision is unrealistic here — filesystem uniqueness handles dupes.
+	const stemExt = path.extname(filename);
+	const stem = path.basename(filename, stemExt);
+	if (stem.length > 120) filename = stem.slice(0, 120) + stemExt;
+
 	if (!path.extname(filename) && CONTENT_TYPE_EXT[contentType]) {
 		filename += CONTENT_TYPE_EXT[contentType];
 	}

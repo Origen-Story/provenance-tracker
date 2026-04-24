@@ -45,6 +45,7 @@ export async function createProject(data) {
 		storagePath: data.storagePath || '',
 		notionEnabled: !!data.notionEnabled,
 		notionArchivalDbId: data.notionArchivalDbId || '',
+		notionGroupProperty: data.notionGroupProperty || '',
 		isActive: true
 	}).returning();
 	await ensureStorageFolders(row);
@@ -72,6 +73,7 @@ export async function updateProject(id, data) {
 		updatedAt: sql`now()`
 	};
 	if (data.storagePath !== undefined) updates.storagePath = data.storagePath;
+	if (data.notionGroupProperty !== undefined) updates.notionGroupProperty = data.notionGroupProperty;
 	await db.update(projects).set(updates).where(eq(projects.id, id));
 	const project = await getProject(id);
 	await ensureStorageFolders(project);

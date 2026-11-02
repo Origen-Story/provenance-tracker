@@ -1,0 +1,102 @@
+[
+  {
+    "groupId": "eiffel_tower_construction",
+    "groupName": "Eiffel Tower construction (1887-1889)",
+    "keywords": {
+      "en": [
+        "Eiffel Tower construction 1888",
+        "Eiffel Tower under construction",
+        "Champ de Mars 1888 photograph",
+        "Eiffel Tower first platform",
+        "Eiffel Tower riveters"
+      ],
+      "fr": [
+        "construction de la tour Eiffel",
+        "tour Eiffel en construction 1888",
+        "chantier tour Eiffel",
+        "Champ-de-Mars 1888"
+      ],
+      "de": [
+        "Bau des Eiffelturms",
+        "Eiffelturm im Bau 1888"
+      ]
+    },
+    "categories": [
+      "Category:Construction of the Eiffel Tower"
+    ],
+    "notes": "Opening act. Favour the Durandelle construction series; look for dated prints (month and year) so the sequence can be cut chronologically.",
+    "sortOrder": 0
+  },
+  {
+    "groupId": "exposition_1889",
+    "groupName": "Exposition Universelle (1889)",
+    "keywords": {
+      "en": [
+        "Exposition Universelle 1889 Paris",
+        "1889 World's Fair Paris",
+        "Galerie des machines 1889",
+        "Exposition 1889 pavilion",
+        "Exposition 1889 crowds"
+      ],
+      "fr": [
+        "Exposition universelle de 1889",
+        "Galerie des machines 1889",
+        "pavillons exposition 1889",
+        "visiteurs exposition 1889"
+      ]
+    },
+    "categories": [
+      "Category:Exposition Universelle (1889)",
+      "Category:Galerie des machines"
+    ],
+    "notes": "Wide establishing images and visitor scenes. Chromolithographs and engravings count; tag medium accordingly.",
+    "sortOrder": 1
+  },
+  {
+    "groupId": "gustave_eiffel",
+    "groupName": "Gustave Eiffel and the engineers",
+    "keywords": {
+      "en": [
+        "Gustave Eiffel portrait",
+        "Maurice Koechlin",
+        "Emile Nouguier",
+        "Stephen Sauvestre",
+        "Eiffel company engineers"
+      ],
+      "fr": [
+        "Gustave Eiffel portrait",
+        "Maurice Koechlin ingénieur",
+        "Émile Nouguier",
+        "Stephen Sauvestre architecte"
+      ]
+    },
+    "categories": [
+      "Category:Gustave Eiffel",
+      "Category:Maurice Koechlin"
+    ],
+    "notes": "Portraits for the cast section. Prefer photographs with a known date and studio; engravings as fallback.",
+    "sortOrder": 2
+  },
+  {
+    "groupId": "artists_protest",
+    "groupName": "The artists' protest (1887)",
+    "keywords": {
+      "en": [
+        "Protest of the artists 1887 Eiffel Tower",
+        "Le Temps 14 February 1887",
+        "Eiffel Tower caricature 1887",
+        "Eiffel Tower satire"
+      ],
+      "fr": [
+        "Protestation des artistes 1887",
+        "caricature tour Eiffel 1887",
+        "Le Temps 14 février 1887 tour Eiffel"
+      ]
+    },
+    "categories": [
+      "Category:Eiffel Tower in art"
+    ],
+    "notes": "Mostly press illustrations and caricatures. Check the licence tier on anything from a newspaper archive; many are public domain but the scan may carry a claim.",
+    "sortOrder": 3
+  }
+]

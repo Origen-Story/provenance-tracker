@@ -84,7 +84,7 @@ Use **Search Groups** to define named groups of keywords and Wikimedia categorie
 Search and download jobs run in the background, so you can close the page and come back. The app ships with two bundled examples in [`src/server/db/example-data/`](src/server/db/example-data/):
 
 - [`example.groups.json`](src/server/db/example-data/example.groups.json) — a minimal 2-group template with placeholder values, showing the expected shape (multi-language keywords, categories, notes)
-- [`gaudi-tour-groups.json`](src/server/db/example-data/gaudi-tour-groups.json) — a fully-populated real-world example from an Antoni Gaudí documentary project
+- [`documentary-example-groups.json`](src/server/db/example-data/documentary-example-groups.json) — a worked example for a historical documentary (the Eiffel Tower and the 1889 Exposition): four groups with English, French and German keywords, real Wikimedia categories, and research notes
 
 ### 5. Notion sync (archival)
 

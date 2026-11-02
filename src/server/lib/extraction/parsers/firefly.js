@@ -8,7 +8,7 @@
  *   - `Actions[*].softwareAgent === 'Adobe Firefly'` (video — array, look at c2pa.edited)
  *
  * Firefly does NOT embed the prompt in the file; the prompt lives in the
- * filename (e.g. "Firefly_a portrait of Antoni Gaudi 983684.png"). We leave
+ * filename (e.g. "Firefly_a lighthouse at dusk 983684.png"). We leave
  * prompt extraction to the UI / user for now.
  */
 

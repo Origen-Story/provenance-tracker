@@ -26,7 +26,7 @@
 		"drizzle-orm": "^0.45.1",
 		"exiftool-vendored": "^35.9.0",
 		"express": "^4.21.2",
-		"multer": "^2.1.1",
+		"multer": "^2.5.0",
 		"pg": "^8.16.0",
 		"png-chunk-text": "^1.0.0",
 		"png-chunks-extract": "^1.0.0",

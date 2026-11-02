@@ -37,6 +37,7 @@ Note: Origen Story's projects currently use only the high-priority set. Deferred
 
 ## Infrastructure & dev-ex
 
+- **Bump the bundled c2patool and configure a trust list** — the vendored c2patool 0.27.1 and c2pa-node 0.5.26 predate c2pa-rs fix #2434 (indexed xpath exclusions in `c2pa.hash.bmff.v3`, shipped in c2pa-v0.91.0 on 2026-09-21). Pixel 10 Pro video manifests exclude `/moov[1]/trak[3]`, so older readers report `assertion.bmffHash.mismatch` on untouched camera originals (reproduced 2026-11-02 on a real clip; c2paviewer.com on c2pa-web 0.13.1 fails the same way). Also load the C2PA trust list so Google, Leica, Sony and the others validate as trusted instead of `signingCredential.untrusted`. The verify status in the tracker must distinguish "hash verified" from "hash not verifiable with this tooling".
 - **ESLint + Prettier config** — standard JS/JSX rules, auto-format on save. Keep it lightweight — no over-opinionated ruleset.
 - **Dockerfile for the app** — `docker-compose.yml` already runs Postgres; add a second service for the Node app so a single `docker compose up` boots the whole stack. Useful for contributors who don't want Node 22 on their host.
 - **`/api/health` endpoint** — returns `{ ok: true, db: true, version: "..." }`. Useful for reverse-proxy health checks and for the self-hosting docs.

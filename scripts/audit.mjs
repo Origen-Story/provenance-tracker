@@ -18,7 +18,9 @@ const ALLOW = {
 };
 const FAIL_LEVELS = new Set(['high', 'critical']);
 
-const r = spawnSync('npm', ['audit', '--json'], { encoding: 'utf8', shell: process.platform === 'win32' });
+// One command string through the shell: npm is npm.cmd on Windows, and Node
+// warns (DEP0190) when an args array is combined with shell: true.
+const r = spawnSync('npm audit --json', { encoding: 'utf8', shell: true });
 let report;
 try {
 	report = JSON.parse(r.stdout);

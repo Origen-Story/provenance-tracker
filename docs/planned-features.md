@@ -37,6 +37,7 @@ Note: Origen Story's projects currently use only the high-priority set. Deferred
 
 ## Infrastructure & dev-ex
 
+- **Replace the signing backend** — files signed by the tracker today (c2pa-node 0.5.26, which bundles c2pa-rs 0.49.2) verify their signature and DigiCert timestamp in c2patool 0.27.1 but then fail with `assertion.required.missing: Failed to load manifest` and an empty manifest map (seen 2026-11-02 on a signed WAV and PNG). The reference reader no longer accepts what the old core writes. Options for the output manifest (Phase 4c): a newer c2pa-node if one exists, or shelling out to a current c2patool for signing with a JSON manifest definition, keeping c2pa-node only as the fast reader. The integration test `test/integration/sign-verify.test.js` is the harness to swap the backend under.
 - **Bump the bundled c2patool and configure a trust list** — the vendored c2patool 0.27.1 and c2pa-node 0.5.26 predate c2pa-rs fix #2434 (indexed xpath exclusions in `c2pa.hash.bmff.v3`, shipped in c2pa-v0.91.0 on 2026-09-21). Pixel 10 Pro video manifests exclude `/moov[1]/trak[3]`, so older readers report `assertion.bmffHash.mismatch` on untouched camera originals (reproduced 2026-11-02 on a real clip; c2paviewer.com on c2pa-web 0.13.1 fails the same way). Also load the C2PA trust list so Google, Leica, Sony and the others validate as trusted instead of `signingCredential.untrusted`. The verify status in the tracker must distinguish "hash verified" from "hash not verifiable with this tooling".
 - **ESLint + Prettier config** — standard JS/JSX rules, auto-format on save. Keep it lightweight — no over-opinionated ruleset.
 - **Dockerfile for the app** — `docker-compose.yml` already runs Postgres; add a second service for the Node app so a single `docker compose up` boots the whole stack. Useful for contributors who don't want Node 22 on their host.
@@ -48,6 +49,7 @@ Note: Origen Story's projects currently use only the high-priority set. Deferred
 
 ## Documentation & release
 
+- **Replace the production-named example data** — `src/server/db/example-data/gaudi-tour-groups.json` and its README mention predate the public/private split (decision D1) and name a specific production. Swap it for a neutral, smaller worked example (a few groups with multilingual keywords and categories) and keep `example.groups.json` as the template. The README line in "Archive Search" changes with it.
 - **CONTRIBUTING.md** — written fresh at public launch, not retroactive. Covers: dev setup, how to add a platform parser, test-fixtures conventions, PR checklist.
 - **CHANGELOG.md** — started fresh at public launch; use Keep-a-Changelog format.
 - **Self-hosting guide** — section in README or a separate doc: reverse-proxy examples (nginx, Caddy, Tailscale), HTTPS, backups, log rotation.

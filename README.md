@@ -17,7 +17,6 @@ Built by [Origen Story](https://www.origenstory.com/).
 9. **Exports** — structured export of project assets and their provenance
 10. **Manages files** — copies imports into managed storage with SHA-256 duplicate detection and integrity monitoring
 11. **Signs assets with C2PA** — generate a dev cert with one command and sign WAV/MP3/JPEG/PNG locally, with `c2pa.actions`, `stds.schema-org.CreativeWork`, training-mining opt-out, and a CAWG-lite identity assertion
-12. **Composes final mixes** — sign narrative MP3s with composite C2PA manifests (ingredient refs from source assets) plus a custom `com.origenstory.narrative` assertion driven by Notion script data, with full sidecar JSON for downstream sites
 
 ## Quick start
 
@@ -91,32 +90,6 @@ Search and download jobs run in the background, so you can close the page and co
 
 If you configure a Notion API key and database ID on your project, archival assets can be synced individually or in batch to a Notion database.
 
-The tracker is the **source of truth** for triage fields — assignments, selects, and scene labels are edited in the tracker and pushed to Notion as a read-only display layer. Manual edits to triage fields in Notion will be overwritten on next sync.
-
-To receive triage data, add these columns to your archival Notion DB (one-time setup):
-
-| Notion column name | Type | Filled by |
-|---|---|---|
-| `Stop` | Multi-select | Tracker — list of assigned stops by display name |
-| `Selected` | Checkbox | Tracker — true if user marked the photo as a "select" |
-| `Scene` | Text | Tracker — optional free-text scene label |
-
-The existing `Source Search` (or whatever you configured as the search-origin property) keeps pointing at the immutable original search; it's never overwritten by triage.
-
-### 5b. Triage workflow (archival)
-
-Once images are imported and you want to decide which photos belong to which stop and which ones make the final cut:
-
-1. Open **Archival** and click **Triage mode** in the toolbar
-2. Three new filters appear: stop assignment, "selects only", and "unassigned only" — useful for finding photos that still need a home
-3. Click a card to toggle its multi-select; the bulk action bar appears once anything is selected
-4. Use bulk actions to **Assign to stop…**, **Remove stop…**, **Mark selected**, or **Set scene name…**
-5. Click the star on any individual card to toggle its `selected` flag without entering multi-select mode
-
-Stops live in **Search Groups**. Each group has a stable `groupId` and a free-to-rename `groupName`. Reordering stops or renaming display labels is safe — assets stay attached because they reference the `groupId`. Use the ▲▼ arrows or the **Renumber 10/20/30…** button to manage order. The **+ insert above** button on each group creates an open slot at that position so you can drop a new stop in the middle without renumbering.
-
-If you ever need to change a `groupId` itself, the editor shows a danger-zone warning and tells you how many assets currently use it. You'll need to retag those assets manually after the change.
-
 ### 6. C2PA manifest + export
 
 Under **Manifest** and **Export**, assemble Content Credentials manifests for produced assets and export structured records of a project's provenance chain.
@@ -148,17 +121,6 @@ The original is never deleted. Assets re-signed against an already-signed file w
 **About the dev cert:**
 
 The generator produces a two-step chain (a self-issued root CA + an end-entity signing cert) because c2pa-rs rejects fully self-signed leaves. Signatures from this cert verify cryptographically but won't appear as "trusted publisher" on contentcredentials.org — the trust signal is meant to come from the CAWG identity assertion (see below), not the cert chain. For production use a CA-issued cert.
-
-### 8. Composing final mixes
-
-Once narrative scripts live in Notion (Script + Characters + Sources databases) and source assets have been signed, the **Compose Final Mix** page assembles a signed final MP3 with:
-
-- A composite C2PA manifest with ingredient references for every source asset used
-- A custom `com.origenstory.narrative` assertion containing per-script-line metadata (character, voice attribution, sources, confidence)
-- Standard CAWG-lite + schema.org + training-mining-opt-out assertions
-- A parallel `<stop>.narrative.json` sidecar with the full untruncated narrative payload (the labs site reads this directly instead of parsing C2PA in-browser)
-
-Pick a stop from the Notion script DB, pick the unsigned final mix file from your produced assets, optionally tick the source ingredients, and click compose. Output writes to the same folder as the input mix unless you override the output dir.
 
 ### CAWG identity (current state)
 

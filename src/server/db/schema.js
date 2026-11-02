@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, integer, real, boolean, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 
 export const projectConfig = pgTable('project_config', {
 	id: serial('id').primaryKey(),
@@ -25,6 +25,15 @@ export const projects = pgTable('projects', {
 	notionEnabled: boolean('notion_enabled').default(false),
 	notionArchivalDbId: text('notion_archival_db_id').default(''),
 	notionGroupProperty: text('notion_group_property').default(''),  // Notion select column name for search group (e.g. "Stop", "Era")
+	// C2PA signing material. Local filesystem paths to a PEM cert chain and the
+	// matching private key. A self-signed dev chain is fine (npm run cert:generate);
+	// production uses a CA-issued cert. Absence disables signing for the project.
+	certificatePath: text('certificate_path').default(''),
+	privateKeyPath: text('private_key_path').default(''),
+	// CAWG identity assertion: a JSON document (typically at a well-known URL on
+	// the creator's domain) describing who signed the asset.
+	cawgIdentityUrl: text('cawg_identity_url').default(''),
+	cawgIdentityName: text('cawg_identity_name').default(''),
 	isActive: boolean('is_active').default(false),
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
@@ -49,6 +58,9 @@ export const assets = pgTable('assets', {
 	extractionCoverage: integer('extraction_coverage'),
 	generationDate: text('generation_date').default(''),
 	notes: text('notes').default(''),
+	// Preserved path to the unsigned original after C2PA signing moves filePath
+	// to the signed copy. Keeps the untouched source discoverable for re-signing.
+	originalFilePath: text('original_file_path'),
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
 });
@@ -151,6 +163,11 @@ export const producedAssets = pgTable('produced_assets', {
 	usageNotes: text('usage_notes').default(''),
 	exifJson: text('exif_json').default('{}'),
 	c2paJson: text('c2pa_json'),
+	// Media duration in seconds (fractional). Filled by extraction for audio and
+	// video; null for images and for rows imported before extraction read it.
+	durationSeconds: real('duration_seconds'),
+	// Preserved path to the unsigned original after C2PA signing.
+	originalFilePath: text('original_file_path'),
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
 });

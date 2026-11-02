@@ -19,6 +19,7 @@ import producedRouter from './routes/produced.js';
 import uploadRouter from './routes/upload.js';
 import searchRouter from './routes/search.js';
 import searchGroupsRouter from './routes/search-groups.js';
+import signRouter from './routes/sign.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -50,6 +51,7 @@ app.use('/api/produced', producedRouter);
 app.use('/api/upload', uploadRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/search-groups', searchGroupsRouter);
+app.use('/api/sign', signRouter);
 
 // Serve React build in production
 if (process.env.NODE_ENV === 'production') {

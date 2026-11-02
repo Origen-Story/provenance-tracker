@@ -15,7 +15,7 @@ If a platform has multiple distinct modes (e.g. Freepik's different models, Elev
 ## Images
 
 ### ComfyUI
-- [ ] 1 sample — any recent generation, PNG output
+- [ X] 1 sample — any recent generation, PNG output
 - *Looking for:* full workflow JSON in PNG `prompt` + `workflow` tEXt chunks
 
 ### MidJourney (direct, if you have any)
@@ -23,7 +23,7 @@ If a platform has multiple distinct modes (e.g. Freepik's different models, Elev
 - *Looking for:* EXIF `Description` with `--ar --s --seed` style params
 
 ### Meta-AI (MidJourney-via-Meta)
-- [ ] 2 samples — different prompts/subjects
+- [ X] 2 samples — different prompts/subjects
 - *Looking for:* XMP `DigitalSourceType`, any prompt info, re-encoding differences vs direct MJ
 
 ### Freepik

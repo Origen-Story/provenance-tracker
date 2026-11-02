@@ -29,6 +29,13 @@
       "when": 1776774679017,
       "tag": "0003_rare_bastion",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793646582843,
+      "tag": "0004_massive_odin",
+      "breakpoints": true
     }
   ]
 }

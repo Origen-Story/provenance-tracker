@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import SignAssetModal from '../../components/SignAssetModal.jsx';
 
 const ASSET_TYPES = ['audio', 'video', 'image', 'document', 'other'];
 
@@ -9,6 +10,7 @@ export default function ProducedDetail() {
 	const navigate = useNavigate();
 	const qc = useQueryClient();
 	const [saved, setSaved] = useState(false);
+	const [signOpen, setSignOpen] = useState(false);
 
 	const { data: asset, isLoading } = useQuery({
 		queryKey: ['produced', id],
@@ -80,7 +82,16 @@ export default function ProducedDetail() {
 						<div className="flex justify-between"><span className="text-text-secondary">MIME</span><span className="text-text-primary">{asset.mimeType}</span></div>
 						{asset.fileHash && <div className="flex justify-between"><span className="text-text-secondary">Hash</span><span className="text-text-primary font-mono text-xs">{asset.fileHash.slice(0, 16)}...</span></div>}
 						{asset.c2paJson && <div className="flex justify-between"><span className="text-text-secondary">C2PA</span><span className="text-success">Manifest found</span></div>}
+						{asset.originalFilePath && <div className="flex justify-between"><span className="text-text-secondary">Original</span><span className="text-text-primary font-mono text-xs truncate max-w-[60%]" title={asset.originalFilePath}>{asset.originalFilePath.split(/[\\/]/).pop()}</span></div>}
 					</div>
+
+					{!asset.c2paJson && (
+						<button onClick={() => setSignOpen(true)}
+							className="w-full px-4 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
+							<svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+							Sign with Content Credentials
+						</button>
+					)}
 
 					{Object.keys(exif).length > 0 && (
 						<details className="bg-card-bg border border-border rounded-lg">
@@ -161,6 +172,12 @@ export default function ProducedDetail() {
 					</div>
 				</form>
 			</div>
+
+			{signOpen && (
+				<SignAssetModal assetType="produced" assetId={id}
+					defaultIsAi={false} defaultTool={asset.equipment || ''}
+					onClose={() => setSignOpen(false)} />
+			)}
 		</div>
 	);
 }

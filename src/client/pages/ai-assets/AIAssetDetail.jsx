@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import SignAssetModal from '../../components/SignAssetModal.jsx';
 
 const PLATFORM_LABELS = { freepik: 'Freepik', comfyui: 'ComfyUI', midjourney: 'Midjourney', firefly: 'Adobe Firefly', elevenlabs: 'ElevenLabs', 'topaz-video-ai': 'Topaz Video AI', unknown: 'Unknown' };
 const DIGITAL_SOURCE_TYPES = [
@@ -39,6 +40,7 @@ export default function AIAssetDetail() {
 	const navigate = useNavigate();
 	const qc = useQueryClient();
 	const [saved, setSaved] = useState(false);
+	const [signOpen, setSignOpen] = useState(false);
 
 	const { data: asset, isLoading } = useQuery({
 		queryKey: ['asset', id],
@@ -200,8 +202,13 @@ export default function AIAssetDetail() {
 							</div>
 						</Section>
 					) : (
-						<div className="bg-card-bg border border-border rounded-lg p-3">
+						<div className="bg-card-bg border border-border rounded-lg p-3 space-y-2">
 							<p className="text-xs text-text-secondary">No C2PA manifest found in this file.</p>
+							<button onClick={() => setSignOpen(true)}
+								className="w-full px-3 py-1.5 text-xs rounded-md bg-accent hover:bg-accent-hover text-white transition-colors flex items-center justify-center gap-2">
+								<svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+								Sign with Content Credentials
+							</button>
 						</div>
 					)}
 
@@ -352,6 +359,12 @@ export default function AIAssetDetail() {
 					</div>
 				</form>
 			</div>
+
+			{signOpen && (
+				<SignAssetModal assetType="ai" assetId={id}
+					defaultIsAi={true} defaultTool={PLATFORM_LABELS[asset.platform] || ''}
+					onClose={() => setSignOpen(false)} />
+			)}
 		</div>
 	);
 }

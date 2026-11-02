@@ -21,6 +21,10 @@ export default function ProjectSettings() {
 	const [notionEnabled, setNotionEnabled] = useState(false);
 	const [notionDbId, setNotionDbId] = useState('');
 	const [notionGroupProperty, setNotionGroupProperty] = useState('');
+	const [certificatePath, setCertificatePath] = useState('');
+	const [privateKeyPath, setPrivateKeyPath] = useState('');
+	const [cawgIdentityUrl, setCawgIdentityUrl] = useState('');
+	const [cawgIdentityName, setCawgIdentityName] = useState('');
 	const [saved, setSaved] = useState(false);
 
 	useEffect(() => {
@@ -33,6 +37,10 @@ export default function ProjectSettings() {
 			setNotionEnabled(project.notionEnabled || false);
 			setNotionDbId(project.notionArchivalDbId || '');
 			setNotionGroupProperty(project.notionGroupProperty || '');
+			setCertificatePath(project.certificatePath || '');
+			setPrivateKeyPath(project.privateKeyPath || '');
+			setCawgIdentityUrl(project.cawgIdentityUrl || '');
+			setCawgIdentityName(project.cawgIdentityName || '');
 		}
 	}, [project]);
 
@@ -73,7 +81,11 @@ export default function ProjectSettings() {
 			modules: JSON.stringify(modules),
 			notionEnabled,
 			notionArchivalDbId: notionDbId,
-			notionGroupProperty
+			notionGroupProperty,
+			certificatePath,
+			privateKeyPath,
+			cawgIdentityUrl,
+			cawgIdentityName
 		});
 	}
 
@@ -157,6 +169,40 @@ export default function ProjectSettings() {
 							)}
 						</div>
 					)}
+
+					<div className="space-y-3 border border-border rounded-lg p-4">
+						<p className="text-sm font-medium text-text-primary">C2PA signing</p>
+						<p className="text-xs text-text-secondary">Paths to a PEM certificate chain and matching private key. Run <code className="bg-border/40 px-1 rounded">npm run cert:generate</code> to create a self-signed dev cert. Required for the "Sign with Content Credentials" feature on asset detail pages.</p>
+						<div>
+							<label className="block text-sm font-medium text-text-primary mb-1.5">Certificate path</label>
+							<input type="text" value={certificatePath} onChange={e => setCertificatePath(e.target.value)}
+								placeholder="certs/c2pa-dev-cert.pem"
+								className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm" />
+						</div>
+						<div>
+							<label className="block text-sm font-medium text-text-primary mb-1.5">Private key path</label>
+							<input type="text" value={privateKeyPath} onChange={e => setPrivateKeyPath(e.target.value)}
+								placeholder="certs/c2pa-dev-key.pem"
+								className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm" />
+						</div>
+					</div>
+
+					<div className="space-y-3 border border-border rounded-lg p-4">
+						<p className="text-sm font-medium text-text-primary">CAWG identity assertion</p>
+						<p className="text-xs text-text-secondary">Optional. URL to a hosted JSON identity document and a human-readable signer name. Embedded in every signed manifest as a <code className="bg-border/40 px-1 rounded">cawg.identity</code> assertion.</p>
+						<div>
+							<label className="block text-sm font-medium text-text-primary mb-1.5">Identity URL</label>
+							<input type="text" value={cawgIdentityUrl} onChange={e => setCawgIdentityUrl(e.target.value)}
+								placeholder="https://yourdomain.com/.well-known/cawg-identity.json"
+								className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent text-sm" />
+						</div>
+						<div>
+							<label className="block text-sm font-medium text-text-primary mb-1.5">Identity name</label>
+							<input type="text" value={cawgIdentityName} onChange={e => setCawgIdentityName(e.target.value)}
+								placeholder="e.g. Matt Ford / Origen Story"
+								className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent text-sm" />
+						</div>
+					</div>
 
 					<button type="submit" disabled={update.isPending}
 						className="px-5 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-40">

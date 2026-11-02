@@ -28,13 +28,16 @@ export const AI_ENRICHMENT_CONDITION = sql`(
 	${empty(assets.digitalSourceType)}
 )`;
 
-// Produced: name, description, assetType, recordingDate, creator
+// Produced: name, description, assetType, recordingDate, creator, plus C2PA
+// manifest. Missing Content Credentials is the v0.2 signing prompt — the row
+// turns amber until it's signed.
 export const PRODUCED_ENRICHMENT_CONDITION = sql`(
 	${empty(producedAssets.name)} OR
 	${empty(producedAssets.description)} OR
 	${empty(producedAssets.assetType)} OR
 	${empty(producedAssets.recordingDate)} OR
-	${empty(producedAssets.creator)}
+	${empty(producedAssets.creator)} OR
+	${producedAssets.c2paJson} IS NULL
 )`;
 
 /**
@@ -59,6 +62,11 @@ export function getAIMissingFields(asset, genParams) {
 	if (!asset.generationDate) missing.push('generation date');
 	if (!asset.digitalSourceType) missing.push('digital source type');
 	if (!genParams?.prompt) missing.push('prompt');
+	// AI assets without an embedded C2PA manifest get flagged. Many platforms
+	// don't emit one (ElevenLabs audio, hand-imported renders), so this nudges
+	// the user to sign locally.
+	const hasC2pa = (asset.metadata || []).some(m => m.metadataType === 'c2pa' && m.rawJson && m.rawJson !== '{}');
+	if (!hasC2pa) missing.push('Content Credentials');
 	return missing;
 }
 
@@ -69,6 +77,7 @@ export function getProducedMissingFields(asset) {
 	if (!asset.assetType) missing.push('asset type');
 	if (!asset.recordingDate) missing.push('recording date');
 	if (!asset.creator) missing.push('creator');
+	if (!asset.c2paJson) missing.push('Content Credentials');
 	return missing;
 }
 

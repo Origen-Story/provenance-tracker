@@ -74,6 +74,11 @@ export async function updateProject(id, data) {
 	};
 	if (data.storagePath !== undefined) updates.storagePath = data.storagePath;
 	if (data.notionGroupProperty !== undefined) updates.notionGroupProperty = data.notionGroupProperty;
+	// C2PA signing material and CAWG identity (project-level settings)
+	if (data.certificatePath !== undefined) updates.certificatePath = data.certificatePath;
+	if (data.privateKeyPath !== undefined) updates.privateKeyPath = data.privateKeyPath;
+	if (data.cawgIdentityUrl !== undefined) updates.cawgIdentityUrl = data.cawgIdentityUrl;
+	if (data.cawgIdentityName !== undefined) updates.cawgIdentityName = data.cawgIdentityName;
 	await db.update(projects).set(updates).where(eq(projects.id, id));
 	const project = await getProject(id);
 	await ensureStorageFolders(project);

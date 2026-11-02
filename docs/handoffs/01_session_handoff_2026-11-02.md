@@ -121,3 +121,15 @@ Pickup order is unchanged from section 3, minus the first item: next is Phase 3 
   - Private clone merge of public `main` (plan Phase 3 step 6). It can fetch from this checkout directly (`git fetch P:/WebProjects/provenance-tracker main`) without waiting for the public push. Expect conflicts in `schema.js`, `index.js`, `projects.js`, `ProjectSettings.jsx`, `package.json`, `README.md`, `migrations/meta/_journal.json`; public `0004_massive_odin` and private `0004_puzzling_zarek` share an index, and drizzle's migrator orders by the journal `when` timestamp, so the public entry can be appended as-is. Test in the private clone before trusting it.
   - Deleting local branch `gaudi-v0.2` and remote `private` here (after the private merge is verified).
   - Auditor agent not run this session.
+
+---
+
+## Addendum 3, late evening: pushed, CI green, private clone merged
+
+- **Public push done** (Matt's go): `main` pushed through `093a12f`. First CI run failed on `npm audit` (34 advisories); `npm audit fix` cleared all but the three `sharp` advisories that come in only through `c2pa-node` 0.5.26, now allowlisted with dated reasons in `scripts/audit.mjs` (`npm run audit`, used by CI). Every later run on `main` is green; `c2pa-node` and exiftool install on Ubuntu without extra steps.
+- **Dependabot opened five PRs** (#1 to #5): tailwind vite plugin, vitest 5 (major), multer, react-query, express 5 (major). Policy from `.github/dependabot.yml`: merge only when green; the two majors need a look before merging.
+- **Example data neutralised (D1):** `documentary-example-groups.json` (Eiffel Tower and the 1889 Exposition) replaces `gaudi-tour-groups.json`; README and the Firefly parser comment updated. `git grep -i gaud` outside handoffs and the auditor pattern is empty.
+- **Pixel verification closed:** `@contentauth/c2pa-node` 0.9.11 (scratchpad install) reads both clips as Valid with `assertion.bmffHash.match`. No c2patool binary with the fix exists (crates.io 0.28.x needs a Rust toolchain; none installed), so c2patool stays at 0.27.1 and the Phase 4c migration to the maintained package is the fix. Trust list via `createTrustSettings` with local PEM anchors.
+- **Private clone merged core:** `P:\WebProjects\resounding-histories-tracker` at `3ac56c6`, pushed to its origin. Kept its superset files, took core's fixed reader, merged `package.json` scripts and the journal (core `0004_massive_odin` appended as idx 11), `CLAUDE.md` = core rules + a private-production section. Its tests (75) and build pass; core 0004 applied as a no-op to the production database (12 migrations); server smoke: 52 scenes, 145 bibliography, 43 characters. `durationSeconds` stays integer there.
+- **Transition artefacts removed here:** local branch `gaudi-v0.2` and remote `private` deleted from the public checkout. The private repo holds that history.
+- **Next:** Phase 4a (video ingest, origin classes, relationships) on a branch; Matt's Premiere test sequence for 4b. Auditor agent still not run.

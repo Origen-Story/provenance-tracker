@@ -1,0 +1,25 @@
+# LF everywhere in the working tree. Windows checkouts with autocrlf turn bash
+# hooks and regexes anchored on $ into silent failures; normalising removes
+# that class of bug.
+* text=auto eol=lf
+
+# Shell scripts run under bash (Claude hooks, Actions); CRLF would break them.
+*.sh text eol=lf
+*.mjs text eol=lf
+
+# Media and signing material are bytes, never text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.mp4 binary
+*.mov binary
+*.wav binary
+*.mp3 binary
+*.pem binary
+*.c2pa binary
+
+# Timeline fixtures keep the bytes the NLE wrote (an exported XML may carry
+# CRLF or a BOM; the parser is tested against what Premiere really writes).
+test/fixtures/timeline/** -text

@@ -1,0 +1,12 @@
+# Decisions
+
+Short numbered log of decisions that shape the code. Add a line when one is made; never rewrite an old one, add a new one that supersedes it.
+
+- **D1 (2026-11-02) Public core, private production.** This repo is the open-source provenance core. Production-specific CMS work (a client's tour, scripts, scene editors) lives in a private downstream repo that merges `main` from here and never pushes back. Nothing in this repo names a client or production.
+- **D2 (2026-11-02) Timeline format: xmeml first.** The first timeline parser reads FCP 7 XML (`<xmeml>`), which Premiere exports as "Final Cut Pro XML" and Resolve exports too. It is documented and carries exactly the data needed. FCPXML is a later registry module. The `.prproj` project file is readable but undocumented and version-dependent; a reader is only considered if creators resist the export step and no NLE-side helper exists.
+- **D3 (2026-11-02) Origin-class vocabulary.** One class per asset, stored and user-confirmable: `captured_signed`, `captured`, `archival`, `archival_enhanced`, `generated`, `composited`, `unknown`. Proposed by extraction, confirmed by the user; an unconfirmed class counts as a missing enrichment field.
+- **D4 (2026-11-02) Relationships as polymorphic pairs.** `asset_relationships` carries `(parent_asset_type, parent_asset_id)` and `(child_asset_type, child_asset_id)` across the three asset tables rather than a unified `asset_refs` table. Smaller blast radius; the later modification chain is a new table pointing at relationship rows.
+- **D5 (2026-11-02) Neutral assertion namespace.** Custom C2PA assertions written by this tool use `org.provenancetracker.*`, documented with a committed JSON schema. Vendor namespaces belong in downstream forks.
+- **D6 (2026-11-02) Idempotent migrations.** Every migration after `0003` uses `IF NOT EXISTS` on `CREATE TABLE` and `ADD COLUMN`, so a downstream fork with its own migrations can merge public `main` without a failing migrator. The one allowed hand edit of generated SQL is adding those clauses, in the generating commit.
+- **D7 (2026-11-02) Overlays reported separately.** The default screen-time breakdown is computed on the primary picture track only. Overlay tracks are stored, classified and reported separately; there is no area threshold in this phase.
+- **D8 (2026-11-02) Archival triage stays downstream for now.** The stop-assignment and selects workflow built for one production is not ported to the public repo; a generic "collections" feature may replace it later.

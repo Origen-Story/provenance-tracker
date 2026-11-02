@@ -1,0 +1,4 @@
+# Gitignored files Claude Code copies into each new `claude --worktree`.
+# Worktrees are code-only: .env, certs/ and tools/ are deliberately NOT
+# listed, so a worktree session cannot reach the database, sign anything or
+# write managed storage. node_modules is symlinked via settings.json.

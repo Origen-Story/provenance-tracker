@@ -1,0 +1,39 @@
+name: CI
+
+# Runs the test suite on the same Node major the app targets (package.json
+# engines). `npm test` runs vitest inside the repo guard (scripts/test.mjs):
+# it fails if any test changes the checkout or the suite takes over 60 s.
+# Tests are pure: no Postgres, no network, no signing.
+
+on:
+  push: {}
+  pull_request: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Pinned to commits, not tags; Dependabot proposes updates.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"    # must match package.json engines
+          cache: npm
+
+      - name: Install (exact versions from package-lock.json)
+        run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Tests
+        run: npm test
+
+      - name: Client build
+        run: npm run build

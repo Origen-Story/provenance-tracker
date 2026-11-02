@@ -22,8 +22,10 @@ test-fixtures/
 .DS_Store
 Thumbs.db
 
-# Editor / tool config (per-user)
-.claude/
+# Editor / tool config. Shared Claude config (.claude/settings.json, hooks/,
+# agents/) is committed; the per-user allow list and worktrees are not.
+.claude/settings.local.json
+.claude/worktrees
 .vscode/
 .idea/
 

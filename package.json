@@ -13,8 +13,10 @@
 		"db:push": "drizzle-kit push",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",
-		"test": "vitest",
-		"test:run": "vitest run"
+		"test": "node scripts/test.mjs",
+		"test:run": "vitest run",
+		"test:watch": "vitest",
+		"test:integration": "vitest run test/integration"
 	},
 	"dependencies": {
 		"@notionhq/client": "^5.18.0",
@@ -39,5 +41,8 @@
 		"tailwindcss": "^4.2.0",
 		"vite": "^7.3.1",
 		"vitest": "^4.1.4"
+	},
+	"engines": {
+		"node": ">=24"
 	}
 }

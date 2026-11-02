@@ -29,8 +29,8 @@ jobs:
       - name: Install (exact versions from package-lock.json)
         run: npm ci
 
-      - name: Audit dependencies
-        run: npm audit --audit-level=high
+      - name: Audit dependencies (high+, with the dated allowlist in scripts/audit.mjs)
+        run: npm run audit
 
       - name: Tests
         run: npm test

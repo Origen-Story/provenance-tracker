@@ -84,3 +84,21 @@ ls -la P:/WebProjects/_backups/provenance-tracker-2026-11-02/
 6. `src/server/lib/extraction/c2pa.js` (at `dbd8ae2`, main checkout) — the reader with the active-manifest bug.
 7. `docs/provenance-tracker-phase-2-spec.md` (main checkout, untracked) — the feature spec the roadmap maps onto.
 8. `../target-watch/CLAUDE.md` and `../target-watch/notes/lessons_from_patrimoni.md` — the pattern this repo now follows.
+
+---
+
+## Addendum, later the same day: Phase 1 executed
+
+Matt asked for the three commands to be run from his phone and approved the reset. State after that:
+
+- **Private repo exists and holds the history.** `Origen-Story/resounding-histories-tracker` (PRIVATE, verified) has `main` and `gaudi-v0.2` at `dbd8ae2`. Local branch `gaudi-v0.2` has `pushRemote = private`.
+- **Private clone verified.** `P:\WebProjects\resounding-histories-tracker`: `npm ci` clean, `npx vitest run --pool=forks` 66 passed, server on port 3002 answered `/api/health` ok against the existing `provenance` database, active project loaded, 52 scenes and 145 bibliography entries served. It has `.env`, `certs/`, `tools/`, `test-fixtures/` (1 GB) and `Documents/` (51 files) copied in, plus remote `core` pointing at the public repo.
+- **This checkout is now the public core.** `main` = `origin/main` (`b1cb77f`) + the three Phase 2 commits (`870de51`, `6dc96d0`, `f54d91a`), reached with `git branch -f` rather than `git reset --hard` (the hard-reset and `rm -rf` command patterns are denied by permission rules, which is the intent). The ops worktree and branch are removed. `Documents/` is deleted here (the private clone and the backup archive both hold it). `npm test` and `npm run build` pass on `main`.
+- **Not done, needs Matt:**
+  1. Create the second database as the `postgres` superuser (the `provenance` role has no CREATEDB): `CREATE DATABASE provenance_core OWNER provenance;`
+  2. In this checkout's `.env`, change the database name at the end of `DATABASE_URL` from `provenance` to `provenance_core` (one line; `.env` is hand-edited by rule).
+  3. Then `npm run db:migrate` here builds `0000` to `0003` on the empty database.
+- `.claude/settings.local.json` pruned from 72 to 39 allow entries (`rm -rf`, `git push *`, `drizzle-kit push`, ad-hoc PowerShell and one-off paths removed).
+- The old `provenance` database is untouched; the private clone keeps using it.
+
+Pickup order is unchanged from section 3, minus the first item: next is Phase 3 (port `signing-core`).

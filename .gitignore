@@ -41,3 +41,12 @@ Documents/
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# C2PA signing material. Private keys must never be committed; the whole
+# folder is ignored to keep the pattern simple.
+certs/
+
+# Local binaries the tracker shells out to (c2patool, ...). Track only
+# tools/README.md; see it for per-tool install instructions.
+tools/*
+!tools/README.md

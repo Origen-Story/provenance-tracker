@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import Sidebar from './Sidebar.jsx';
 

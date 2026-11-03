@@ -4,8 +4,8 @@ Explanations that used to live in `CLAUDE.md`. `CLAUDE.md` is rules only; this f
 
 ## Tech stack
 
-- **Frontend:** React 18, React Router v6, TanStack Query v5, Tailwind CSS v4 (dark theme in `src/client/app.css`)
-- **Backend:** Express (Node 24)
+- **Frontend:** React 19, React Router v8, TanStack Query v5, Tailwind CSS v4 (dark theme in `src/client/app.css`)
+- **Backend:** Express 5 (Node 24)
 - **Database:** PostgreSQL via Drizzle ORM + `pg`
 - **Build:** Vite with `@vitejs/plugin-react`
 - **Dev:** `concurrently` runs Express (port 3001) and the Vite dev server (port 5173, proxies `/api` to Express)

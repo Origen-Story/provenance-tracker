@@ -152,7 +152,7 @@ For single-user local work, `npm run dev` (development) or `npm start` (producti
 
 ## Tech stack
 
-- **Frontend:** React 18, React Router v6, TanStack Query v5
+- **Frontend:** React 19, React Router v8, TanStack Query v5
 - **Styling:** Tailwind CSS v4 (dark theme)
 - **Backend:** Express (Node.js)
 - **Database:** PostgreSQL via Drizzle ORM

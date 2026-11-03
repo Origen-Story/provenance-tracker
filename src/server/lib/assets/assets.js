@@ -11,16 +11,20 @@ import { createLogger } from '../logger.js';
 const log = createLogger('assets');
 
 /**
- * Generate next asset ID for a project, e.g. "GAIA-007"
+ * Generate the next asset ID for a project, e.g. "PROJ-007": one past the
+ * highest number already used with the project's prefix. Counting rows would
+ * reuse a number after any deletion and collide on the unique asset_id.
  */
 async function nextAssetId(projectId) {
 	const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
 	const prefix = project?.assetIdPrefix || 'ASSET';
-	const [{ value }] = await db
-		.select({ value: count() })
-		.from(assets)
-		.where(eq(assets.projectId, projectId));
-	const num = String(Number(value) + 1).padStart(3, '0');
+	const rows = await db.select({ assetId: assets.assetId }).from(assets).where(eq(assets.projectId, projectId));
+	let max = 0;
+	for (const r of rows) {
+		const m = String(r.assetId || '').match(/-(\d+)$/);
+		if (m) max = Math.max(max, Number(m[1]));
+	}
+	const num = String(max + 1).padStart(3, '0');
 	return `${prefix}-${num}`;
 }
 

@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
 import PageHeader from '../../components/layout/PageHeader.jsx';
+import OriginBadge from '../../components/origin/OriginBadge.jsx';
 
 // Client-side per-asset sync loop. One HTTP request per asset means a single
 // Notion hiccup or server blip can't torch the whole batch, and markNotionSynced
@@ -287,6 +288,7 @@ export default function ArchivalList() {
 										{asset.missingFields.length} missing
 									</div>
 								)}
+								<OriginBadge originClass={asset.originClass} confirmed={asset.originClassConfirmed} className="absolute bottom-2 left-2 z-10" />
 								{asset.filePath ? (
 									<img src={`/api/preview?path=${encodeURIComponent(asset.filePath)}`}
 										alt={asset.name} className="w-full h-full object-cover" loading="lazy" />

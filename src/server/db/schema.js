@@ -61,6 +61,14 @@ export const assets = pgTable('assets', {
 	// Preserved path to the unsigned original after C2PA signing moves filePath
 	// to the signed copy. Keeps the untouched source discoverable for re-signing.
 	originalFilePath: text('original_file_path'),
+	// Origin class (decision D3): proposed by src/server/lib/origin/classify.js,
+	// confirmed by the user. `originClassSource` names the rule that fired.
+	// `originIngredientClasses` is a JSON array of classes a composited asset
+	// is made from.
+	originClass: text('origin_class').default('unknown'),
+	originClassConfirmed: boolean('origin_class_confirmed').default(false),
+	originClassSource: text('origin_class_source').default(''),
+	originIngredientClasses: text('origin_ingredient_classes').default('[]'),
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
 });
@@ -96,11 +104,24 @@ export const generationParams = pgTable('generation_params', {
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow()
 });
 
+// Links between any two assets across the three asset tables (decision D4):
+// each side is a (type, id) pair where type is 'ai' | 'archival' | 'produced'.
+// No foreign keys, because the id points at one of three tables; the delete
+// functions in each lib module remove the rows that reference them.
+// relationshipType: 'ingredient' (child is made from parent), 'derived_from'
+// (child is an enhanced/upscaled copy of parent), 'output_of' (child is an
+// NLE export that used parent).
 export const assetRelationships = pgTable('asset_relationships', {
 	id: serial('id').primaryKey(),
-	parentAssetId: integer('parent_asset_id').notNull().references(() => assets.id, { onDelete: 'cascade' }),
-	childAssetId: integer('child_asset_id').notNull().references(() => assets.id, { onDelete: 'cascade' }),
+	parentAssetType: text('parent_asset_type').notNull().default('ai'),
+	parentAssetId: integer('parent_asset_id').notNull(),
+	childAssetType: text('child_asset_type').notNull().default('ai'),
+	childAssetId: integer('child_asset_id').notNull(),
 	relationshipType: text('relationship_type').notNull().default('ingredient'),
+	// How the link was made: 'manual', 'filename_pattern', 'c2pa_ingredient', 'timeline'.
+	matchMethod: text('match_method').notNull().default('manual'),
+	confidence: real('confidence').default(1),
+	notes: text('notes').default(''),
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow()
 });
 
@@ -141,6 +162,11 @@ export const archivalAssets = pgTable('archival_assets', {
 	notionImageStrategy: text('notion_image_strategy').default('external_url'),
 	searchGroupId: text('search_group_id').default(''),       // generic group/stop/era/chapter ID
 	searchGroupName: text('search_group_name').default(''),   // human-readable group name
+	// Origin class (decision D3); see the assets table for the field notes.
+	originClass: text('origin_class').default('unknown'),
+	originClassConfirmed: boolean('origin_class_confirmed').default(false),
+	originClassSource: text('origin_class_source').default(''),
+	originIngredientClasses: text('origin_ingredient_classes').default('[]'),
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
 });
@@ -166,8 +192,22 @@ export const producedAssets = pgTable('produced_assets', {
 	// Media duration in seconds (fractional). Filled by extraction for audio and
 	// video; null for images and for rows imported before extraction read it.
 	durationSeconds: real('duration_seconds'),
+	// Technical video fields from exiftool (src/server/lib/extraction/video-probe.js).
+	frameRate: real('frame_rate'),
+	width: integer('width').default(0),
+	height: integer('height').default(0),
+	container: text('container').default(''),
+	videoCodec: text('video_codec').default(''),
+	audioCodec: text('audio_codec').default(''),
+	// True when the file carries a C2PA capture manifest from the device.
+	captureSigned: boolean('capture_signed').default(false),
 	// Preserved path to the unsigned original after C2PA signing.
 	originalFilePath: text('original_file_path'),
+	// Origin class (decision D3); see the assets table for the field notes.
+	originClass: text('origin_class').default('unknown'),
+	originClassConfirmed: boolean('origin_class_confirmed').default(false),
+	originClassSource: text('origin_class_source').default(''),
+	originIngredientClasses: text('origin_ingredient_classes').default('[]'),
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
 });

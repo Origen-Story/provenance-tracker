@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import SignAssetModal from '../../components/SignAssetModal.jsx';
+import OriginClassControl from '../../components/origin/OriginClassControl.jsx';
+import RelationshipsPanel from '../../components/origin/RelationshipsPanel.jsx';
 
-const PLATFORM_LABELS = { freepik: 'Freepik', comfyui: 'ComfyUI', midjourney: 'Midjourney', firefly: 'Adobe Firefly', elevenlabs: 'ElevenLabs', 'topaz-video-ai': 'Topaz Video AI', unknown: 'Unknown' };
+const PLATFORM_LABELS = { freepik: 'Freepik', comfyui: 'ComfyUI', midjourney: 'Midjourney', firefly: 'Adobe Firefly', elevenlabs: 'ElevenLabs', 'topaz-video-ai': 'Topaz Video AI', 'topaz-gigapixel': 'Topaz Gigapixel', unknown: 'Unknown' };
 const DIGITAL_SOURCE_TYPES = [
 	{ value: 'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia', label: 'Trained Algorithmic Media' },
 	{ value: 'http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicMedia', label: 'Algorithmic Media' },
@@ -160,6 +162,9 @@ export default function AIAssetDetail() {
 							<span className={coverageColor}>{coverage == null ? '—' : `${coverage}%`}</span>
 						</div>
 					</div>
+
+					<OriginClassControl type="ai" id={id} asset={asset} queryKeys={[['asset', id], ['assets']]} />
+					<RelationshipsPanel type="ai" id={id} queryKeys={[['asset', id], ['assets']]} />
 
 					{/* Novelty + re-extract controls. Re-extract replays current parsers against stored
 					    raw metadata, so parser improvements can upgrade previously-imported assets. */}

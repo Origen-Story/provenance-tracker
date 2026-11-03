@@ -2,6 +2,10 @@ import { db } from '../../db/index.js';
 import { producedAssets } from '../../db/schema.js';
 import { eq, desc, asc, sql, count, and } from 'drizzle-orm';
 import { PRODUCED_ENRICHMENT_CONDITION, getProducedMissingFields } from '../dashboard.js';
+import { probeVideoTags } from '../extraction/video-probe.js';
+import { parseJsonSafe } from '../origin/classify.js';
+import { applyProposal } from '../origin/origin.js';
+import { removeRelationshipsFor } from '../relationships/relationships.js';
 
 export async function listProducedAssets(projectId, {
 	search = '', assetType = '', enrichment = '', sortBy = 'createdAt', sortDir = 'desc', limit = 100, offset = 0
@@ -40,7 +44,18 @@ export async function getProducedAsset(id) {
 }
 
 export async function createProducedAsset(projectId, data) {
+	// Technical fields: take what the caller sends, else derive them from the
+	// stored exif summary so older import clients still get them.
+	const mime = data.mimeType || '';
+	const probe = (mime.startsWith('video/') || mime.startsWith('audio/')) ? probeVideoTags(parseJsonSafe(data.exifJson, {})) : null;
 	const [row] = await db.insert(producedAssets).values({
+		durationSeconds: data.durationSeconds ?? probe?.durationSeconds ?? null,
+		frameRate: data.frameRate ?? probe?.frameRate ?? null,
+		width: data.width ?? probe?.width ?? 0,
+		height: data.height ?? probe?.height ?? 0,
+		container: data.container ?? probe?.container ?? '',
+		videoCodec: data.videoCodec ?? probe?.videoCodec ?? '',
+		audioCodec: data.audioCodec ?? probe?.audioCodec ?? '',
 		projectId,
 		name: data.name || '',
 		filename: data.filename || '',
@@ -58,7 +73,10 @@ export async function createProducedAsset(projectId, data) {
 		exifJson: data.exifJson || '{}',
 		c2paJson: data.c2paJson || null
 	}).returning();
-	return row;
+	// Propose an origin class from the stored signals (D3). Unconfirmed until
+	// the user says so.
+	const { row: classified } = await applyProposal('produced', row.id);
+	return classified || row;
 }
 
 export async function updateProducedAsset(id, updates) {
@@ -74,6 +92,7 @@ export async function updateProducedAsset(id, updates) {
 }
 
 export async function deleteProducedAsset(id) {
+	await removeRelationshipsFor('produced', id);
 	await db.delete(producedAssets).where(eq(producedAssets.id, id));
 }
 

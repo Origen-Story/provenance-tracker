@@ -10,6 +10,11 @@ function empty(col) {
 	return sql`(${col} IS NULL OR ${col} = '')`;
 }
 
+// Only an *unknown* origin class counts as a missing field (D3). A class
+// proposed from metadata is used as-is; confirming it is optional, because
+// hand-confirming every clip of a five-minute edit is not a workflow anyone
+// will follow. The user steps in where the file carried no usable signal.
+
 // Archival: caption, originalDate, institution, creator, license, medium, sourceUrl
 export const ARCHIVAL_ENRICHMENT_CONDITION = sql`(
 	${empty(archivalAssets.caption)} OR
@@ -18,14 +23,16 @@ export const ARCHIVAL_ENRICHMENT_CONDITION = sql`(
 	${empty(archivalAssets.creator)} OR
 	${empty(archivalAssets.license)} OR
 	${empty(archivalAssets.medium)} OR
-	${empty(archivalAssets.sourceUrl)}
+	${empty(archivalAssets.sourceUrl)} OR
+	${archivalAssets.originClass} = 'unknown'
 )`;
 
 // AI: platform != unknown, generationDate, digitalSourceType, plus prompt checked via join
 export const AI_ENRICHMENT_CONDITION = sql`(
 	${assets.platform} = 'unknown' OR
 	${empty(assets.generationDate)} OR
-	${empty(assets.digitalSourceType)}
+	${empty(assets.digitalSourceType)} OR
+	${assets.originClass} = 'unknown'
 )`;
 
 // Produced: name, description, assetType, recordingDate, creator, plus C2PA
@@ -37,7 +44,8 @@ export const PRODUCED_ENRICHMENT_CONDITION = sql`(
 	${empty(producedAssets.assetType)} OR
 	${empty(producedAssets.recordingDate)} OR
 	${empty(producedAssets.creator)} OR
-	${producedAssets.c2paJson} IS NULL
+	${producedAssets.c2paJson} IS NULL OR
+	${producedAssets.originClass} = 'unknown'
 )`;
 
 /**
@@ -53,11 +61,13 @@ export function getArchivalMissingFields(asset) {
 	if (!asset.license) missing.push('license');
 	if (!asset.medium) missing.push('medium');
 	if (!asset.sourceUrl) missing.push('source URL');
+	if (!asset.originClass || asset.originClass === 'unknown') missing.push('origin class');
 	return missing;
 }
 
 export function getAIMissingFields(asset, genParams) {
 	const missing = [];
+	if (!asset.originClass || asset.originClass === 'unknown') missing.push('origin class');
 	if (!asset.platform || asset.platform === 'unknown') missing.push('platform');
 	if (!asset.generationDate) missing.push('generation date');
 	if (!asset.digitalSourceType) missing.push('digital source type');
@@ -78,6 +88,7 @@ export function getProducedMissingFields(asset) {
 	if (!asset.recordingDate) missing.push('recording date');
 	if (!asset.creator) missing.push('creator');
 	if (!asset.c2paJson) missing.push('Content Credentials');
+	if (!asset.originClass || asset.originClass === 'unknown') missing.push('origin class');
 	return missing;
 }
 

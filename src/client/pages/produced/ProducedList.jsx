@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
 import PageHeader from '../../components/layout/PageHeader.jsx';
+import OriginBadge from '../../components/origin/OriginBadge.jsx';
 
 const ASSET_TYPES = ['audio', 'video', 'image', 'document', 'other'];
 
@@ -110,6 +111,7 @@ export default function ProducedList() {
 										{asset.missingFields.length} missing
 									</div>
 								)}
+								<OriginBadge originClass={asset.originClass} confirmed={asset.originClassConfirmed} className="absolute bottom-2 left-2 z-10" />
 								{asset.mimeType?.startsWith('image/') ? (
 									<img src={`/api/preview?path=${encodeURIComponent(asset.filePath)}`}
 										alt={asset.name} className="w-full h-full object-cover" loading="lazy" />

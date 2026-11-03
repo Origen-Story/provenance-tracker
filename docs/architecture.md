@@ -54,10 +54,16 @@ Why idempotent: a private downstream fork of this repo carries its own migration
 - `assets` + `generation_params` + `asset_metadata`: AI-generated assets
 - `archival_assets`: archival images (museums, archives, historical sources)
 - `produced_assets`: original recordings (audio, video, photos)
-- `asset_relationships`: parent/derivative links between assets
+- `asset_relationships`: links between any two assets as `(type, id)` pairs across the three asset tables (D4), with `relationship_type` (`ingredient`, `derived_from`, `output_of`), `match_method` and `confidence`. No foreign keys; each table's delete function removes its rows.
 - `manifests`: C2PA Content Credentials manifests
 - `search_groups`, `search_jobs`, `search_candidates`: Wikimedia archive search
 - `project_config`: legacy single-project config (kept for migration)
+
+### Origin classes
+
+Every asset row carries `origin_class` (D3 vocabulary: `captured_signed`, `captured`, `archival`, `archival_enhanced`, `generated`, `composited`, `unknown`), `origin_class_confirmed` and `origin_class_source`. The pure classifier in `src/server/lib/origin/classify.js` proposes a class at import from the stored signals, in this order: a C2PA capture action or capture-device signer, C2PA ingredients (an edit or export), an enhancer tool following its `derived_from` parent, a C2PA generated action, unsigned XMP/IPTC hints (`DigitalSourceType`, an AI credit line), then the table the row lives in. `origin_class_source` records which rule fired so the UI can explain the proposal. An unconfirmed class counts as a missing enrichment field on every table. `src/server/lib/origin/origin.js` is the IO wrapper: it gathers the signals (AI assets keep theirs in `asset_metadata`), writes proposals, never overwrites a confirmed class unless forced, and re-proposes unconfirmed `derived_from` children when a parent changes.
+
+Enhancer outputs (Topaz Video AI, Topaz Gigapixel) are modifiers, not generators. On import, `src/server/lib/relationships/auto-link.js` strips the Topaz suffix from the filename and looks for a same-stem asset in the project; one hit links it as `derived_from` with confidence 0.7, several are returned as suggestions. Routes: `/api/origin/*` and `/api/relationships/*`.
 
 ## Multi-project architecture
 

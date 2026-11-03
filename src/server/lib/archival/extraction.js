@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { extractExif } from '../extraction/exif.js';
 import { extractC2pa } from '../extraction/c2pa.js';
+import { probeVideoTags } from '../extraction/video-probe.js';
 import { computeFileHash, getMimeType, getFileSize } from '../core/file-utils.js';
 import { USER_AGENT } from '../user-agent.js';
 
@@ -117,14 +118,24 @@ export async function extractExifFromPath(filePath) {
 		}
 	}
 
+	// Video and audio files get their technical fields normalised here so the
+	// import form can show them and createProducedAsset can store them.
+	const isAv = mimeType.startsWith('video/') || mimeType.startsWith('audio/');
+	const av = isAv ? probeVideoTags(tags) : null;
+
 	return {
 		filePath,
 		filename,
 		fileHash,
 		fileSize,
 		mimeType,
-		width,
-		height,
+		width: width || av?.width || 0,
+		height: height || av?.height || 0,
+		durationSeconds: av?.durationSeconds ?? null,
+		frameRate: av?.frameRate ?? null,
+		container: av?.container || '',
+		videoCodec: av?.videoCodec || '',
+		audioCodec: av?.audioCodec || '',
 		exifJson: JSON.stringify(exifSummary),
 		c2paJson: c2paManifest ? JSON.stringify(c2paManifest) : null,
 		suggestedCreator: tags?.Creator || tags?.Artist || tags?.Author || '',

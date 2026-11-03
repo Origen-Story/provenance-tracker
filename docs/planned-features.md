@@ -19,8 +19,10 @@ New platforms to extract metadata from. The current parsers live in [`src/server
 
 Modifiers transform existing content rather than generating it. Conceptually distinct from generators — a modified asset has both an origin and a modification event. See "Modification chain tracking" below for the schema implications.
 
-- **Topaz Photo AI / Gigapixel** (image upscaling) — Topaz Video AI parser is done (keys off the `Videoai` container tag). Image tools likely use a different EXIF `Software` or XMP tag; parser needs real samples first.
-- **Topaz source-chain detection** — current Topaz Video AI parser records "this is a Topaz enhancement" but does not link to the source file. When modification-chain tracking lands, Topaz outputs with matching `<basename>_prob*` filenames should auto-link to the original.
+- **Topaz Gigapixel** — done (2026-11-03): keys off `Software`/`CreatorTool` and reads model and scale from the `-gigapixel-<model>-<N>x` filename tail. **Topaz Photo AI** still needs a real sample.
+- **Topaz source-chain detection** — done (2026-11-03) as `src/server/lib/relationships/auto-link.js`: Topaz Video AI and Gigapixel outputs look for a same-stem asset in the project and link `derived_from` at confidence 0.7. Remaining gap: the Topaz output's stem must match the source's stem exactly; renamed sources need the manual picker.
+- **Google Veo via Freepik** — the two Freepik MP4s in the test project carry only `Encoder: Google` and no C2PA, so they classify as `unknown`. A parser keyed on that encoder string plus the `freepik__` filename prefix would be weak evidence; wait for a sample with a manifest (Freepik states newer downloads are signed).
+- **ElevenLabs WAV with C2PA** — the ElevenLabs parser detects via XMP `Actions`/`Author` tags, which the WAV export does not carry; the classifier still reaches `generated` from the manifest, but `platform` stays `unknown`. Extend `detect()` to accept the stored C2PA summary (claim generator or signer "Eleven Labs Inc.").
 
 ### Deferred (no current project uses)
 

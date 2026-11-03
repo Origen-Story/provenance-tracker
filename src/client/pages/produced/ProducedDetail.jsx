@@ -2,8 +2,42 @@ import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import SignAssetModal from '../../components/SignAssetModal.jsx';
+import OriginClassControl from '../../components/origin/OriginClassControl.jsx';
+import RelationshipsPanel from '../../components/origin/RelationshipsPanel.jsx';
 
 const ASSET_TYPES = ['audio', 'video', 'image', 'document', 'other'];
+
+function fmtDuration(s) {
+	if (s == null) return null;
+	const m = Math.floor(s / 60);
+	const sec = (s - m * 60).toFixed(2);
+	return m ? `${m}m ${sec}s` : `${sec}s`;
+}
+
+// Technical fields read by extraction for video and audio files.
+function MediaPanel({ asset }) {
+	const isAv = asset.mimeType?.startsWith('video/') || asset.mimeType?.startsWith('audio/');
+	if (!isAv) return null;
+	const rows = [
+		['Duration', fmtDuration(asset.durationSeconds)],
+		['Frame rate', asset.frameRate ? `${asset.frameRate} fps` : null],
+		['Size', asset.width ? `${asset.width}×${asset.height}` : null],
+		['Container', asset.container || null],
+		['Video codec', asset.videoCodec || null],
+		['Audio codec', asset.audioCodec || null]
+	].filter(([, v]) => v);
+	return (
+		<div className="bg-card-bg border border-border rounded-lg p-3 space-y-1.5 text-xs">
+			<div className="flex justify-between items-center">
+				<span className="text-text-secondary font-medium">Media</span>
+				{asset.captureSigned && <span className="text-emerald-300 text-[10px] border border-emerald-500/40 bg-emerald-500/10 rounded px-1.5 py-0.5">Capture signed</span>}
+			</div>
+			{rows.map(([k, v]) => (
+				<div key={k} className="flex justify-between"><span className="text-text-secondary">{k}</span><span className="text-text-primary">{v}</span></div>
+			))}
+		</div>
+	);
+}
 
 export default function ProducedDetail() {
 	const { id } = useParams();
@@ -84,6 +118,10 @@ export default function ProducedDetail() {
 						{asset.c2paJson && <div className="flex justify-between"><span className="text-text-secondary">C2PA</span><span className="text-success">Manifest found</span></div>}
 						{asset.originalFilePath && <div className="flex justify-between"><span className="text-text-secondary">Original</span><span className="text-text-primary font-mono text-xs truncate max-w-[60%]" title={asset.originalFilePath}>{asset.originalFilePath.split(/[\\/]/).pop()}</span></div>}
 					</div>
+
+					<MediaPanel asset={asset} />
+					<OriginClassControl type="produced" id={id} asset={asset} queryKeys={[['produced', id], ['produced']]} />
+					<RelationshipsPanel type="produced" id={id} queryKeys={[['produced', id], ['produced']]} />
 
 					{!asset.c2paJson && (
 						<button onClick={() => setSignOpen(true)}

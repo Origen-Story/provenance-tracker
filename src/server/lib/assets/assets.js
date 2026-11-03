@@ -1,23 +1,30 @@
+import path from 'path';
 import { db } from '../../db/index.js';
 import { assets, generationParams, assetMetadata, projects } from '../../db/schema.js';
 import { eq, desc, asc, sql, count, and, ilike } from 'drizzle-orm';
 import { getAIMissingFields } from '../dashboard.js';
 import { detectAndParse } from '../extraction/ai-extraction.js';
+import { applyProposal } from '../origin/origin.js';
+import { removeRelationshipsFor, autoLinkEnhancer } from '../relationships/relationships.js';
 import { createLogger } from '../logger.js';
 
 const log = createLogger('assets');
 
 /**
- * Generate next asset ID for a project, e.g. "GAIA-007"
+ * Generate the next asset ID for a project, e.g. "PROJ-007": one past the
+ * highest number already used with the project's prefix. Counting rows would
+ * reuse a number after any deletion and collide on the unique asset_id.
  */
 async function nextAssetId(projectId) {
 	const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
 	const prefix = project?.assetIdPrefix || 'ASSET';
-	const [{ value }] = await db
-		.select({ value: count() })
-		.from(assets)
-		.where(eq(assets.projectId, projectId));
-	const num = String(Number(value) + 1).padStart(3, '0');
+	const rows = await db.select({ assetId: assets.assetId }).from(assets).where(eq(assets.projectId, projectId));
+	let max = 0;
+	for (const r of rows) {
+		const m = String(r.assetId || '').match(/-(\d+)$/);
+		if (m) max = Math.max(max, Number(m[1]));
+	}
+	const num = String(max + 1).padStart(3, '0');
 	return `${prefix}-${num}`;
 }
 
@@ -52,7 +59,7 @@ export async function listAssets(projectId, {
 	// AI enrichment filter needs a join to check prompt
 	const needsJoin = enrichment === 'incomplete';
 	if (needsJoin) {
-		conditions.push(sql`(${assets.platform} = 'unknown' OR ${empty(assets.generationDate)} OR ${empty(assets.digitalSourceType)} OR ${empty(generationParams.prompt)})`);
+		conditions.push(sql`(${assets.platform} = 'unknown' OR ${empty(assets.generationDate)} OR ${empty(assets.digitalSourceType)} OR ${empty(generationParams.prompt)} OR ${assets.originClass} = 'unknown')`);
 	}
 
 	const sortCols = {
@@ -171,7 +178,17 @@ export async function createAsset(projectId, data) {
 	if (data.platformJson) metaInserts.push({ assetId: row.id, metadataType: 'platform', rawJson: data.platformJson });
 	if (metaInserts.length) await db.insert(assetMetadata).values(metaInserts);
 
-	return getAsset(row.id);
+	// Enhancer outputs (Topaz) try to find their source by filename, then the
+	// origin class is proposed with the parent known (D3, D4).
+	const filename = path.basename(data.filePath || '');
+	const link = await autoLinkEnhancer({ type: 'ai', id: row.id, filename, projectId }).catch(err => {
+		log.warn(`auto-link skipped for ${filename}: ${err.message}`);
+		return { linked: null, parent: null, suggestedParents: [] };
+	});
+	await applyProposal('ai', row.id);
+
+	const created = await getAsset(row.id);
+	return { ...created, autoLinkedParent: link.parent, suggestedParents: link.suggestedParents };
 }
 
 /**
@@ -279,6 +296,7 @@ export async function updateAsset(id, data) {
 }
 
 export async function deleteAsset(id) {
+	await removeRelationshipsFor('ai', id);
 	await db.delete(assets).where(eq(assets.id, id));
 }
 

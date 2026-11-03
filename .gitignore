@@ -50,3 +50,4 @@ certs/
 # tools/README.md; see it for per-tool install instructions.
 tools/*
 !tools/README.md
+.claude/private-terms.txt

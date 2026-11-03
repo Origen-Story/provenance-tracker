@@ -13,6 +13,7 @@
  */
 
 import * as topazVideoAi from './topaz-video-ai.js';
+import * as topazGigapixel from './topaz-gigapixel.js';
 import * as comfyui from './comfyui.js';
 import * as firefly from './firefly.js';
 import * as elevenlabs from './elevenlabs.js';
@@ -24,7 +25,10 @@ import * as freepik from './freepik.js';
 //      a C2PA-signed source would otherwise be misclassified as the upstream
 //      generator. Topaz is a modifier, so "most recent transform wins" is the
 //      honest outcome until provenance chaining is built.
-//   2. comfyui — PNG `prompt`/`workflow` chunks are uniquely ComfyUI.
-//   3. firefly / elevenlabs — specific C2PA claim-generator strings.
-//   4. midjourney / freepik — fuzzier (Software tag substring, --params regex).
-export const parsers = [topazVideoAi, comfyui, firefly, elevenlabs, midjourney, freepik];
+//   2. topaz-gigapixel — Software/CreatorTool names the app; also a modifier,
+//      and its XMP DigitalSourceType is inherited from the input, so it must
+//      win before any parser that reads that tag.
+//   3. comfyui — PNG `prompt`/`workflow` chunks are uniquely ComfyUI.
+//   4. firefly / elevenlabs — specific C2PA claim-generator strings.
+//   5. midjourney / freepik — fuzzier (Software tag substring, --params regex).
+export const parsers = [topazVideoAi, topazGigapixel, comfyui, firefly, elevenlabs, midjourney, freepik];

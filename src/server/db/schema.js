@@ -212,6 +212,64 @@ export const producedAssets = pgTable('produced_assets', {
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
 });
 
+// One imported NLE timeline (xmeml today) for a produced output. The raw
+// file is kept on disk at sourceFilePath; breakdownJson caches the computed
+// screen-time breakdown and is recomputed when a segment's match or an
+// asset's origin class changes.
+export const timelines = pgTable('timelines', {
+	id: serial('id').primaryKey(),
+	projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+	producedAssetId: integer('produced_asset_id').references(() => producedAssets.id, { onDelete: 'cascade' }),
+	sourceFormat: text('source_format').notNull().default('xmeml'),
+	sourceFormatVersion: text('source_format_version').default(''),
+	sourceFileName: text('source_file_name').default(''),
+	sourceFilePath: text('source_file_path').default(''),
+	sourceFileHash: text('source_file_hash').default(''),
+	sequenceName: text('sequence_name').default(''),
+	timebase: integer('timebase').default(0),
+	ntsc: boolean('ntsc').default(false),
+	fps: real('fps'),
+	durationFrames: integer('duration_frames').default(0),
+	width: integer('width').default(0),
+	height: integer('height').default(0),
+	primaryTrackIndex: integer('primary_track_index').default(1),
+	includeOverlays: boolean('include_overlays').default(false),
+	breakdownJson: text('breakdown_json').default('{}'),
+	notesJson: text('notes_json').default('[]'),
+	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
+});
+
+// One row per clip on a track. matchedAssetType/Id point at one of the three
+// asset tables (D4 style, no FK); originClass is a per-segment override and
+// null means "use the matched asset's class".
+export const timelineSegments = pgTable('timeline_segments', {
+	id: serial('id').primaryKey(),
+	timelineId: integer('timeline_id').notNull().references(() => timelines.id, { onDelete: 'cascade' }),
+	trackKind: text('track_kind').notNull().default('video'),
+	trackIndex: integer('track_index').notNull().default(1),
+	clipId: text('clip_id').default(''),
+	clipName: text('clip_name').default(''),
+	enabled: boolean('enabled').default(true),
+	startFrame: integer('start_frame').notNull().default(0),
+	endFrame: integer('end_frame').notNull().default(0),
+	inFrame: integer('in_frame').default(0),
+	outFrame: integer('out_frame').default(0),
+	startSeconds: real('start_seconds'),
+	endSeconds: real('end_seconds'),
+	sourceKind: text('source_kind').default('file'),
+	sourceKey: text('source_key').default(''),
+	sourceName: text('source_name').default(''),
+	sourcePath: text('source_path').default(''),
+	matchedAssetType: text('matched_asset_type'),
+	matchedAssetId: integer('matched_asset_id'),
+	matchMethod: text('match_method').default('unmatched'),
+	matchConfidence: real('match_confidence').default(0),
+	originClass: text('origin_class'),
+	sortOrder: integer('sort_order').default(0),
+	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow()
+});
+
 export const searchJobs = pgTable('search_jobs', {
 	id: serial('id').primaryKey(),
 	projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),

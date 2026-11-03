@@ -120,6 +120,13 @@ export default function ProducedDetail() {
 					</div>
 
 					<MediaPanel asset={asset} />
+					{(asset.mimeType?.startsWith('video/') || asset.mimeType?.startsWith('audio/')) && (
+						<Link to={`/produced/${id}/timeline`}
+							className="w-full px-4 py-2 border border-accent/60 text-accent hover:bg-accent/10 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
+							<svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="8" y1="6" x2="8" y2="18"/><line x1="14" y1="6" x2="14" y2="18"/></svg>
+							Timeline and screen time
+						</Link>
+					)}
 					<OriginClassControl type="produced" id={id} asset={asset} queryKeys={[['produced', id], ['produced']]} />
 					<RelationshipsPanel type="produced" id={id} queryKeys={[['produced', id], ['produced']]} />
 

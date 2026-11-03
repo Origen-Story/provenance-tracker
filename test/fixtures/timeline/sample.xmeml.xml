@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xmeml>
+<!-- Hand-authored after a real Premiere Pro 2026 "Final Cut Pro XML" export.
+     Neutral names. Exercises: file definitions in the master-clip list with
+     back-references from the sequence, percent-encoded pathurl, a transition,
+     a disabled clip, a nested sequence, a generator (title) on V2, an overlay
+     clip on V2, and a stereo-exploded audio pair joined by <link>. -->
+<xmeml version="4">
+	<project>
+		<name>sample-project</name>
+		<children>
+			<clip id="masterclip-1" explodedTracks="true">
+				<masterclipid>masterclip-1</masterclipid>
+				<ismasterclip>TRUE</ismasterclip>
+				<duration>300</duration>
+				<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+				<name>Clip 01.mp4</name>
+				<media>
+					<video>
+						<track>
+							<clipitem id="clipitem-1">
+								<masterclipid>masterclip-1</masterclipid>
+								<name>Clip 01.mp4</name>
+								<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+								<file id="file-1">
+									<name>Clip 01.mp4</name>
+									<pathurl>file://localhost/P%3a/Demo%20Project/assets/Clip%2001.mp4</pathurl>
+									<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+									<duration>300</duration>
+									<media>
+										<video><samplecharacteristics><width>1920</width><height>1080</height></samplecharacteristics></video>
+										<audio><samplecharacteristics><depth>16</depth><samplerate>48000</samplerate></samplecharacteristics><channelcount>2</channelcount></audio>
+									</media>
+								</file>
+							</clipitem>
+						</track>
+					</video>
+				</media>
+			</clip>
+			<clip id="masterclip-2">
+				<name>Still 02.png</name>
+				<media><video><track><clipitem id="clipitem-2">
+					<name>Still 02.png</name>
+					<file id="file-2">
+						<name>Still 02.png</name>
+						<pathurl>file://localhost/P%3a/Demo%20Project/assets/Still%2002.png</pathurl>
+						<duration>1294705</duration>
+						<media><video><samplecharacteristics><width>3840</width><height>2160</height></samplecharacteristics></video></media>
+					</file>
+				</clipitem></track></video></media>
+			</clip>
+			<clip id="masterclip-3">
+				<name>Clip 03 disabled.mov</name>
+				<media><video><track><clipitem id="clipitem-3">
+					<name>Clip 03 disabled.mov</name>
+					<file id="file-3">
+						<name>Clip 03 disabled.mov</name>
+						<pathurl>file://localhost/P%3a/Demo%20Project/assets/Clip%2003%20disabled.mov</pathurl>
+						<duration>120</duration>
+					</file>
+				</clipitem></track></video></media>
+			</clip>
+			<clip id="masterclip-4">
+				<name>Renamed 04.mp4</name>
+				<media><video><track><clipitem id="clipitem-4">
+					<name>Renamed 04.mp4</name>
+					<file id="file-4">
+						<name>Renamed 04.mp4</name>
+						<pathurl>file://localhost/P%3a/Demo%20Project/assets/Renamed%2004.mp4</pathurl>
+						<duration>500</duration>
+					</file>
+				</clipitem></track></video></media>
+			</clip>
+			<clip id="masterclip-5">
+				<name>Overlay 05.mp4</name>
+				<media><video><track><clipitem id="clipitem-5">
+					<name>Overlay 05.mp4</name>
+					<file id="file-5">
+						<name>Overlay 05.mp4</name>
+						<pathurl>file://localhost/P%3a/Demo%20Project/assets/Overlay%2005.mp4</pathurl>
+						<duration>200</duration>
+					</file>
+				</clipitem></track></video></media>
+			</clip>
+			<sequence id="sequence-1">
+				<uuid>00000000-0000-0000-0000-000000000001</uuid>
+				<duration>400</duration>
+				<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+				<name>Sample Sequence</name>
+				<media>
+					<video>
+						<format>
+							<samplecharacteristics>
+								<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+								<width>1920</width>
+								<height>1080</height>
+							</samplecharacteristics>
+						</format>
+						<track>
+							<clipitem id="clipitem-21">
+								<masterclipid>masterclip-1</masterclipid>
+								<name>Clip 01.mp4</name>
+								<enabled>TRUE</enabled>
+								<duration>300</duration>
+								<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+								<start>0</start>
+								<end>100</end>
+								<in>10</in>
+								<out>110</out>
+								<file id="file-1"/>
+								<link><linkclipref>clipitem-21</linkclipref><mediatype>video</mediatype><trackindex>1</trackindex><clipindex>1</clipindex></link>
+								<link><linkclipref>clipitem-31</linkclipref><mediatype>audio</mediatype><trackindex>1</trackindex><clipindex>1</clipindex><groupindex>1</groupindex></link>
+								<link><linkclipref>clipitem-32</linkclipref><mediatype>audio</mediatype><trackindex>2</trackindex><clipindex>1</clipindex><groupindex>1</groupindex></link>
+							</clipitem>
+							<transitionitem>
+								<start>90</start>
+								<end>110</end>
+								<alignment>center</alignment>
+								<effect><name>Cross Dissolve</name><effectid>Cross Dissolve</effectid><effecttype>transition</effecttype><mediatype>video</mediatype></effect>
+							</transitionitem>
+							<clipitem id="clipitem-22">
+								<masterclipid>masterclip-2</masterclipid>
+								<name>Still 02.png</name>
+								<enabled>TRUE</enabled>
+								<duration>1294705</duration>
+								<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+								<start>100</start>
+								<end>200</end>
+								<in>107892</in>
+								<out>107992</out>
+								<file id="file-2"/>
+							</clipitem>
+							<clipitem id="clipitem-23">
+								<masterclipid>masterclip-3</masterclipid>
+								<name>Clip 03 disabled.mov</name>
+								<enabled>FALSE</enabled>
+								<duration>120</duration>
+								<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+								<start>200</start>
+								<end>260</end>
+								<in>0</in>
+								<out>60</out>
+								<file id="file-3"/>
+							</clipitem>
+							<clipitem id="clipitem-24">
+								<name>Nested Sequence</name>
+								<enabled>TRUE</enabled>
+								<duration>40</duration>
+								<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+								<start>260</start>
+								<end>300</end>
+								<in>0</in>
+								<out>40</out>
+								<sequence id="sequence-2">
+									<name>Nested Sequence</name>
+									<duration>40</duration>
+									<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+									<media><video><track></track></video></media>
+								</sequence>
+							</clipitem>
+							<clipitem id="clipitem-25">
+								<masterclipid>masterclip-4</masterclipid>
+								<name>Renamed 04.mp4</name>
+								<enabled>TRUE</enabled>
+								<duration>500</duration>
+								<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+								<start>300</start>
+								<end>400</end>
+								<in>0</in>
+								<out>100</out>
+								<file id="file-4"/>
+							</clipitem>
+							<enabled>TRUE</enabled>
+							<locked>FALSE</locked>
+						</track>
+						<track>
+							<generatoritem id="clipitem-26">
+								<name>Lower Third</name>
+								<enabled>TRUE</enabled>
+								<duration>30</duration>
+								<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+								<start>50</start>
+								<end>80</end>
+								<in>0</in>
+								<out>30</out>
+								<effect><name>Text</name><effectid>GraphicAndType</effectid><effecttype>generator</effecttype><mediatype>video</mediatype></effect>
+							</generatoritem>
+							<clipitem id="clipitem-27">
+								<masterclipid>masterclip-5</masterclipid>
+								<name>Overlay 05.mp4</name>
+								<enabled>TRUE</enabled>
+								<duration>200</duration>
+								<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+								<start>350</start>
+								<end>420</end>
+								<in>0</in>
+								<out>70</out>
+								<file id="file-5"/>
+							</clipitem>
+							<enabled>TRUE</enabled>
+							<locked>FALSE</locked>
+						</track>
+					</video>
+					<audio>
+						<numOutputChannels>2</numOutputChannels>
+						<format><samplecharacteristics><depth>16</depth><samplerate>48000</samplerate></samplecharacteristics></format>
+						<track currentExplodedTrackIndex="0" totalExplodedTrackCount="2" premiereTrackType="Stereo">
+							<clipitem id="clipitem-31" premiereChannelType="stereo">
+								<masterclipid>masterclip-1</masterclipid>
+								<name>Clip 01.mp4</name>
+								<enabled>TRUE</enabled>
+								<duration>300</duration>
+								<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+								<start>0</start>
+								<end>100</end>
+								<in>10</in>
+								<out>110</out>
+								<file id="file-1"/>
+								<sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>
+								<link><linkclipref>clipitem-21</linkclipref><mediatype>video</mediatype><trackindex>1</trackindex><clipindex>1</clipindex></link>
+								<link><linkclipref>clipitem-31</linkclipref><mediatype>audio</mediatype><trackindex>1</trackindex><clipindex>1</clipindex><groupindex>1</groupindex></link>
+								<link><linkclipref>clipitem-32</linkclipref><mediatype>audio</mediatype><trackindex>2</trackindex><clipindex>1</clipindex><groupindex>1</groupindex></link>
+							</clipitem>
+							<enabled>TRUE</enabled>
+							<locked>FALSE</locked>
+						</track>
+						<track currentExplodedTrackIndex="1" totalExplodedTrackCount="2" premiereTrackType="Stereo">
+							<clipitem id="clipitem-32" premiereChannelType="stereo">
+								<masterclipid>masterclip-1</masterclipid>
+								<name>Clip 01.mp4</name>
+								<enabled>TRUE</enabled>
+								<duration>300</duration>
+								<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+								<start>0</start>
+								<end>100</end>
+								<in>10</in>
+								<out>110</out>
+								<file id="file-1"/>
+								<sourcetrack><mediatype>audio</mediatype><trackindex>2</trackindex></sourcetrack>
+								<link><linkclipref>clipitem-21</linkclipref><mediatype>video</mediatype><trackindex>1</trackindex><clipindex>1</clipindex></link>
+								<link><linkclipref>clipitem-31</linkclipref><mediatype>audio</mediatype><trackindex>1</trackindex><clipindex>1</clipindex><groupindex>1</groupindex></link>
+								<link><linkclipref>clipitem-32</linkclipref><mediatype>audio</mediatype><trackindex>2</trackindex><clipindex>1</clipindex><groupindex>1</groupindex></link>
+							</clipitem>
+							<enabled>TRUE</enabled>
+							<locked>FALSE</locked>
+						</track>
+					</audio>
+				</media>
+				<timecode>
+					<rate><timebase>30</timebase><ntsc>TRUE</ntsc></rate>
+					<string>00;00;00;00</string>
+					<frame>0</frame>
+					<displayformat>DF</displayformat>
+				</timecode>
+			</sequence>
+		</children>
+	</project>
+</xmeml>

@@ -6,6 +6,7 @@ import { assetMetadata } from '../../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 import { proposeOriginClass, parseJsonSafe, ORIGIN_CLASSES } from './classify.js';
 import { tableFor, listRelationshipsFor, linkAssets } from '../relationships/relationships.js';
+import { recomputeTimelinesForAsset } from '../timeline/timelines.js';
 
 export { ORIGIN_CLASSES };
 
@@ -69,6 +70,7 @@ export async function applyProposal(type, id, { force = false } = {}) {
 	};
 	if (type === 'produced') patch.captureSigned = proposal.captureSigned;
 	const [updated] = await db.update(table).set(patch).where(eq(table.id, id)).returning();
+	if (row.originClass !== proposal.originClass) await recomputeTimelinesForAsset(type, id);
 	return { row: updated, proposal, applied: true };
 }
 
@@ -101,6 +103,8 @@ export async function setOriginClass(type, id, { originClass, confirmed = true, 
 	const [updated] = await db.update(table).set(patch).where(eq(table.id, id)).returning();
 	if (!updated) throw new Error('Asset not found');
 	await reproposeDerivedChildren(type, id);
+	// Screen-time breakdowns that count this asset change with its class.
+	await recomputeTimelinesForAsset(type, id);
 	return updated;
 }
 

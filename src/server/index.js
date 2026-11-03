@@ -22,6 +22,7 @@ import searchGroupsRouter from './routes/search-groups.js';
 import signRouter from './routes/sign.js';
 import originRouter from './routes/origin.js';
 import relationshipsRouter from './routes/relationships.js';
+import timelinesRouter from './routes/timelines.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -62,6 +63,7 @@ app.use('/api/search-groups', searchGroupsRouter);
 app.use('/api/sign', signRouter);
 app.use('/api/origin', originRouter);
 app.use('/api/relationships', relationshipsRouter);
+app.use('/api/timelines', timelinesRouter);
 
 // Serve React build in production
 if (process.env.NODE_ENV === 'production') {

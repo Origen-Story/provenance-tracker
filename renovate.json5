@@ -1,0 +1,35 @@
+// Renovate: dependency updates for this repo (replaces Dependabot version
+// updates; Dependabot security alerts are a separate GitHub feature and stay on).
+//
+// How it behaves:
+// - One "Dependency Dashboard" issue lists every pending update, including
+//   majors that have not been opened as PRs. Reopening this repo after a
+//   dormant stretch starts there.
+// - Minor and patch updates arrive as one grouped PR per week. CI runs on it;
+//   merge when green.
+// - Major updates never open a PR on their own. They wait under "Pending
+//   Approval" on the dashboard until someone ticks the box, because a major
+//   (React, Express, Vite, vitest) is planned work with the app running, not
+//   a merge-button decision.
+// - New releases wait 14 days before being proposed, so a pulled or
+//   immediately-patched release is never suggested.
+// - GitHub Actions stay pinned to commit SHAs; Renovate updates the SHA and
+//   the version comment together.
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "dependencyDashboard": true,
+  "minimumReleaseAge": "14 days",
+  "schedule": ["before 6am on monday"],
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "minor and patch updates"
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}

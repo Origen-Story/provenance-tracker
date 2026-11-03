@@ -30,7 +30,7 @@ function ClassBar({ block, title, note }) {
 			</div>
 			<div className="flex h-5 rounded overflow-hidden border border-border bg-card-hover" title="Share of the sequence duration">
 				{entries.map(([cls, v]) => (
-					<div key={cls} style={{ width: `${v.percent}%` }} className={`${originClassInfo(cls).color.split(' ')[0].replace('/20', '/70')} h-full`} title={`${originClassInfo(cls).label}: ${v.percent.toFixed(1)}%`} />
+					<div key={cls} style={{ width: `${v.percent}%` }} className={`${originClassInfo(cls).bar} h-full`} title={`${originClassInfo(cls).label}: ${v.percent.toFixed(1)}%`} />
 				))}
 				{gap?.frames > 0 && <div style={{ width: `${gap.percent}%` }} className="h-full bg-transparent" title={`No clip: ${gap.percent.toFixed(1)}%`} />}
 			</div>

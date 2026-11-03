@@ -1,13 +1,15 @@
 // Origin-class vocabulary (decision D3) as the UI shows it. Keep in step with
-// src/server/lib/origin/classify.js ORIGIN_CLASSES.
+// src/server/lib/origin/classify.js ORIGIN_CLASSES. Class names must be written
+// out in full: Tailwind only emits the classes it finds literally in the source,
+// so `bar` is a separate token rather than a rewrite of `color` at runtime.
 export const ORIGIN_CLASSES = [
-	{ value: 'captured_signed', label: 'Captured (signed)', short: 'Captured ✓', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40', desc: 'Recorded by a camera or phone that signed it with Content Credentials.' },
-	{ value: 'captured', label: 'Captured', short: 'Captured', color: 'bg-green-500/20 text-green-300 border-green-500/40', desc: 'Recorded by a camera or microphone, no signature.' },
-	{ value: 'archival', label: 'Archival', short: 'Archival', color: 'bg-amber-500/20 text-amber-200 border-amber-500/40', desc: 'Historical material from an archive, unchanged.' },
-	{ value: 'archival_enhanced', label: 'Archival, AI-enhanced', short: 'Archival + AI', color: 'bg-orange-500/20 text-orange-200 border-orange-500/40', desc: 'Archival material upscaled, restored or colourised with an AI tool.' },
-	{ value: 'generated', label: 'AI-generated', short: 'Generated', color: 'bg-purple-500/20 text-purple-200 border-purple-500/40', desc: 'Made by a generative model from a prompt or reference.' },
-	{ value: 'composited', label: 'Composited', short: 'Composited', color: 'bg-sky-500/20 text-sky-200 border-sky-500/40', desc: 'An edit or export made from several other assets.' },
-	{ value: 'unknown', label: 'Unknown', short: 'Unknown', color: 'bg-zinc-500/20 text-zinc-300 border-zinc-500/40', desc: 'No reliable signal yet; set it by hand.' }
+	{ value: 'captured_signed', label: 'Captured (signed)', short: 'Captured ✓', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40', bar: 'bg-emerald-500/70', desc: 'Recorded by a camera or phone that signed it with Content Credentials.' },
+	{ value: 'captured', label: 'Captured', short: 'Captured', color: 'bg-green-500/20 text-green-300 border-green-500/40', bar: 'bg-green-500/70', desc: 'Recorded by a camera or microphone, no signature.' },
+	{ value: 'archival', label: 'Archival', short: 'Archival', color: 'bg-amber-500/20 text-amber-200 border-amber-500/40', bar: 'bg-amber-500/70', desc: 'Historical material from an archive, unchanged.' },
+	{ value: 'archival_enhanced', label: 'Archival, AI-enhanced', short: 'Archival + AI', color: 'bg-orange-500/20 text-orange-200 border-orange-500/40', bar: 'bg-orange-500/70', desc: 'Archival material upscaled, restored or colourised with an AI tool.' },
+	{ value: 'generated', label: 'AI-generated', short: 'Generated', color: 'bg-purple-500/20 text-purple-200 border-purple-500/40', bar: 'bg-purple-500/70', desc: 'Made by a generative model from a prompt or reference.' },
+	{ value: 'composited', label: 'Composited', short: 'Composited', color: 'bg-sky-500/20 text-sky-200 border-sky-500/40', bar: 'bg-sky-500/70', desc: 'An edit or export made from several other assets.' },
+	{ value: 'unknown', label: 'Unknown', short: 'Unknown', color: 'bg-zinc-500/20 text-zinc-300 border-zinc-500/40', bar: 'bg-zinc-500/70', desc: 'No reliable signal yet; set it by hand.' }
 ];
 
 export function originClassInfo(value) {

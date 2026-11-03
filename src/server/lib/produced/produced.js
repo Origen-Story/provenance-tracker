@@ -8,10 +8,13 @@ import { applyProposal } from '../origin/origin.js';
 import { removeRelationshipsFor } from '../relationships/relationships.js';
 
 export async function listProducedAssets(projectId, {
-	search = '', assetType = '', enrichment = '', sortBy = 'createdAt', sortDir = 'desc', limit = 100, offset = 0
+	search = '', assetType = '', enrichment = '', outputs = '', sortBy = 'createdAt', sortDir = 'desc', limit = 100, offset = 0
 } = {}) {
 	const conditions = [eq(producedAssets.projectId, projectId)];
 	if (enrichment === 'incomplete') conditions.push(PRODUCED_ENRICHMENT_CONDITION);
+	// outputs: 'only' lists finished edits, 'exclude' lists source material.
+	if (outputs === 'only') conditions.push(eq(producedAssets.isOutput, true));
+	else if (outputs === 'exclude') conditions.push(eq(producedAssets.isOutput, false));
 
 	if (search) {
 		conditions.push(
@@ -75,8 +78,20 @@ export async function createProducedAsset(projectId, data) {
 	}).returning();
 	// Propose an origin class from the stored signals (D3). Unconfirmed until
 	// the user says so.
-	const { row: classified } = await applyProposal('produced', row.id);
+	const { row: classified, proposal } = await applyProposal('produced', row.id);
+	// A file whose credentials list ingredients is a finished edit (D10).
+	if (proposal?.source === 'c2pa_ingredients') return markOutput(row.id, 'c2pa_ingredients');
 	return classified || row;
+}
+
+// Flag a produced asset as a finished edit (or clear the flag). A flag set by
+// the system never downgrades one the user set.
+export async function markOutput(id, source = 'user', isOutput = true) {
+	const row = await getProducedAsset(id);
+	if (!row) throw new Error('Asset not found');
+	if (isOutput && row.isOutput && row.outputSource === 'user') return row;
+	const [updated] = await db.update(producedAssets).set({ isOutput: !!isOutput, outputSource: isOutput ? source : '', updatedAt: sql`now()` }).where(eq(producedAssets.id, id)).returning();
+	return updated;
 }
 
 export async function updateProducedAsset(id, updates) {

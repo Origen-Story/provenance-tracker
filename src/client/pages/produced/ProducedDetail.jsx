@@ -46,6 +46,11 @@ export default function ProducedDetail() {
 	const [saved, setSaved] = useState(false);
 	const [signOpen, setSignOpen] = useState(false);
 
+	const markOutput = useMutation({
+		mutationFn: () => fetch(`/api/outputs/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isOutput: true }) }).then(r => r.json()),
+		onSuccess: () => { qc.invalidateQueries({ queryKey: ['produced', id] }); qc.invalidateQueries({ queryKey: ['outputs'] }); navigate(`/outputs/${id}`); }
+	});
+
 	const { data: asset, isLoading } = useQuery({
 		queryKey: ['produced', id],
 		queryFn: () => fetch(`/api/produced/${id}`).then(r => r.json())
@@ -121,11 +126,19 @@ export default function ProducedDetail() {
 
 					<MediaPanel asset={asset} />
 					{(asset.mimeType?.startsWith('video/') || asset.mimeType?.startsWith('audio/')) && (
-						<Link to={`/produced/${id}/timeline`}
-							className="w-full px-4 py-2 border border-accent/60 text-accent hover:bg-accent/10 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
-							<svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="8" y1="6" x2="8" y2="18"/><line x1="14" y1="6" x2="14" y2="18"/></svg>
-							Timeline and screen time
-						</Link>
+						asset.isOutput ? (
+							<Link to={`/outputs/${id}`}
+								className="w-full px-4 py-2 border border-accent/60 text-accent hover:bg-accent/10 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
+								<svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="8" y1="6" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="18"/></svg>
+								Open as output: composition and credentials
+							</Link>
+						) : (
+							<button type="button" onClick={() => markOutput.mutate()} disabled={markOutput.isPending}
+								className="w-full px-4 py-2 border border-border text-text-secondary hover:text-text-primary hover:bg-card-hover rounded-lg text-sm transition-colors disabled:opacity-40"
+								title="A finished edit rather than a source recording. Outputs get a composition view and, later, a signed manifest.">
+								{markOutput.isPending ? 'Marking…' : 'This is a finished edit (mark as output)'}
+							</button>
+						)
 					)}
 					<OriginClassControl type="produced" id={id} asset={asset} queryKeys={[['produced', id], ['produced']]} />
 					<RelationshipsPanel type="produced" id={id} queryKeys={[['produced', id], ['produced']]} />

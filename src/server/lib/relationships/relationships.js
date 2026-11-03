@@ -28,7 +28,9 @@ function toRef(type, row) {
 		filePath: row.filePath,
 		mimeType: row.mimeType || '',
 		originClass: row.originClass || 'unknown',
-		originClassConfirmed: !!row.originClassConfirmed
+		originClassConfirmed: !!row.originClassConfirmed,
+		originClassNote: row.originClassNote || '',
+		isOutput: !!row.isOutput
 	};
 }
 

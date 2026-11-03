@@ -66,6 +66,7 @@ export async function applyProposal(type, id, { force = false } = {}) {
 		originClass: proposal.originClass,
 		originClassSource: proposal.source,
 		originClassConfirmed: false,
+		originClassNote: '',
 		updatedAt: sql`now()`
 	};
 	if (type === 'produced') patch.captureSigned = proposal.captureSigned;
@@ -84,7 +85,7 @@ async function reproposeDerivedChildren(type, id) {
 	}
 }
 
-export async function setOriginClass(type, id, { originClass, confirmed = true, ingredientClasses } = {}) {
+export async function setOriginClass(type, id, { originClass, confirmed = true, ingredientClasses, note } = {}) {
 	if (!ORIGIN_CLASSES.includes(originClass)) throw new Error(`Unknown origin class: ${originClass}`);
 	if (ingredientClasses !== undefined) {
 		if (!Array.isArray(ingredientClasses) || ingredientClasses.some(c => !ORIGIN_CLASSES.includes(c))) {
@@ -99,6 +100,7 @@ export async function setOriginClass(type, id, { originClass, confirmed = true, 
 		updatedAt: sql`now()`
 	};
 	if (ingredientClasses !== undefined) patch.originIngredientClasses = JSON.stringify(ingredientClasses);
+	if (note !== undefined) patch.originClassNote = String(note || '').trim().slice(0, 2000);
 	if (type === 'produced') patch.captureSigned = originClass === 'captured_signed';
 	const [updated] = await db.update(table).set(patch).where(eq(table.id, id)).returning();
 	if (!updated) throw new Error('Asset not found');

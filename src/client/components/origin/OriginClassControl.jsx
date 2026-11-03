@@ -15,7 +15,9 @@ async function jsonOrThrow(r) {
 export default function OriginClassControl({ type, id, asset, queryKeys = [] }) {
 	const qc = useQueryClient();
 	const [selected, setSelected] = useState(asset?.originClass || 'unknown');
+	const [note, setNote] = useState(asset?.originClassNote || '');
 	useEffect(() => { setSelected(asset?.originClass || 'unknown'); }, [asset?.originClass]);
+	useEffect(() => { setNote(asset?.originClassNote || ''); }, [asset?.originClassNote]);
 
 	const invalidate = () => {
 		for (const key of queryKeys) qc.invalidateQueries({ queryKey: key });
@@ -25,7 +27,7 @@ export default function OriginClassControl({ type, id, asset, queryKeys = [] }) 
 	const confirm = useMutation({
 		mutationFn: (originClass) => fetch(`/api/origin/${type}/${id}`, {
 			method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ originClass, confirmed: true })
+			body: JSON.stringify({ originClass, confirmed: true, note })
 		}).then(jsonOrThrow),
 		onSuccess: invalidate
 	});
@@ -38,7 +40,7 @@ export default function OriginClassControl({ type, id, asset, queryKeys = [] }) 
 	if (!asset) return null;
 	const current = originClassInfo(asset.originClass);
 	const confirmed = !!asset.originClassConfirmed;
-	const dirty = selected !== asset.originClass;
+	const dirty = selected !== asset.originClass || note !== (asset.originClassNote || '');
 	// Only an unknown class asks for attention. A proposal from metadata is
 	// used as-is everywhere; confirming it is optional.
 	const needsAttention = asset.originClass === 'unknown';
@@ -64,6 +66,8 @@ export default function OriginClassControl({ type, id, asset, queryKeys = [] }) 
 				</button>
 			</div>
 			<p className="text-[11px] text-text-secondary">{originClassInfo(selected).desc}</p>
+			<input value={note} onChange={e => setNote(e.target.value)} placeholder="Reason (optional): why this class, especially when it overrides what the file says. Goes into the output manifest."
+				className="w-full bg-card-bg border border-border rounded-md px-2 py-1 text-[11px] text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent" />
 			<div className="flex items-center justify-between">
 				<button type="button" onClick={() => propose.mutate()} disabled={propose.isPending}
 					className="text-[11px] text-text-secondary hover:text-text-primary underline-offset-2 hover:underline disabled:opacity-50">

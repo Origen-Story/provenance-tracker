@@ -28,6 +28,12 @@ const PORT = process.env.PORT || 3001;
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '../../package.json'), 'utf8'));
 
 app.use(express.json({ limit: '10mb' }));
+// Express 5 leaves req.body undefined when a request carries no JSON body
+// (Express 4 gave {}). Routes destructure req.body, so keep the old shape.
+app.use((req, _res, next) => {
+	if (req.body === undefined) req.body = {};
+	next();
+});
 
 // Liveness/readiness probe. Returns 200 if the server can reach the DB, 503 otherwise.
 // Useful for reverse-proxy health checks and for anyone self-hosting behind systemd/pm2.
@@ -57,10 +63,18 @@ app.use('/api/sign', signRouter);
 if (process.env.NODE_ENV === 'production') {
 	const distPath = path.resolve(__dirname, '../../dist');
 	app.use(express.static(distPath));
-	app.get('*', (req, res) => {
+	// Express 5 path syntax: a bare "*" is no longer valid; a named splat is.
+	app.get('/{*splat}', (req, res) => {
 		res.sendFile(path.join(distPath, 'index.html'));
 	});
 }
+
+// Express 5 forwards rejected promises from async routes here. Answer in JSON
+// so the client never gets an HTML stack page.
+app.use((err, _req, res, _next) => {
+	log.error(err.stack || err.message);
+	res.status(err.status || 500).json({ error: err.message || 'Internal error' });
+});
 
 app.listen(PORT, async () => {
 	log.info(`✓ Provenance Tracker API running on http://localhost:${PORT}`);

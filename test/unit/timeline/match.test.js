@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildMatchIndex, matchClips, normalizePath, sourcesFromTimeline, matchesByClip } from '../../../src/server/lib/timeline/match.js';
+import { buildMatchIndex, matchClips, normalizePath, sourcesFromTimeline, matchesByClip, reconcileManualMatch } from '../../../src/server/lib/timeline/match.js';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -66,5 +66,18 @@ describe('matchClips', () => {
 		expect(byClip.get('clipitem-23').method).toBe('unmatched');
 		expect(byClip.has('clipitem-24')).toBe(false);      // nested sequence has no source file
 		expect(byClip.has('clipitem-26')).toBe(false);      // generator
+	});
+});
+
+describe('reconcileManualMatch', () => {
+	const asset = { type: 'ai', id: 7, filePath: 'P:/store/ai/clip.mp4', originalFilePath: 'P:/Demo Project/assets/Clip.mp4', fileHash: 'abc' };
+	it('keeps the stronger evidence when the pick agrees with the file', () => {
+		expect(reconcileManualMatch({ path: 'p:\\demo project\\assets\\CLIP.mp4', hash: null }, asset)).toEqual({ method: 'path', confidence: 1 });
+		expect(reconcileManualMatch({ path: 'P:/elsewhere/renamed.mp4', hash: 'abc' }, asset)).toEqual({ method: 'hash', confidence: 1 });
+	});
+	it('records a plain manual pick when nothing agrees', () => {
+		expect(reconcileManualMatch({ path: 'P:/elsewhere/other.mp4', hash: 'zzz' }, asset)).toEqual({ method: 'manual', confidence: 1 });
+		expect(reconcileManualMatch({ path: null, hash: null }, asset)).toEqual({ method: 'manual', confidence: 1 });
+		expect(reconcileManualMatch({ path: 'x', hash: 'abc' }, null)).toEqual({ method: 'unmatched', confidence: 0 });
 	});
 });

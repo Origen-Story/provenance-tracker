@@ -65,6 +65,14 @@ Every asset row carries `origin_class` (D3 vocabulary: `captured_signed`, `captu
 
 Enhancer outputs (Topaz Video AI, Topaz Gigapixel) are modifiers, not generators. On import, `src/server/lib/relationships/auto-link.js` strips the Topaz suffix from the filename and looks for a same-stem asset in the project; one hit links it as `derived_from` with confidence 0.7, several are returned as suggestions. Routes: `/api/origin/*` and `/api/relationships/*`.
 
+### Timelines and screen time
+
+`timelines` holds one imported NLE sequence per produced output (format, fps, duration, settings, cached breakdown, path of the raw file kept under `<storage>/timelines/<producedId>/`); `timeline_segments` holds one row per clip per track with its match (`matched_asset_type`/`id`, `match_method`, `match_confidence`) and an optional per-clip `origin_class` override.
+
+Pure modules under `src/server/lib/timeline/`: `formats/` is the registry (xmeml first, D2; a module exports `detect` and `parse` to one normalised shape), `match.js` matches each distinct source file to a tracked asset by path (including a signed copy's original path), SHA-256, filename plus size, then filename only, and `breakdown.js` turns segments into frames and percentages per origin class on the primary picture track with gaps, an optional overlay sweep where the top-most clip wins (D7), and audio with stereo-exploded pairs collapsed. `timelines.js` is the IO wrapper: it parses, stores, matches with real file stats and hashes, persists, caches the breakdown, and links every matched asset to the output as `output_of`. Fixing a segment's match applies to every clip of the same source; an asset's origin-class change recomputes every timeline that counts it.
+
+Real-world notes from a Premiere Pro 2026 export: file definitions live in the master-clip list and are back-referenced by id; stereo audio is exploded into two linked tracks; stills carry a large source duration with in/out offsets near frame 107892; `pathurl` percent-encodes the drive colon; assets imported into managed storage match by hash rather than path.
+
 ## Multi-project architecture
 
 Each project has a `modules` JSON field (`["ai_assets", "archival"]`) controlling which features are available. Sidebar navigation adapts to the active project's modules. All asset tables have a `projectId` FK.

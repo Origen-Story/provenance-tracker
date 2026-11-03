@@ -39,15 +39,18 @@ export default function OriginClassControl({ type, id, asset, queryKeys = [] }) 
 	const current = originClassInfo(asset.originClass);
 	const confirmed = !!asset.originClassConfirmed;
 	const dirty = selected !== asset.originClass;
+	// Only an unknown class asks for attention. A proposal from metadata is
+	// used as-is everywhere; confirming it is optional.
+	const needsAttention = asset.originClass === 'unknown';
 
 	return (
-		<div className={`border rounded-lg p-3 space-y-2 ${confirmed ? 'bg-card-bg border-border' : 'bg-amber-500/5 border-amber-500/30'}`}>
+		<div className={`border rounded-lg p-3 space-y-2 ${needsAttention ? 'bg-amber-500/5 border-amber-500/30' : 'bg-card-bg border-border'}`}>
 			<div className="flex items-center justify-between gap-2">
 				<span className="text-xs font-medium text-text-secondary">Origin class</span>
 				<span className={`border rounded px-2 py-0.5 text-xs font-medium ${current.color}`}>{current.label}</span>
 			</div>
 			<p className="text-xs text-text-secondary">
-				{confirmed ? 'Confirmed.' : 'Proposed, not yet confirmed.'}{' '}
+				{confirmed ? 'Confirmed.' : needsAttention ? 'Needs a decision.' : 'Proposed from metadata; confirm only if you want to vouch for it.'}{' '}
 				{explainSource(asset.originClassSource)}
 			</p>
 			<div className="flex gap-2">

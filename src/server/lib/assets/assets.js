@@ -55,7 +55,7 @@ export async function listAssets(projectId, {
 	// AI enrichment filter needs a join to check prompt
 	const needsJoin = enrichment === 'incomplete';
 	if (needsJoin) {
-		conditions.push(sql`(${assets.platform} = 'unknown' OR ${empty(assets.generationDate)} OR ${empty(assets.digitalSourceType)} OR ${empty(generationParams.prompt)} OR ${assets.originClassConfirmed} = false)`);
+		conditions.push(sql`(${assets.platform} = 'unknown' OR ${empty(assets.generationDate)} OR ${empty(assets.digitalSourceType)} OR ${empty(generationParams.prompt)} OR ${assets.originClass} = 'unknown')`);
 	}
 
 	const sortCols = {

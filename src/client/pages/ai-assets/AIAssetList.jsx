@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
 import PageHeader from '../../components/layout/PageHeader.jsx';
+import OriginBadge from '../../components/origin/OriginBadge.jsx';
 
 const PLATFORM_LABELS = { freepik: 'Freepik', comfyui: 'ComfyUI', midjourney: 'Midjourney', firefly: 'Adobe Firefly', elevenlabs: 'ElevenLabs', 'topaz-video-ai': 'Topaz Video AI', unknown: 'Unknown' };
 const PLATFORM_COLORS = { freepik: 'text-blue-400', comfyui: 'text-purple-400', midjourney: 'text-yellow-400', firefly: 'text-rose-400', elevenlabs: 'text-emerald-400', 'topaz-video-ai': 'text-cyan-400', unknown: 'text-text-secondary' };
@@ -138,6 +139,7 @@ export default function AIAssetList() {
 										{asset.missingFields.length} missing
 									</div>
 								)}
+								<OriginBadge originClass={asset.originClass} confirmed={asset.originClassConfirmed} className="absolute bottom-2 left-2 z-10" />
 								{asset.mimeType?.startsWith('image/') ? (
 									<img src={`/api/preview?path=${encodeURIComponent(asset.filePath)}`}
 										alt={asset.description} className="w-full h-full object-cover" loading="lazy" />

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import OriginClassControl from '../../components/origin/OriginClassControl.jsx';
+import RelationshipsPanel from '../../components/origin/RelationshipsPanel.jsx';
 
 const MEDIA_TYPES = ['photograph', 'illustration', 'map', 'document', 'other'];
 const COMMON_LICENSES = ['Public Domain', 'CC BY 4.0', 'CC BY-SA 4.0', 'CC BY-NC 4.0', 'CC BY-NC-SA 4.0', 'CC0 1.0', 'All Rights Reserved'];
@@ -97,6 +99,9 @@ export default function ArchivalDetail() {
 							Download original
 						</a>
 					</div>
+
+					<OriginClassControl type="archival" id={id} asset={asset} queryKeys={[['archival', id], ['archival']]} />
+					<RelationshipsPanel type="archival" id={id} queryKeys={[['archival', id], ['archival']]} />
 
 					{Object.keys(exif).length > 0 && (
 						<details className="bg-card-bg border border-border rounded-lg">

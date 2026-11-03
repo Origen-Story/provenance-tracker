@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router';
 import PageHeader from '../../components/layout/PageHeader.jsx';
 
 // Client-side per-asset sync loop. One HTTP request per asset means a single

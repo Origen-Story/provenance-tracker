@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import PageHeader from '../components/layout/PageHeader.jsx';
 
 const TYPE_COLORS = {

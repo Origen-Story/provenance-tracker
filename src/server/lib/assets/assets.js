@@ -1,8 +1,11 @@
+import path from 'path';
 import { db } from '../../db/index.js';
 import { assets, generationParams, assetMetadata, projects } from '../../db/schema.js';
 import { eq, desc, asc, sql, count, and, ilike } from 'drizzle-orm';
 import { getAIMissingFields } from '../dashboard.js';
 import { detectAndParse } from '../extraction/ai-extraction.js';
+import { applyProposal } from '../origin/origin.js';
+import { removeRelationshipsFor, autoLinkEnhancer } from '../relationships/relationships.js';
 import { createLogger } from '../logger.js';
 
 const log = createLogger('assets');
@@ -52,7 +55,7 @@ export async function listAssets(projectId, {
 	// AI enrichment filter needs a join to check prompt
 	const needsJoin = enrichment === 'incomplete';
 	if (needsJoin) {
-		conditions.push(sql`(${assets.platform} = 'unknown' OR ${empty(assets.generationDate)} OR ${empty(assets.digitalSourceType)} OR ${empty(generationParams.prompt)})`);
+		conditions.push(sql`(${assets.platform} = 'unknown' OR ${empty(assets.generationDate)} OR ${empty(assets.digitalSourceType)} OR ${empty(generationParams.prompt)} OR ${assets.originClassConfirmed} = false)`);
 	}
 
 	const sortCols = {
@@ -171,7 +174,17 @@ export async function createAsset(projectId, data) {
 	if (data.platformJson) metaInserts.push({ assetId: row.id, metadataType: 'platform', rawJson: data.platformJson });
 	if (metaInserts.length) await db.insert(assetMetadata).values(metaInserts);
 
-	return getAsset(row.id);
+	// Enhancer outputs (Topaz) try to find their source by filename, then the
+	// origin class is proposed with the parent known (D3, D4).
+	const filename = path.basename(data.filePath || '');
+	const link = await autoLinkEnhancer({ type: 'ai', id: row.id, filename, projectId }).catch(err => {
+		log.warn(`auto-link skipped for ${filename}: ${err.message}`);
+		return { linked: null, parent: null, suggestedParents: [] };
+	});
+	await applyProposal('ai', row.id);
+
+	const created = await getAsset(row.id);
+	return { ...created, autoLinkedParent: link.parent, suggestedParents: link.suggestedParents };
 }
 
 /**
@@ -279,6 +292,7 @@ export async function updateAsset(id, data) {
 }
 
 export async function deleteAsset(id) {
+	await removeRelationshipsFor('ai', id);
 	await db.delete(assets).where(eq(assets.id, id));
 }
 

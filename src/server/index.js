@@ -20,6 +20,8 @@ import uploadRouter from './routes/upload.js';
 import searchRouter from './routes/search.js';
 import searchGroupsRouter from './routes/search-groups.js';
 import signRouter from './routes/sign.js';
+import originRouter from './routes/origin.js';
+import relationshipsRouter from './routes/relationships.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -58,6 +60,8 @@ app.use('/api/upload', uploadRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/search-groups', searchGroupsRouter);
 app.use('/api/sign', signRouter);
+app.use('/api/origin', originRouter);
+app.use('/api/relationships', relationshipsRouter);
 
 // Serve React build in production
 if (process.env.NODE_ENV === 'production') {

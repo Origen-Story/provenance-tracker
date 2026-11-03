@@ -2,6 +2,8 @@ import { db } from '../../db/index.js';
 import { archivalAssets } from '../../db/schema.js';
 import { eq, desc, asc, sql, count, and, ilike } from 'drizzle-orm';
 import { ARCHIVAL_ENRICHMENT_CONDITION, getArchivalMissingFields } from '../dashboard.js';
+import { applyProposal } from '../origin/origin.js';
+import { removeRelationshipsFor } from '../relationships/relationships.js';
 
 export async function listArchivalAssets(projectId, {
 	search = '', medium = '', enrichment = '', searchGroupId = '', sortBy = 'createdAt', sortDir = 'desc', limit = 100, offset = 0
@@ -71,7 +73,8 @@ export async function createArchivalAsset(projectId, data) {
 		searchGroupId: data.searchGroupId || '',
 		searchGroupName: data.searchGroupName || ''
 	}).returning();
-	return row;
+	const { row: classified } = await applyProposal('archival', row.id);
+	return classified || row;
 }
 
 export async function updateArchivalAsset(id, updates) {
@@ -82,6 +85,7 @@ export async function updateArchivalAsset(id, updates) {
 }
 
 export async function deleteArchivalAsset(id) {
+	await removeRelationshipsFor('archival', id);
 	await db.delete(archivalAssets).where(eq(archivalAssets.id, id));
 }
 

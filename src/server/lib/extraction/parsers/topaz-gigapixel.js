@@ -4,7 +4,8 @@
  * Gigapixel writes its name into XMP CreatorTool / Software and appends the
  * model and scale to the filename ("photo-gigapixel-redefine-realistic-2x-
  * faceai v2.png"). It is a modifier, not a generator: the output's origin
- * class follows the source it was linked to (archival -> archival_enhanced).
+ * class is AI-enhanced once its source is linked, or stays what the source is
+ * when the source is itself AI-generated (classify.js, rule 2).
  * The XMP DigitalSourceType it carries is copied from the input and is not
  * evidence about Gigapixel itself.
  */

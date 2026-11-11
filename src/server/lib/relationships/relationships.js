@@ -30,6 +30,9 @@ function toRef(type, row) {
 		originClass: row.originClass || 'unknown',
 		originClassConfirmed: !!row.originClassConfirmed,
 		originClassNote: row.originClassNote || '',
+		aiAssisted: !!row.aiAssisted,
+		signedBy: row.signedBy || '',
+		signerName: row.signerName || '',
 		isOutput: !!row.isOutput
 	};
 }

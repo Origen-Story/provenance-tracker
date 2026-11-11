@@ -12,6 +12,8 @@ import { eq, and, sql, asc, desc } from 'drizzle-orm';
 import { parseTimeline } from './formats/index.js';
 import { buildMatchIndex, matchClips, sourcesFromTimeline, matchesByClip, reconcileManualMatch } from './match.js';
 import { computeBreakdown, segmentsFromTimeline } from './breakdown.js';
+import { positionsIn } from './compose.js';
+import { compositeClassFor } from '../../../shared/origin-vocabulary.js';
 import { computeFileHash } from '../core/file-utils.js';
 import { linkAssets, resolveAssetRef, tableFor } from '../relationships/relationships.js';
 import { createLogger } from '../logger.js';
@@ -34,7 +36,7 @@ export async function buildProjectAssetIndex(projectId) {
 		filename: r.filename || path.basename(r.filePath || ''),
 		filePath: r.filePath, originalFilePath: r.originalFilePath || null,
 		fileHash: r.fileHash || '', fileSize: r.fileSize || 0,
-		originClass: r.originClass || 'unknown', originClassConfirmed: !!r.originClassConfirmed
+		originClass: r.originClass || 'unknown', originClassConfirmed: !!r.originClassConfirmed, aiAssisted: !!r.aiAssisted
 	});
 	const [ai, arch, prod] = await Promise.all([
 		db.select().from(assets).where(eq(assets.projectId, projectId)),
@@ -178,6 +180,7 @@ async function effectiveSegments(rows) {
 			matched: !!asset,
 			asset,
 			originClass: r.originClass || asset?.originClass || null,
+			aiAssisted: !r.originClass && !!asset?.aiAssisted,
 			originClassOverride: r.originClass || null
 		});
 	}
@@ -195,6 +198,7 @@ export async function recomputeTimeline(id) {
 		includeOverlays: !!row.includeOverlays
 	});
 	await db.update(timelines).set({ breakdownJson: JSON.stringify(breakdown), updatedAt: sql`now()` }).where(eq(timelines.id, id));
+	await classifyOutputFromComposition(row.producedAssetId, breakdown.composition);
 	return breakdown;
 }
 
@@ -204,7 +208,19 @@ function parseBreakdown(json) {
 	try { return JSON.parse(json || 'null'); } catch { return null; }
 }
 function isStale(breakdown) {
-	return !breakdown || !breakdown.composition;
+	return !breakdown || !breakdown.composition?.picture?.byPosition;
+}
+
+// A finished edit is a composite, and which kind follows from what is in it
+// (compositeClassFor). Written as a proposal: a class the user confirmed, or
+// a timeline that says nothing yet, leaves the row alone.
+async function classifyOutputFromComposition(producedAssetId, composition) {
+	if (!producedAssetId || !composition) return;
+	const positions = positionsIn(composition).filter(p => p !== 'unknown');
+	if (!positions.length) return;
+	const originClass = compositeClassFor(positionsIn(composition));
+	await db.update(producedAssets).set({ originClass, originClassSource: 'timeline_composition', updatedAt: sql`now()` })
+		.where(and(eq(producedAssets.id, producedAssetId), eq(producedAssets.originClassConfirmed, false), sql`${producedAssets.originClass} <> ${originClass}`));
 }
 
 export async function getTimeline(id) {

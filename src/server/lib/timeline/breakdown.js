@@ -11,8 +11,8 @@
 //   Frames per class are summed from enabled clips, clipped to the sequence
 //   duration; frames no clip covers are reported as `gap`. Percentages are of
 //   the sequence duration, so classes + gap = 100.
-// - Unmatched clips count as `unknown`. Nested sequences and generators
-//   (titles, mattes) also count as `unknown` unless a class was set by hand.
+// - Unmatched clips and nested sequences count as `unknown` unless a class
+//   was set by hand. Generators (titles, mattes) count as `digitalCreation`.
 // - Overlay mode sweeps every enabled video track and lets the top-most
 //   clip win per interval; reported separately, never mixed into primary.
 // - Audio is reported per class with stereo-exploded pairs collapsed (same
@@ -22,6 +22,9 @@ import { composeLanes } from './compose.js';
 
 export function classOfSegment(seg) {
 	if (seg.originClass) return seg.originClass;
+	// A title, matte or other generator built in the editor: made by a person
+	// with ordinary tools (IPTC digitalCreation).
+	if (seg.sourceKind === 'generator') return 'digitalCreation';
 	return 'unknown';
 }
 
@@ -162,7 +165,8 @@ export function segmentsFromTimeline(timeline, matchesByClipId = new Map()) {
 				matchConfidence: m?.confidence ?? 0,
 				matchedAssetType: m?.asset?.type || null,
 				matchedAssetId: m?.asset?.id || null,
-				originClass: m?.asset?.originClass || null
+				originClass: m?.asset?.originClass || null,
+				aiAssisted: !!m?.asset?.aiAssisted
 			});
 		}
 	}

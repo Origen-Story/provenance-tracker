@@ -67,7 +67,7 @@ describe('computeBreakdown overlays', () => {
 		const on = computeBreakdown(segments, { durationFrames: 400, fps: FPS, includeOverlays: true });
 		expect(on.primary.byClass.captured.frames).toBe(400);
 		expect(on.overlays.byClass.captured.frames).toBe(320);
-		expect(on.overlays.byClass.unknown.frames).toBe(30);
+		expect(on.overlays.byClass.digitalCreation.frames).toBe(30); // a generator is a human-made graphic
 		expect(on.overlays.byClass.generated.frames).toBe(50);
 		expect(sumPercent(on.overlays)).toBeCloseTo(100, 6);
 	});

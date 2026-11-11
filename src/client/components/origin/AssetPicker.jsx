@@ -43,7 +43,7 @@ export default function AssetPicker({ onPick, onCancel, exclude = null, placehol
 										<span className="block truncate text-text-primary">{r.label}</span>
 										{r.filename && r.filename !== r.label && <span className="block truncate text-[10px] text-text-secondary" title={r.filename}>{r.filename}</span>}
 									</span>
-									<OriginBadge originClass={r.originClass} confirmed={r.originClassConfirmed} className="shrink-0" />
+									<OriginBadge asset={r} className="shrink-0" />
 								</button>
 							</li>
 						))}

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import LaneStrip, { fmtClock, describeInterval, describeLayers, GUTTER } from './LaneStrip.jsx';
-import { originClassInfo, intervalBackground, MIXED, GAP } from '../origin/originClasses.js';
+import { POSITIONS, positionDef, intervalBackground, MIXED, GAP } from '../origin/originClasses.js';
 
 function intervalAt(lane, seconds) {
 	if (!lane || seconds == null) return null;
@@ -9,35 +9,35 @@ function intervalAt(lane, seconds) {
 	return ivs.length && seconds >= ivs[ivs.length - 1].endSeconds ? ivs[ivs.length - 1] : null;
 }
 
-function Swatch({ classes }) {
-	return <span className="inline-block w-3 h-3 rounded-sm border border-black/30 align-middle" style={{ background: intervalBackground(classes) }} />;
+function Swatch({ positions }) {
+	return <span className="inline-block w-3 h-3 rounded-sm border border-black/30 align-middle shrink-0" style={{ background: intervalBackground(positions) }} />;
 }
 
 // Frames and percentages for one lane, derived from the same intervals as
 // the strip. Mixed stretches are listed with what was playing together.
 function LaneNumbers({ lane, title }) {
 	if (!lane) return null;
-	const rows = Object.entries(lane.byClass || {}).sort((a, b) => b[1].frames - a[1].frames);
+	const rows = Object.entries(lane.byPosition || {}).sort((a, b) => b[1].frames - a[1].frames);
 	const combos = Object.entries(lane.mixed?.combos || {}).sort((a, b) => b[1].frames - a[1].frames);
 	const cell = (v) => `${v.seconds != null ? `${v.seconds.toFixed(1)} s` : `${v.frames} f`}`;
 	return (
 		<table className="w-full text-xs">
 			<thead><tr className="text-left text-text-secondary"><th className="pb-1 font-medium" colSpan={2}>{title}</th><th className="pb-1 text-right font-medium">time</th><th className="pb-1 text-right font-medium w-14">share</th></tr></thead>
 			<tbody>
-				{rows.map(([cls, v]) => (
-					<tr key={cls} className="border-t border-border/60">
-						<td className="py-1 w-5"><Swatch classes={[cls]} /></td>
-						<td className="py-1 text-text-secondary">{originClassInfo(cls).label}</td>
+				{rows.map(([pos, v]) => (
+					<tr key={pos} className="border-t border-border/60">
+						<td className="py-1 w-5"><Swatch positions={[pos]} /></td>
+						<td className="py-1 text-text-secondary" title={positionDef(pos).desc}>{positionDef(pos).label}</td>
 						<td className="py-1 text-right text-text-primary">{cell(v)}</td>
 						<td className="py-1 text-right text-text-primary font-medium">{v.percent.toFixed(1)}%</td>
 					</tr>
 				))}
 				{lane.mixed?.frames > 0 && (
 					<tr className="border-t border-border/60">
-						<td className="py-1 w-5"><Swatch classes={combos[0]?.[0].split('+') || []} /></td>
+						<td className="py-1 w-5"><Swatch positions={combos[0]?.[0].split('+') || []} /></td>
 						<td className="py-1 text-text-secondary">
 							{MIXED.label}
-							<div className="text-[10px] opacity-80">{combos.map(([k, v]) => `${k.split('+').map(c => originClassInfo(c).short).join(' + ')} ${v.percent.toFixed(1)}%`).join(' · ')}</div>
+							<div className="text-[10px] opacity-80">{combos.map(([k, v]) => `${k.split('+').map(p => positionDef(p).label).join(' + ')} ${v.percent.toFixed(1)}%`).join(' · ')}</div>
 						</td>
 						<td className="py-1 text-right text-text-primary align-top">{cell(lane.mixed)}</td>
 						<td className="py-1 text-right text-text-primary font-medium align-top">{lane.mixed.percent.toFixed(1)}%</td>
@@ -62,7 +62,7 @@ function Readout({ label, lane, prefix, seconds }) {
 	return (
 		<div className="flex items-start gap-2 text-xs">
 			<span className={`${GUTTER} text-text-secondary`}>{label}</span>
-			<Swatch classes={iv.classes} />
+			<Swatch positions={iv.positions} />
 			<span className="text-text-primary">{describeInterval(iv)}</span>
 			{iv.layers?.length > 0 && <span className="text-text-secondary truncate" title={describeLayers(iv.layers, prefix)}>{describeLayers(iv.layers, prefix)}</span>}
 		</div>
@@ -106,8 +106,8 @@ export default function Composition({ asset, composition }) {
 				<LaneNumbers lane={composition.audio} title="Audio, share of the sequence" />
 			</div>
 			<p className="text-[11px] text-text-secondary">
-				Legend: {['captured_signed', 'captured', 'archival', 'archival_enhanced', 'generated', 'composited', 'unknown'].map(c => <span key={c} className="mr-2 whitespace-nowrap"><Swatch classes={[c]} /> {originClassInfo(c).label}</span>)}
-				<span className="whitespace-nowrap"><Swatch classes={['generated', 'captured']} /> {MIXED.label}</span>
+				Legend: {POSITIONS.map(p => <span key={p.id} className="mr-3 whitespace-nowrap" title={p.desc}><Swatch positions={[p.id]} /> {p.label}</span>)}
+				<span className="whitespace-nowrap" title={MIXED.desc}><Swatch positions={['synthetic', 'captured']} /> {MIXED.label}</span>
 			</p>
 		</div>
 	);

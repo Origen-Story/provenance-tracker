@@ -48,7 +48,7 @@ function AddOutput({ onDone }) {
 
 function OutputCard({ o }) {
 	const comp = o.timeline?.composition;
-	const unknown = comp?.picture?.byClass?.unknown?.percent || 0;
+	const unknown = comp?.picture?.byPosition?.unknown?.percent || 0;
 	const unmatched = o.timeline?.counts?.unmatched || 0;
 	return (
 		<Link to={`/outputs/${o.id}`} className="block bg-card-bg border border-border hover:border-accent/60 rounded-lg p-4 transition-colors">

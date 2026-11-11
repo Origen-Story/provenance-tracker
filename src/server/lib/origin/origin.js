@@ -5,6 +5,7 @@ import { db } from '../../db/index.js';
 import { assetMetadata } from '../../db/schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 import { proposeOriginClass, parseJsonSafe, ORIGIN_CLASSES } from './classify.js';
+import { originClassDef } from '../../../shared/origin-vocabulary.js';
 import { tableFor, listRelationshipsFor, linkAssets } from '../relationships/relationships.js';
 import { recomputeTimelinesForAsset } from '../timeline/timelines.js';
 
@@ -60,18 +61,29 @@ export async function proposeForAsset(type, id) {
  */
 export async function applyProposal(type, id, { force = false } = {}) {
 	const { row, proposal } = await proposeForAsset(type, id);
-	if (row.originClassConfirmed && !force) return { row, proposal, applied: false };
 	const table = tableFor(type);
+	if (row.originClassConfirmed && !force) {
+		// The class is the user's. Who signed the file is not theirs to decide,
+		// so that part is kept current.
+		if ((row.signedBy || '') === proposal.signedBy && (row.signerName || '') === proposal.signerName) return { row, proposal, applied: false };
+		const signer = { signedBy: proposal.signedBy, signerName: proposal.signerName };
+		if (type === 'produced') signer.captureSigned = proposal.captureSigned;
+		const [kept] = await db.update(table).set(signer).where(eq(table.id, id)).returning();
+		return { row: kept, proposal, applied: false };
+	}
 	const patch = {
 		originClass: proposal.originClass,
 		originClassSource: proposal.source,
 		originClassConfirmed: false,
 		originClassNote: '',
+		aiAssisted: false,
+		signedBy: proposal.signedBy,
+		signerName: proposal.signerName,
 		updatedAt: sql`now()`
 	};
 	if (type === 'produced') patch.captureSigned = proposal.captureSigned;
 	const [updated] = await db.update(table).set(patch).where(eq(table.id, id)).returning();
-	if (row.originClass !== proposal.originClass) await recomputeTimelinesForAsset(type, id);
+	if (row.originClass !== proposal.originClass || !!row.aiAssisted) await recomputeTimelinesForAsset(type, id);
 	return { row: updated, proposal, applied: true };
 }
 
@@ -85,7 +97,7 @@ async function reproposeDerivedChildren(type, id) {
 	}
 }
 
-export async function setOriginClass(type, id, { originClass, confirmed = true, ingredientClasses, note } = {}) {
+export async function setOriginClass(type, id, { originClass, confirmed = true, ingredientClasses, note, aiAssisted } = {}) {
 	if (!ORIGIN_CLASSES.includes(originClass)) throw new Error(`Unknown origin class: ${originClass}`);
 	if (ingredientClasses !== undefined) {
 		if (!Array.isArray(ingredientClasses) || ingredientClasses.some(c => !ORIGIN_CLASSES.includes(c))) {
@@ -101,7 +113,11 @@ export async function setOriginClass(type, id, { originClass, confirmed = true, 
 	};
 	if (ingredientClasses !== undefined) patch.originIngredientClasses = JSON.stringify(ingredientClasses);
 	if (note !== undefined) patch.originClassNote = String(note || '').trim().slice(0, 2000);
-	if (type === 'produced') patch.captureSigned = originClass === 'captured_signed';
+	// The flag only means something for digital work with no AI in its pixels
+	// (see spectrumPosition); it is cleared for any other class.
+	if (aiAssisted !== undefined || originClassDef(originClass).position !== 'digital') {
+		patch.aiAssisted = !!aiAssisted && originClassDef(originClass).position === 'digital';
+	}
 	const [updated] = await db.update(table).set(patch).where(eq(table.id, id)).returning();
 	if (!updated) throw new Error('Asset not found');
 	await reproposeDerivedChildren(type, id);
@@ -118,14 +134,14 @@ export async function linkWithRepropose(args) {
 	return rel;
 }
 
-// Re-run proposals for every unconfirmed row in a project. Used after the
-// classifier learns a new rule, and once for rows imported before it existed.
+// Re-run proposals for every row in a project. Used after the classifier
+// learns a new rule, and once for rows imported before it existed. A confirmed
+// class is left alone; only who signed the file is refreshed on those rows.
 export async function reproposeProject(projectId) {
 	const counts = {};
 	for (const type of ['ai', 'archival', 'produced']) {
 		const table = tableFor(type);
-		const rows = await db.select({ id: table.id }).from(table)
-			.where(and(eq(table.projectId, projectId), eq(table.originClassConfirmed, false)));
+		const rows = await db.select({ id: table.id }).from(table).where(eq(table.projectId, projectId));
 		let changed = 0;
 		for (const r of rows) {
 			const { applied } = await applyProposal(type, r.id);

@@ -72,6 +72,13 @@ export const assets = pgTable('assets', {
 	// Free-text reason the user gave when setting the class by hand (why a
 	// signed or proposed class was overridden). Carried into the output manifest.
 	originClassNote: text('origin_class_note').default(''),
+	// Attributes beside the class (decision D11). aiAssisted: an AI model wrote
+	// the instructions and an ordinary program made the pixels. signedBy: who
+	// vouches for the file's credentials ('' | device | tool | creator), with the
+	// signer's name as the certificate gives it.
+	aiAssisted: boolean('ai_assisted').default(false),
+	signedBy: text('signed_by').default(''),
+	signerName: text('signer_name').default(''),
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
 });
@@ -173,6 +180,13 @@ export const archivalAssets = pgTable('archival_assets', {
 	// Free-text reason the user gave when setting the class by hand (why a
 	// signed or proposed class was overridden). Carried into the output manifest.
 	originClassNote: text('origin_class_note').default(''),
+	// Attributes beside the class (decision D11). aiAssisted: an AI model wrote
+	// the instructions and an ordinary program made the pixels. signedBy: who
+	// vouches for the file's credentials ('' | device | tool | creator), with the
+	// signer's name as the certificate gives it.
+	aiAssisted: boolean('ai_assisted').default(false),
+	signedBy: text('signed_by').default(''),
+	signerName: text('signer_name').default(''),
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
 });
@@ -222,6 +236,13 @@ export const producedAssets = pgTable('produced_assets', {
 	// Free-text reason the user gave when setting the class by hand (why a
 	// signed or proposed class was overridden). Carried into the output manifest.
 	originClassNote: text('origin_class_note').default(''),
+	// Attributes beside the class (decision D11). aiAssisted: an AI model wrote
+	// the instructions and an ordinary program made the pixels. signedBy: who
+	// vouches for the file's credentials ('' | device | tool | creator), with the
+	// signer's name as the certificate gives it.
+	aiAssisted: boolean('ai_assisted').default(false),
+	signedBy: text('signed_by').default(''),
+	signerName: text('signer_name').default(''),
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
 });

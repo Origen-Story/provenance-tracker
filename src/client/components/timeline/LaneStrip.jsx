@@ -1,4 +1,4 @@
-import { originClassInfo, intervalBackground, MIXED } from '../origin/originClasses.js';
+import { originInfo, positionDef, intervalBackground, MIXED } from '../origin/originClasses.js';
 
 export function fmtClock(seconds) {
 	if (seconds == null || Number.isNaN(seconds)) return '0:00.0';
@@ -7,15 +7,16 @@ export function fmtClock(seconds) {
 	return `${m}:${s.toFixed(1).padStart(4, '0')}`;
 }
 
-// "V2 Lower third (Unknown) over V1 Clip 01 (Captured ✓)"
+// "V2 Lower third (Human-made) over V1 Clip 01 (Captured)"
 export function describeLayers(layers, prefix) {
-	return (layers || []).map(l => `${prefix}${l.trackIndex} ${l.name || 'clip'} (${originClassInfo(l.originClass).short})`).join(' over ');
+	return (layers || []).map(l => `${prefix}${l.trackIndex} ${l.name || 'clip'} (${originInfo(l).short})`).join(' over ');
 }
 
 export function describeInterval(iv) {
 	if (!iv || iv.state === 'gap') return 'Nothing';
-	if (iv.state === 'single') return originClassInfo(iv.classes[0]).label;
-	return `${MIXED.label}: ${iv.classes.map(c => originClassInfo(c).short).join(' + ')}`;
+	// One position: name the class when there is only one, else the position.
+	if (iv.state === 'single') return iv.classes?.length === 1 && iv.layers?.length ? originInfo(iv.layers[0]).label : positionDef(iv.positions[0]).label;
+	return `${MIXED.label}: ${iv.positions.map(p => positionDef(p).label).join(' + ')}`;
 }
 
 // Width of the label column to the left of every strip. The lane and its
@@ -29,7 +30,7 @@ function Interval({ iv, durationSeconds, prefix, onSeek }) {
 	const title = `${fmtClock(iv.startSeconds)}–${fmtClock(iv.endSeconds)}  ${describeInterval(iv)}${iv.layers?.length ? `\n${describeLayers(iv.layers, prefix)}` : ''}`;
 	return (
 		<div className={`absolute top-0 h-full ${iv.state !== 'gap' ? 'border-r border-black/30' : ''}`}
-			style={{ left: `${left}%`, width: `${width}%`, background: iv.state === 'gap' ? undefined : intervalBackground(iv.classes) }}
+			style={{ left: `${left}%`, width: `${width}%`, background: iv.state === 'gap' ? undefined : intervalBackground(iv.positions) }}
 			title={title}
 			onClick={e => { if (onSeek) { e.stopPropagation(); onSeek(iv.startSeconds); } }} />
 	);
@@ -84,8 +85,8 @@ export default function LaneStrip({ title, lane, durationSeconds, prefix = 'V', 
 					<div className={`relative h-4 flex-1 min-w-0 rounded border border-border bg-card-hover overflow-hidden ${onSeek ? 'cursor-pointer' : ''}`} onClick={seek}>
 						{t.clips.map((c, i) => (
 							<div key={i} className="absolute top-0 h-full border-r border-black/30"
-								style={{ left: `${(c.startSeconds / durationSeconds) * 100}%`, width: `${((c.endSeconds - c.startSeconds) / durationSeconds) * 100}%`, background: intervalBackground([c.originClass]) }}
-								title={`${fmtClock(c.startSeconds)}–${fmtClock(c.endSeconds)}  ${c.name || 'clip'}: ${originClassInfo(c.originClass).label}${c.matched ? '' : ' (no matched asset)'}`}
+								style={{ left: `${(c.startSeconds / durationSeconds) * 100}%`, width: `${((c.endSeconds - c.startSeconds) / durationSeconds) * 100}%`, background: intervalBackground([c.position]) }}
+								title={`${fmtClock(c.startSeconds)}–${fmtClock(c.endSeconds)}  ${c.name || 'clip'}: ${originInfo(c).label}${c.matched ? '' : ' (no matched asset)'}`}
 								onClick={e => { if (onSeek) { e.stopPropagation(); onSeek(c.startSeconds); } }} />
 						))}
 						<Playhead currentTime={currentTime} durationSeconds={durationSeconds} />

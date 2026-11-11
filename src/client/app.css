@@ -16,6 +16,18 @@
 	--os-gold: #a07830;
 	--os-blue: #2a6a9e;
 	--os-red: #a83232;
+	--os-purple: #7a3fd6;
+	--os-sage: #74ad90;
+
+	/* Origin palette (decision D11): one colour per spectrum position, not per
+	   class. Strips, badges and legends read only these six tokens, so a
+	   downstream theme or the public viewer overrides them in one place. */
+	--pt-origin-captured: var(--os-green);
+	--pt-origin-digital: var(--os-sage);
+	--pt-origin-assisted: var(--os-gold);
+	--pt-origin-hybrid: var(--os-blue);
+	--pt-origin-synthetic: var(--os-purple);
+	--pt-origin-unknown: var(--os-muted);
 }
 
 /* Dark mode overrides */
@@ -34,6 +46,8 @@
 		--os-gold: #d4a054;
 		--os-blue: #5a9fd4;
 		--os-red: #d45a5a;
+		--os-purple: #a264ef;
+		--os-sage: #a8d0ba;
 	}
 }
 

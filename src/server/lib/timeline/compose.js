@@ -1,24 +1,27 @@
 // Pure: what is on screen, and what is audible, at every moment of a
-// timeline (decision D10).
+// timeline (decisions D10 and D11).
 //
 // Takes the same flat segment rows as breakdown.js and returns two lanes,
 // picture and audio. Each lane is a list of intervals that tile the sequence
-// duration. An interval is `single` when every layer playing in it has the
-// same origin class, `mixed` when two or more classes play at once (a
-// generated music bed under captured narration; a graphic over a camera
-// shot), and `gap` when nothing plays. The numbers (frames and percentages
-// per class, per mix, and gap) are derived from the same intervals, so the
-// strip and the summary cannot disagree.
+// duration. Layers are compared by spectrum position (how much generative AI
+// is in them), not by class: an interval is `single` when every layer playing
+// in it sits at the same position, `mixed` when two or more positions play at
+// once (a generated music bed under captured narration; an AI-assisted
+// graphic over a camera shot), and `gap` when nothing plays. A scan over a
+// camera shot is two classes at one position and stays `single`. The numbers
+// (frames and percentages per position, per mix, and gap) are derived from
+// the same intervals, so the strip and the summary cannot disagree.
 //
 // Layer rules:
 // - Disabled clips are not layers.
-// - Unmatched clips, nested sequences and generators are `unknown` unless a
-//   class was set.
+// - Unmatched clips and nested sequences are `unknown` unless a class was
+//   set; a title or other generator made in the editor is `digitalCreation`.
 // - Audio that an NLE exploded into a stereo pair (same source, same
 //   position on two tracks) is one layer, not two.
 // - Within an interval, layers are listed top track first.
 
 import { classOfSegment } from './breakdown.js';
+import { spectrumPosition } from '../../../shared/origin-vocabulary.js';
 
 const LANE_KINDS = { picture: 'video', audio: 'audio' };
 
@@ -40,6 +43,8 @@ function layersOf(segments, kind, durationFrames) {
 			if (seen.has(key)) continue;
 			seen.add(key);
 		}
+		const originClass = classOfSegment(seg);
+		const aiAssisted = !!seg.aiAssisted;
 		out.push({
 			trackIndex: seg.trackIndex,
 			clipId: seg.clipId ?? null,
@@ -47,7 +52,9 @@ function layersOf(segments, kind, durationFrames) {
 			name: seg.name || seg.sourceName || '',
 			startFrame: r[0],
 			endFrame: r[1],
-			originClass: classOfSegment(seg),
+			originClass,
+			aiAssisted,
+			position: spectrumPosition(originClass, { aiAssisted }),
 			matched: !!seg.matched,
 			matchedAssetType: seg.matchedAssetType || null,
 			matchedAssetId: seg.matchedAssetId || null
@@ -78,27 +85,28 @@ function composeLane(layers, durationFrames, fps) {
 		const a = sorted[i], b = sorted[i + 1];
 		if (b <= a) continue;
 		const active = layers.filter(l => l.startFrame <= a && l.endFrame >= b).sort((x, y) => y.trackIndex - x.trackIndex);
+		const positions = [...new Set(active.map(l => l.position))];
 		const classes = [...new Set(active.map(l => l.originClass))];
-		const state = active.length === 0 ? 'gap' : classes.length === 1 ? 'single' : 'mixed';
+		const state = active.length === 0 ? 'gap' : positions.length === 1 ? 'single' : 'mixed';
 		const prev = intervals[intervals.length - 1];
 		if (prev && prev.endFrame === a && prev.state === state && sameLayers(prev.layers, active)) {
 			prev.endFrame = b;
 			continue;
 		}
-		intervals.push({ startFrame: a, endFrame: b, state, classes, layers: active });
+		intervals.push({ startFrame: a, endFrame: b, state, positions, classes, layers: active });
 	}
 
-	const byClass = {};
+	const byPosition = {};
 	const combos = {};
 	let mixedFrames = 0;
 	let gapFrames = 0;
 	for (const iv of intervals) {
 		const frames = iv.endFrame - iv.startFrame;
 		if (iv.state === 'gap') gapFrames += frames;
-		else if (iv.state === 'single') byClass[iv.classes[0]] = (byClass[iv.classes[0]] || 0) + frames;
+		else if (iv.state === 'single') byPosition[iv.positions[0]] = (byPosition[iv.positions[0]] || 0) + frames;
 		else {
 			mixedFrames += frames;
-			const key = [...iv.classes].sort().join('+');
+			const key = [...iv.positions].sort().join('+');
 			combos[key] = (combos[key] || 0) + frames;
 		}
 	}
@@ -114,10 +122,10 @@ function composeLane(layers, durationFrames, fps) {
 			...iv,
 			startSeconds: timed(iv.startFrame, fps),
 			endSeconds: timed(iv.endFrame, fps),
-			layers: iv.layers.map(l => ({ trackIndex: l.trackIndex, clipId: l.clipId, segmentId: l.segmentId, name: l.name, originClass: l.originClass, matched: l.matched, matchedAssetType: l.matchedAssetType, matchedAssetId: l.matchedAssetId }))
+			layers: iv.layers.map(l => ({ trackIndex: l.trackIndex, clipId: l.clipId, segmentId: l.segmentId, name: l.name, originClass: l.originClass, aiAssisted: l.aiAssisted, position: l.position, matched: l.matched, matchedAssetType: l.matchedAssetType, matchedAssetId: l.matchedAssetId }))
 		})),
 		tracks: Object.values(tracks).sort((a, b) => a.index - b.index).map(t => ({ ...t, clips: t.clips.sort((a, b) => a.startFrame - b.startFrame) })),
-		byClass: Object.fromEntries(Object.entries(byClass).map(([cls, frames]) => [cls, stat(frames)])),
+		byPosition: Object.fromEntries(Object.entries(byPosition).map(([p, frames]) => [p, stat(frames)])),
 		mixed: { ...stat(mixedFrames), combos: Object.fromEntries(Object.entries(combos).map(([k, frames]) => [k, stat(frames)])) },
 		gap: stat(gapFrames),
 		coveredFrames: durationFrames - gapFrames
@@ -136,6 +144,16 @@ export function composeLanes(segments, { durationFrames, fps }) {
 		lanes[lane] = composeLane(layersOf(segs, kind, durationFrames), durationFrames, fps);
 	}
 	return { durationFrames, fps, durationSeconds: timed(durationFrames, fps), ...lanes };
+}
+
+// Every spectrum position that plays anywhere in a composition, both lanes.
+// Feeds compositeClassFor to name the finished edit.
+export function positionsIn(composition) {
+	const out = new Set();
+	for (const lane of [composition?.picture, composition?.audio]) {
+		for (const iv of lane?.intervals || []) for (const p of iv.positions || []) out.add(p);
+	}
+	return [...out];
 }
 
 // The interval of a lane that contains a moment, in seconds. Used by the

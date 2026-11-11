@@ -91,7 +91,7 @@ function SegmentRow({ seg, onFix, queryKeys }) {
 				)}
 			</td>
 			<td className="py-1.5">
-				{seg.asset ? <InlineClassSetter asset={seg.asset} queryKeys={queryKeys} /> : <OriginBadge originClass="unknown" confirmed={false} />}
+				{seg.asset ? <InlineClassSetter asset={seg.asset} queryKeys={queryKeys} /> : <OriginBadge originClass={seg.sourceKind === 'generator' ? 'digitalCreation' : 'unknown'} confirmed={false} />}
 			</td>
 		</tr>
 	);

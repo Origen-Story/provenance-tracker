@@ -57,6 +57,20 @@
       "when": 1793716798406,
       "tag": "0007_skinny_grey_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794420724305,
+      "tag": "0008_silly_hellfire_club",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794420731138,
+      "tag": "0009_origin_vocabulary",
+      "breakpoints": true
     }
   ]
 }

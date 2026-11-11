@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import OriginBadge from './OriginBadge.jsx';
+import AssetPicker from './AssetPicker.jsx';
 import { DETAIL_PATHS, TYPE_LABELS } from './originClasses.js';
 
 // Group headings by direction and relationship type, so a row never needs a
@@ -74,7 +75,6 @@ function Group({ title, hint, rows, onUnlink }) {
 export default function RelationshipsPanel({ type, id, queryKeys = [] }) {
 	const qc = useQueryClient();
 	const [adding, setAdding] = useState(false);
-	const [q, setQ] = useState('');
 	const [direction, setDirection] = useState('parent'); // 'parent': picked asset is the source of this one
 	const [relType, setRelType] = useState('derived_from');
 	const [picked, setPicked] = useState(null);
@@ -82,12 +82,6 @@ export default function RelationshipsPanel({ type, id, queryKeys = [] }) {
 	const rels = useQuery({
 		queryKey: ['relationships', type, id],
 		queryFn: () => fetch(`/api/relationships/${type}/${id}`).then(jsonOrThrow)
-	});
-
-	const search = useQuery({
-		queryKey: ['relationships-search', q],
-		queryFn: () => fetch(`/api/relationships/search?q=${encodeURIComponent(q)}`).then(jsonOrThrow),
-		enabled: adding && q.trim().length >= 2
 	});
 
 	const invalidate = () => {
@@ -106,7 +100,7 @@ export default function RelationshipsPanel({ type, id, queryKeys = [] }) {
 				body: JSON.stringify({ parentType: parent.type, parentId: parent.id, childType: child.type, childId: child.id, relationshipType: relType })
 			}).then(jsonOrThrow);
 		},
-		onSuccess: () => { setPicked(null); setQ(''); setAdding(false); invalidate(); }
+		onSuccess: () => { setPicked(null); setAdding(false); invalidate(); }
 	});
 
 	const unlink = useMutation({
@@ -149,27 +143,12 @@ export default function RelationshipsPanel({ type, id, queryKeys = [] }) {
 							<option value="output_of">{selfIsChild ? 'output of' : 'used in'}</option>
 						</select>
 					</div>
-					<input value={q} onChange={e => { setQ(e.target.value); setPicked(null); }} placeholder="Search assets by name or file…"
-						className="w-full bg-card-bg border border-border rounded-md px-2 py-1.5 text-xs text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent" />
-					{search.data?.results?.length > 0 && !picked && (
-						<ul className="max-h-40 overflow-y-auto border border-border rounded-md divide-y divide-border">
-							{search.data.results.filter(r => !(r.type === type && r.id === Number(id))).map(r => (
-								<li key={`${r.type}-${r.id}`}>
-									<button type="button" onClick={() => setPicked(r)}
-										className="w-full text-left px-2 py-1.5 text-xs hover:bg-card-hover flex items-center gap-2">
-										<span className="text-[10px] text-text-secondary w-16 shrink-0">{TYPE_LABELS[r.type]}</span>
-										<span className="truncate text-text-primary">{r.label}</span>
-										<OriginBadge originClass={r.originClass} confirmed={r.originClassConfirmed} className="ml-auto" />
-									</button>
-								</li>
-							))}
-						</ul>
-					)}
-					{search.data && search.data.results?.length === 0 && q.trim().length >= 2 && <p className="text-xs text-text-secondary">No matches.</p>}
+					{!picked && <AssetPicker onPick={setPicked} exclude={{ type, id: Number(id) }} />}
 					{picked && (
 						<div className="flex items-center gap-2 text-xs">
 							<span className="text-text-secondary">Selected:</span>
-							<span className="text-text-primary truncate">{picked.label}</span>
+							<span className="text-text-primary truncate" title={picked.filename}>{picked.label}</span>
+							<button type="button" onClick={() => setPicked(null)} className="text-[11px] text-text-secondary hover:text-text-primary">change</button>
 							<button type="button" onClick={() => link.mutate()} disabled={link.isPending}
 								className="ml-auto px-3 py-1 bg-accent hover:bg-accent-hover text-white rounded-md text-xs font-medium disabled:opacity-40">
 								{link.isPending ? 'Linking…' : 'Link'}

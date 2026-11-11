@@ -5,7 +5,8 @@ import Composition from '../../components/timeline/Composition.jsx';
 import { fmtClock } from '../../components/timeline/LaneStrip.jsx';
 import OriginBadge from '../../components/origin/OriginBadge.jsx';
 import InlineClassSetter from '../../components/origin/InlineClassSetter.jsx';
-import { TYPE_LABELS, DETAIL_PATHS } from '../../components/origin/originClasses.js';
+import AssetPicker from '../../components/origin/AssetPicker.jsx';
+import { DETAIL_PATHS } from '../../components/origin/originClasses.js';
 
 async function jsonOrThrow(r) {
 	const j = await r.json();
@@ -46,35 +47,6 @@ function ImportForm({ producedId, replace, onDone }) {
 	);
 }
 
-function MatchPicker({ onPick, onCancel }) {
-	const [q, setQ] = useState('');
-	const search = useQuery({
-		queryKey: ['relationships-search', q],
-		queryFn: () => fetch(`/api/relationships/search?q=${encodeURIComponent(q)}`).then(jsonOrThrow),
-		enabled: q.trim().length >= 2
-	});
-	return (
-		<div className="space-y-1">
-			<input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search assets…"
-				className="w-full bg-card-bg border border-border rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-accent" />
-			{search.data?.results?.length > 0 && (
-				<ul className="max-h-36 overflow-y-auto border border-border rounded divide-y divide-border bg-card-bg">
-					{search.data.results.map(r => (
-						<li key={`${r.type}-${r.id}`}>
-							<button type="button" onClick={() => onPick(r)} className="w-full text-left px-2 py-1 text-xs hover:bg-card-hover flex items-center gap-2">
-								<span className="text-[10px] text-text-secondary w-14 shrink-0">{TYPE_LABELS[r.type]}</span>
-								<span className="truncate">{r.label}</span>
-								<OriginBadge originClass={r.originClass} confirmed={r.originClassConfirmed} className="ml-auto" />
-							</button>
-						</li>
-					))}
-				</ul>
-			)}
-			<button type="button" onClick={onCancel} className="text-[11px] text-text-secondary hover:text-text-primary">cancel</button>
-		</div>
-	);
-}
-
 // How a clip on the timeline was tied to a tracked asset, strongest first.
 const METHOD_LABELS = { path: 'same file', hash: 'identical copy', filename_size: 'same name and size', filename: 'same name only, check', manual: 'you picked this', unmatched: 'no match', sequence: 'nested sequence', generator: 'title or generator' };
 const METHOD_HELP = {
@@ -100,7 +72,7 @@ function SegmentRow({ seg, onFix, queryKeys }) {
 			</td>
 			<td className="py-1.5 pr-2">
 				{picking ? (
-					<MatchPicker onPick={(r) => { setPicking(false); onFix(seg, r); }} onCancel={() => setPicking(false)} />
+					<AssetPicker onPick={(r) => { setPicking(false); onFix(seg, r); }} onCancel={() => setPicking(false)} />
 				) : seg.asset ? (
 					<div className="flex items-center gap-2">
 						<Link to={`${DETAIL_PATHS[seg.asset.type]}/${seg.asset.id}`} className="truncate max-w-[12rem] hover:text-accent" title={seg.asset.filename}>{seg.asset.label}</Link>

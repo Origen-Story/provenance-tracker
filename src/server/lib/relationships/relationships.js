@@ -3,8 +3,8 @@
 import path from 'path';
 import { db } from '../../db/index.js';
 import { assets, archivalAssets, producedAssets, assetRelationships } from '../../db/schema.js';
-import { eq, and, or, sql } from 'drizzle-orm';
-import { topazSourceBasename, findSourceCandidates } from './auto-link.js';
+import { eq, and, or, sql, desc } from 'drizzle-orm';
+import { topazSourceBasename, findSourceCandidates, searchTerms } from './auto-link.js';
 
 export const ASSET_TYPES = ['ai', 'archival', 'produced'];
 export const RELATIONSHIP_TYPES = ['ingredient', 'derived_from', 'output_of'];
@@ -115,14 +115,23 @@ export async function buildFilenameIndex(projectId) {
 }
 
 // Name search across the three tables, for the "set parent" picker.
+// Name search across the three asset tables. Every term must match one of
+// the table's name fields (see searchTerms); a blank query lists the most
+// recently added assets so a picker always has something to show.
 export async function searchAssets(projectId, q, limit = 20) {
-	const term = `%${String(q || '').trim()}%`;
-	const [ai, arch, prod] = await Promise.all([
-		db.select().from(assets).where(and(eq(assets.projectId, projectId), sql`(${assets.assetId} ILIKE ${term} OR ${assets.filePath} ILIKE ${term} OR ${assets.description} ILIKE ${term})`)).limit(limit),
-		db.select().from(archivalAssets).where(and(eq(archivalAssets.projectId, projectId), sql`(${archivalAssets.name} ILIKE ${term} OR ${archivalAssets.filename} ILIKE ${term})`)).limit(limit),
-		db.select().from(producedAssets).where(and(eq(producedAssets.projectId, projectId), sql`(${producedAssets.name} ILIKE ${term} OR ${producedAssets.filename} ILIKE ${term})`)).limit(limit)
-	]);
-	return [...ai.map(r => toRef('ai', r)), ...arch.map(r => toRef('archival', r)), ...prod.map(r => toRef('produced', r))].slice(0, limit);
+	const terms = searchTerms(q);
+	const fields = {
+		ai: [assets.assetId, assets.filePath, assets.description],
+		archival: [archivalAssets.name, archivalAssets.filename],
+		produced: [producedAssets.name, producedAssets.filename]
+	};
+	const tables = { ai: assets, archival: archivalAssets, produced: producedAssets };
+	const rows = await Promise.all(Object.keys(tables).map(type => {
+		const table = tables[type];
+		const conds = [eq(table.projectId, projectId), ...terms.map(t => or(...fields[type].map(f => sql`${f} ILIKE ${t}`)))];
+		return db.select().from(table).where(and(...conds)).orderBy(desc(table.id)).limit(limit).then(rs => rs.map(r => toRef(type, r)));
+	}));
+	return rows.flat().slice(0, limit);
 }
 
 /**

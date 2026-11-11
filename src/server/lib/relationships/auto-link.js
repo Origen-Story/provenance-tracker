@@ -38,3 +38,15 @@ export function findSourceCandidates(sourceStem, index, self = null) {
 		return stripExtension(entry.filename).toLowerCase() === want;
 	});
 }
+
+/**
+ * Split a search box query into terms for a forgiving name search. People
+ * type a clip name as they see it ("Firefly Antoni Gaudi") while files are
+ * stored with underscores or hyphens, so spaces, underscores and hyphens all
+ * separate terms and every term must match somewhere. Each term is escaped
+ * for SQL LIKE (`%`, `_` and `\` are literals) and wrapped in wildcards.
+ */
+export function searchTerms(q, max = 6) {
+	return String(q || '').toLowerCase().split(/[\s_\-]+/).filter(Boolean).slice(0, max)
+		.map(t => `%${t.replace(/[\\%_]/g, '\\$&')}%`);
+}

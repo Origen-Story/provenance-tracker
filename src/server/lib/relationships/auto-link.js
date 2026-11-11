@@ -41,7 +41,7 @@ export function findSourceCandidates(sourceStem, index, self = null) {
 
 /**
  * Split a search box query into terms for a forgiving name search. People
- * type a clip name as they see it ("Firefly Antoni Gaudi") while files are
+ * type a clip name as they see it ("Harbour Sunrise Wide") while files are
  * stored with underscores or hyphens, so spaces, underscores and hyphens all
  * separate terms and every term must match somewhere. Each term is escaped
  * for SQL LIKE (`%`, `_` and `\` are literals) and wrapped in wildcards.

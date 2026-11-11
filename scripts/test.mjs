@@ -8,10 +8,15 @@
 //   npm test -- test/unit/parsers/freepik.test.js   one file
 //   npm run test:watch                         vitest in watch mode (no guard)
 import { spawnSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { changedPaths, snapshot } from './lib/repo-snapshot.mjs';
 
-const ROOT = resolve(import.meta.dirname, '..');
+// The path as the filesystem spells it. On Windows a shell that reached the
+// repo as `p:\...` hands Node a lowercase drive letter; vitest then loads
+// itself twice (once per spelling) and every file fails at its first
+// describe() with "Cannot read properties of undefined (reading 'config')".
+const ROOT = realpathSync.native(resolve(import.meta.dirname, '..'));
 const BUDGET_SECONDS = 60;
 const vitest = resolve(ROOT, 'node_modules', 'vitest', 'vitest.mjs');
 

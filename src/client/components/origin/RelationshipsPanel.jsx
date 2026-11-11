@@ -57,7 +57,7 @@ function Group({ title, hint, rows, onUnlink }) {
 									</div>
 								) : <span className="text-text-secondary">missing asset</span>}
 							</td>
-							<td className="py-1 pr-2">{rel.asset && <OriginBadge originClass={rel.asset.originClass} confirmed={rel.asset.originClassConfirmed} note={rel.asset.originClassNote} />}</td>
+							<td className="py-1 pr-2">{rel.asset && <OriginBadge asset={rel.asset} />}</td>
 							<td className="py-1 pr-2 text-[10px] text-text-secondary whitespace-nowrap" title={rel.notes || ''}>{linkedBy(rel)}</td>
 							<td className="py-1 text-right"><button type="button" onClick={() => onUnlink(rel.id)} className="text-[11px] text-text-secondary hover:text-danger" title="Remove link">unlink</button></td>
 						</tr>

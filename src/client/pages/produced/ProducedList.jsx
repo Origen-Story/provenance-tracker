@@ -111,7 +111,7 @@ export default function ProducedList() {
 										{asset.missingFields.length} missing
 									</div>
 								)}
-								<OriginBadge originClass={asset.originClass} confirmed={asset.originClassConfirmed} className="absolute bottom-2 left-2 z-10" />
+								<OriginBadge asset={asset} type="produced" className="absolute bottom-2 left-2 z-10" />
 								{asset.mimeType?.startsWith('image/') ? (
 									<img src={`/api/preview?path=${encodeURIComponent(asset.filePath)}`}
 										alt={asset.name} className="w-full h-full object-cover" loading="lazy" />

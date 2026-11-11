@@ -288,7 +288,7 @@ export default function ArchivalList() {
 										{asset.missingFields.length} missing
 									</div>
 								)}
-								<OriginBadge originClass={asset.originClass} confirmed={asset.originClassConfirmed} className="absolute bottom-2 left-2 z-10" />
+								<OriginBadge asset={asset} type="archival" className="absolute bottom-2 left-2 z-10" />
 								{asset.filePath ? (
 									<img src={`/api/preview?path=${encodeURIComponent(asset.filePath)}`}
 										alt={asset.name} className="w-full h-full object-cover" loading="lazy" />

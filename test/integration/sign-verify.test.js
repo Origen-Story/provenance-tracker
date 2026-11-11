@@ -11,6 +11,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { signAsset } from '../../src/server/lib/extraction/c2pa-sign.js';
 import { extractC2pa } from '../../src/server/lib/extraction/c2pa.js';
+import { loadC2paNode } from '../../src/server/lib/extraction/c2pa-node-loader.js';
 
 const haveOpenssl = spawnSync('openssl', ['version'], { encoding: 'utf8' }).status === 0;
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
@@ -33,7 +34,11 @@ function tinyPng(file) {
 	writeFileSync(file, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]));
 }
 
-describe.skipIf(!haveOpenssl)('sign and read back (dev cert)', () => {
+// The native binding can be blocked by an application-control policy
+// (Windows Smart App Control); signing through it is then unavailable.
+const haveBinding = !!(await loadC2paNode()).module;
+
+describe.skipIf(!haveOpenssl || !haveBinding)('sign and read back (dev cert)', () => {
 	let dir, certificatePath, privateKeyPath;
 
 	beforeAll(() => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { interpretC2paNodeResult } from '../../../src/server/lib/extraction/c2pa.js';
+import { interpretC2paNodeResult, extractC2pa } from '../../../src/server/lib/extraction/c2pa.js';
 
 // Shape of c2pa-node 0.5.x read(): active_manifest is the resolved manifest
 // object, manifests is keyed by label, validation_status is an array.
@@ -45,5 +45,26 @@ describe('interpretC2paNodeResult', () => {
 
 	it('reports absent when nothing was found and nothing was rejected', () => {
 		expect(interpretC2paNodeResult({ active_manifest: null, manifests: {}, validation_status: [] })).toEqual({ kind: 'absent' });
+	});
+});
+
+describe('extractC2pa reader routing', () => {
+	const summary = { title: 'clip.mp4', ingredients: [] };
+	const reader = (result) => async () => result;
+
+	it('uses the fast reader when it parses the manifest', async () => {
+		const r = await extractC2pa('x', { node: reader({ kind: 'ok', summary }), tool: reader({ kind: 'absent' }) });
+		expect(r).toEqual(summary);
+	});
+	it('reads through c2patool when the native binding cannot load', async () => {
+		const unavailable = reader({ kind: 'unavailable', reason: 'blocked by policy' });
+		expect(await extractC2pa('x', { node: unavailable, tool: reader({ kind: 'ok', summary }) })).toEqual({ ...summary, _readerFallback: 'c2patool' });
+		expect(await extractC2pa('x', { node: unavailable, tool: reader({ kind: 'absent' }) })).toBeNull();
+		expect(await extractC2pa('x', { node: unavailable, tool: reader({ kind: 'unparseable', reason: 'boom' }) })).toMatchObject({ _readError: true, _fallbackReason: 'boom' });
+	});
+	it('falls back when the fast reader cannot decode a present manifest', async () => {
+		const bad = reader({ kind: 'unparseable', reason: 'unknown field', validationStatus: [{ code: 'x' }] });
+		expect(await extractC2pa('x', { node: bad, tool: reader({ kind: 'ok', summary }) })).toEqual({ ...summary, _readerFallback: 'c2patool' });
+		expect(await extractC2pa('x', { node: bad, tool: reader({ kind: 'absent' }) })).toMatchObject({ _readError: true, _reason: 'unknown field' });
 	});
 });

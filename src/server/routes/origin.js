@@ -47,9 +47,9 @@ router.post('/:type/:id/propose', async (req, res) => {
 router.patch('/:type/:id', async (req, res) => {
 	const ref = parseRef(req, res);
 	if (!ref) return;
-	const { originClass, confirmed = true, ingredientClasses } = req.body;
+	const { originClass, confirmed = true, ingredientClasses, note } = req.body;
 	try {
-		const row = await setOriginClass(ref.type, ref.id, { originClass, confirmed, ingredientClasses });
+		const row = await setOriginClass(ref.type, ref.id, { originClass, confirmed, ingredientClasses, note });
 		res.json(row);
 	} catch (err) {
 		res.status(400).json({ error: err.message });

@@ -17,7 +17,7 @@
 //     bytes but no reader could parse it. Persisted so we don't silently
 //     lose the signal that provenance exists.
 
-import { createC2pa } from 'c2pa-node';
+import { loadC2paNode } from './c2pa-node-loader.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -28,9 +28,14 @@ import { createLogger } from '../logger.js';
 const log = createLogger('c2pa');
 const execFileP = promisify(execFile);
 
+// The native binding is loaded on first read and may be unavailable (see
+// c2pa-node-loader.js); null means use c2patool.
 let c2paNode = null;
-function getC2pa() {
-	if (!c2paNode) c2paNode = createC2pa();
+async function getC2pa() {
+	if (c2paNode) return c2paNode;
+	const { module } = await loadC2paNode();
+	if (!module) return null;
+	c2paNode = module.createC2pa();
 	return c2paNode;
 }
 
@@ -107,10 +112,13 @@ function buildSummary(active) {
 //   { kind: 'ok', summary }             — parsed cleanly
 //   { kind: 'unparseable', reason, validationStatus } — has a manifest but
 //                                          reader couldn't decode it
+//   { kind: 'unavailable', reason }     — this reader cannot run here
 async function readWithC2paNode(filePath) {
 	let result;
 	try {
-		result = await getC2pa().read({ path: filePath });
+		const c2pa = await getC2pa();
+		if (!c2pa) return { kind: 'unavailable', reason: 'c2pa-node native binding could not be loaded' };
+		result = await c2pa.read({ path: filePath });
 	} catch (err) {
 		return { kind: 'unparseable', reason: err.message, validationStatus: [] };
 	}
@@ -189,19 +197,30 @@ async function readWithC2patool(filePath) {
 
 /**
  * Read the C2PA manifest from a file. Tries c2pa-node first for speed;
- * falls back to c2patool when the fast path can't decode a present manifest.
+ * falls back to c2patool when the fast path can't decode a present manifest
+ * or cannot run at all on this machine.
  *
  * Never throws — a failed read is reported in the returned object so the
- * caller can persist the signal.
+ * caller can persist the signal. `readers` is injectable for tests.
  */
-export async function extractC2pa(filePath) {
-	const node = await readWithC2paNode(filePath);
+export async function extractC2pa(filePath, readers = { node: readWithC2paNode, tool: readWithC2patool }) {
+	const node = await readers.node(filePath);
 	if (node.kind === 'ok') return node.summary;
 	if (node.kind === 'absent') return null;
 
+	// The binding is not loadable here: c2patool is the only reader, so its
+	// word on presence is final.
+	if (node.kind === 'unavailable') {
+		const only = await readers.tool(filePath);
+		if (only.kind === 'ok') return { ...only.summary, _readerFallback: 'c2patool' };
+		if (only.kind === 'absent') return null;
+		log.error(`c2patool failed on ${filePath} and c2pa-node is unavailable: ${only.reason}`);
+		return { _readError: true, _reason: node.reason, _fallbackReason: only.reason, validationStatus: [] };
+	}
+
 	// unparseable → try the reference tool
 	log.warn(`c2pa-node could not decode manifest in ${filePath}: ${node.reason}. Falling back to c2patool.`);
-	const tool = await readWithC2patool(filePath);
+	const tool = await readers.tool(filePath);
 	if (tool.kind === 'ok') {
 		return { ...tool.summary, _readerFallback: 'c2patool' };
 	}

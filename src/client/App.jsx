@@ -1,4 +1,10 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router';
+
+// The old timeline page lives under Outputs now.
+function RedirectToOutput() {
+	const { id } = useParams();
+	return <Navigate to={`/outputs/${id}`} replace />;
+}
 import { useQuery } from '@tanstack/react-query';
 import AppShell from './components/layout/AppShell.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -13,9 +19,8 @@ import AIAssetList from './pages/ai-assets/AIAssetList.jsx';
 import AIAssetDetail from './pages/ai-assets/AIAssetDetail.jsx';
 import ProducedList from './pages/produced/ProducedList.jsx';
 import ProducedDetail from './pages/produced/ProducedDetail.jsx';
-import TimelinePage from './pages/produced/TimelinePage.jsx';
-import ManifestBuilder from './pages/ai-assets/ManifestBuilder.jsx';
-import Export from './pages/ai-assets/Export.jsx';
+import OutputsList from './pages/outputs/OutputsList.jsx';
+import OutputPage from './pages/outputs/OutputPage.jsx';
 import SearchPage from './pages/search/SearchPage.jsx';
 import GroupsManager from './pages/search/GroupsManager.jsx';
 
@@ -55,15 +60,17 @@ export default function App() {
 					<Route path="import" element={<ImportHub />} />
 					<Route path="produced" element={<ProducedList />} />
 					<Route path="produced/:id" element={<ProducedDetail />} />
-					<Route path="produced/:id/timeline" element={<TimelinePage />} />
+					<Route path="produced/:id/timeline" element={<RedirectToOutput />} />
+					<Route path="outputs" element={<OutputsList />} />
+					<Route path="outputs/:id" element={<OutputPage />} />
 					<Route path="assets" element={<AIAssetList />} />
 					<Route path="assets/:id" element={<AIAssetDetail />} />
 					<Route path="archival" element={<ArchivalList />} />
 					<Route path="archival/:id" element={<ArchivalDetail />} />
 					<Route path="search" element={<SearchPage />} />
 					<Route path="search/groups" element={<GroupsManager />} />
-					<Route path="manifest" element={<ManifestBuilder />} />
-					<Route path="export" element={<Export />} />
+					<Route path="manifest" element={<Navigate to="/outputs" replace />} />
+					<Route path="export" element={<Navigate to="/outputs" replace />} />
 				</Route>
 			</Routes>
 		</BrowserRouter>

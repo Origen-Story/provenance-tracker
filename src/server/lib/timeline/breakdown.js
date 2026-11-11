@@ -18,6 +18,8 @@
 // - Audio is reported per class with stereo-exploded pairs collapsed (same
 //   source, same position), as frames and as a share of the timeline.
 
+import { composeLanes } from './compose.js';
+
 export function classOfSegment(seg) {
 	if (seg.originClass) return seg.originClass;
 	return 'unknown';
@@ -126,6 +128,10 @@ export function computeBreakdown(segments, { durationFrames, fps, primaryTrackIn
 		primary: primaryBreakdown(segs, durationFrames, fps, primaryTrackIndex),
 		overlays: includeOverlays ? overlayBreakdown(segs, durationFrames, fps) : null,
 		audio: audioBreakdown(segs, durationFrames, fps),
+		// What is on screen and audible at each moment, across all tracks (D10).
+		// The UI and the public export read this; primary/overlays/audio above
+		// are the per-track tallies kept for the record.
+		composition: composeLanes(segs, { durationFrames, fps }),
 		counts
 	};
 }

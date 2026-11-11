@@ -2,14 +2,16 @@
 // src/server/lib/origin/classify.js ORIGIN_CLASSES. Class names must be written
 // out in full: Tailwind only emits the classes it finds literally in the source,
 // so `bar` is a separate token rather than a rewrite of `color` at runtime.
+// `hex` feeds inline styles (the composition strip draws mixed stretches as
+// stripes of the component colours, which no utility class can express).
 export const ORIGIN_CLASSES = [
-	{ value: 'captured_signed', label: 'Captured (signed)', short: 'Captured ✓', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40', bar: 'bg-emerald-500/70', desc: 'Recorded by a camera or phone that signed it with Content Credentials.' },
-	{ value: 'captured', label: 'Captured', short: 'Captured', color: 'bg-green-500/20 text-green-300 border-green-500/40', bar: 'bg-green-500/70', desc: 'Recorded by a camera or microphone, no signature.' },
-	{ value: 'archival', label: 'Archival', short: 'Archival', color: 'bg-amber-500/20 text-amber-200 border-amber-500/40', bar: 'bg-amber-500/70', desc: 'Historical material from an archive, unchanged.' },
-	{ value: 'archival_enhanced', label: 'Archival, AI-enhanced', short: 'Archival + AI', color: 'bg-orange-500/20 text-orange-200 border-orange-500/40', bar: 'bg-orange-500/70', desc: 'Archival material upscaled, restored or colourised with an AI tool.' },
-	{ value: 'generated', label: 'AI-generated', short: 'Generated', color: 'bg-purple-500/20 text-purple-200 border-purple-500/40', bar: 'bg-purple-500/70', desc: 'Made by a generative model from a prompt or reference.' },
-	{ value: 'composited', label: 'Composited', short: 'Composited', color: 'bg-sky-500/20 text-sky-200 border-sky-500/40', bar: 'bg-sky-500/70', desc: 'An edit or export made from several other assets.' },
-	{ value: 'unknown', label: 'Unknown', short: 'Unknown', color: 'bg-zinc-500/20 text-zinc-300 border-zinc-500/40', bar: 'bg-zinc-500/70', desc: 'No reliable signal yet; set it by hand.' }
+	{ value: 'captured_signed', label: 'Captured (signed)', short: 'Captured ✓', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40', bar: 'bg-emerald-500/70', hex: '#10b981', desc: 'Recorded by a camera or phone that signed it with Content Credentials.' },
+	{ value: 'captured', label: 'Captured', short: 'Captured', color: 'bg-green-500/20 text-green-300 border-green-500/40', bar: 'bg-green-500/70', hex: '#22c55e', desc: 'Recorded by a camera or microphone, no signature.' },
+	{ value: 'archival', label: 'Archival', short: 'Archival', color: 'bg-amber-500/20 text-amber-200 border-amber-500/40', bar: 'bg-amber-500/70', hex: '#f59e0b', desc: 'Historical material from an archive, unchanged.' },
+	{ value: 'archival_enhanced', label: 'Archival, AI-enhanced', short: 'Archival + AI', color: 'bg-orange-500/20 text-orange-200 border-orange-500/40', bar: 'bg-orange-500/70', hex: '#f97316', desc: 'Archival material upscaled, restored or colourised with an AI tool.' },
+	{ value: 'generated', label: 'AI-generated', short: 'Generated', color: 'bg-purple-500/20 text-purple-200 border-purple-500/40', bar: 'bg-purple-500/70', hex: '#a855f7', desc: 'Made by a generative model from a prompt or reference.' },
+	{ value: 'composited', label: 'Composited', short: 'Composited', color: 'bg-sky-500/20 text-sky-200 border-sky-500/40', bar: 'bg-sky-500/70', hex: '#0ea5e9', desc: 'An edit or export made from several other assets.' },
+	{ value: 'unknown', label: 'Unknown', short: 'Unknown', color: 'bg-zinc-500/20 text-zinc-300 border-zinc-500/40', bar: 'bg-zinc-500/70', hex: '#71717a', desc: 'No reliable signal yet; set it by hand.' }
 ];
 
 export function originClassInfo(value) {
@@ -43,3 +45,18 @@ export function explainSource(source) {
 
 export const DETAIL_PATHS = { ai: '/assets', archival: '/archival', produced: '/produced' };
 export const TYPE_LABELS = { ai: 'AI asset', archival: 'Archival', produced: 'Produced' };
+
+// Composition strip states that are not classes (decision D10).
+export const MIXED = { label: 'Mixed', short: 'Mixed', desc: 'Two or more origin classes play at once: a graphic over a camera shot, a generated bed under captured narration.' };
+export const GAP = { label: 'Nothing', short: 'Gap', desc: 'No clip plays here.', hex: 'transparent' };
+
+// Inline background for a strip interval: solid for one class, diagonal
+// stripes of the component colours for a mix.
+export function intervalBackground(classes, alpha = 'b3') {
+	const cols = (classes || []).map(c => originClassInfo(c).hex + alpha);
+	if (cols.length === 0) return 'transparent';
+	if (cols.length === 1) return cols[0];
+	const step = 6;
+	const stops = cols.map((c, i) => `${c} ${i * step}px ${(i + 1) * step}px`).join(', ');
+	return `repeating-linear-gradient(135deg, ${stops})`;
+}

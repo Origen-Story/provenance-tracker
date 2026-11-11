@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { topazSourceBasename, findSourceCandidates, stripExtension } from '../../../src/server/lib/relationships/auto-link.js';
+import { topazSourceBasename, findSourceCandidates, stripExtension, searchTerms } from '../../../src/server/lib/relationships/auto-link.js';
 
 describe('topazSourceBasename', () => {
 	it('strips Topaz Video AI model suffixes', () => {
@@ -35,5 +35,21 @@ describe('findSourceCandidates', () => {
 	it('stripExtension leaves dotted stems alone', () => {
 		expect(stripExtension('Catalan_Echoes_2026-04-30T142200.wav')).toBe('Catalan_Echoes_2026-04-30T142200');
 		expect(stripExtension('archive.tar.gz')).toBe('archive.tar');
+	});
+});
+
+describe('searchTerms', () => {
+	it('splits on spaces, underscores and hyphens so a clip name finds its file', () => {
+		expect(searchTerms('Firefly Antoni_Gaudi')).toEqual(['%firefly%', '%antoni%', '%gaudi%']);
+		expect(searchTerms('the-children  cheer')).toEqual(['%the%', '%children%', '%cheer%']);
+		expect(searchTerms('VPT-001')).toEqual(['%vpt%', '%001%']);
+	});
+	it('escapes LIKE wildcards and caps the number of terms', () => {
+		expect(searchTerms('100% a\\b')).toEqual(['%100\\%%', '%a\\\\b%']);
+		expect(searchTerms('a b c d e f g h').length).toBe(6);
+	});
+	it('returns no terms for a blank query', () => {
+		expect(searchTerms('   ')).toEqual([]);
+		expect(searchTerms(undefined)).toEqual([]);
 	});
 });

@@ -50,6 +50,13 @@
       "when": 1793710023071,
       "tag": "0006_supreme_shiver_man",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793716798406,
+      "tag": "0007_skinny_grey_gargoyle",
+      "breakpoints": true
     }
   ]
 }

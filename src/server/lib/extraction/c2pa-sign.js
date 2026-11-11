@@ -24,7 +24,7 @@
 //   - Buffer-mode signing is JPEG/PNG only. We always use file-mode signing
 //     (mimeType + path), which works across image/audio/video.
 
-import { createC2pa, ManifestBuilder, createTestSigner } from 'c2pa-node';
+import { loadC2paNode } from './c2pa-node-loader.js';
 import { existsSync } from 'fs';
 import { stat } from 'fs/promises';
 import path from 'path';
@@ -181,6 +181,13 @@ export async function signAsset(args) {
 		throw new Error(`Refusing to overwrite existing signed file at ${outputPath}. Delete it first or pass an explicit outputPath.`);
 	}
 
+	// The native binding is optional (see c2pa-node-loader.js). Reading has a
+	// c2patool fallback; signing through c2patool arrives with output signing.
+	const { module: c2paNode, reason } = await loadC2paNode();
+	if (!c2paNode) {
+		throw new Error(`Signing is unavailable on this machine: the c2pa-node native module could not be loaded (${reason}). On Windows this is usually Smart App Control blocking an unsigned binary.`);
+	}
+	const { createC2pa, ManifestBuilder, createTestSigner } = c2paNode;
 	const signer = await createTestSigner({ certificatePath, privateKeyPath });
 	// thumbnail: false — Sharp can't generate thumbnails for audio (or many
 	// non-image formats); attempting it throws. Image assets keep the default

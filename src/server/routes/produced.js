@@ -8,9 +8,9 @@ router.get('/', async (req, res) => {
 	const project = await getActiveProject();
 	if (!project) return res.status(400).json({ error: 'No active project' });
 
-	const { search = '', assetType = '', enrichment = '', sort = 'createdAt', dir = 'desc', limit = 100, offset = 0 } = req.query;
+	const { search = '', assetType = '', enrichment = '', outputs = '', sort = 'createdAt', dir = 'desc', limit = 100, offset = 0 } = req.query;
 	const result = await listProducedAssets(project.id, {
-		search, assetType, enrichment, sortBy: sort, sortDir: dir,
+		search, assetType, enrichment, outputs, sortBy: sort, sortDir: dir,
 		limit: parseInt(limit), offset: parseInt(offset)
 	});
 	res.json(result);

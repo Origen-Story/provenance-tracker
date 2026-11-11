@@ -117,3 +117,17 @@ export function matchesByClip(timeline, matchesBySource) {
 	}
 	return map;
 }
+
+/**
+ * A manual pick is the weakest evidence we store, so when the picked asset
+ * is also what the file says, keep the file's word. Returns the method and
+ * confidence to record for a user's pick of `asset` for a clip whose source
+ * is at `path` with content hash `hash` (either may be null).
+ */
+export function reconcileManualMatch({ path, hash }, asset) {
+	if (!asset) return { method: 'unmatched', confidence: 0 };
+	const p = normalizePath(path);
+	if (p && [asset.filePath, asset.originalFilePath].some(x => normalizePath(x) === p)) return { method: 'path', confidence: 1 };
+	if (hash && asset.fileHash && hash === asset.fileHash) return { method: 'hash', confidence: 1 };
+	return { method: 'manual', confidence: 1 };
+}

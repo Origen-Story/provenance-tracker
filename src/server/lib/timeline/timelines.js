@@ -8,9 +8,9 @@ import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { db } from '../../db/index.js';
 import { timelines, timelineSegments, assets, archivalAssets, producedAssets } from '../../db/schema.js';
-import { eq, and, sql, asc } from 'drizzle-orm';
+import { eq, and, sql, asc, desc } from 'drizzle-orm';
 import { parseTimeline } from './formats/index.js';
-import { buildMatchIndex, matchClips, sourcesFromTimeline, matchesByClip } from './match.js';
+import { buildMatchIndex, matchClips, sourcesFromTimeline, matchesByClip, reconcileManualMatch } from './match.js';
 import { computeBreakdown, segmentsFromTimeline } from './breakdown.js';
 import { computeFileHash } from '../core/file-utils.js';
 import { linkAssets, resolveAssetRef, tableFor } from '../relationships/relationships.js';
@@ -124,9 +124,17 @@ export async function importTimeline({ project, producedAssetId, xmlText, source
 	}
 
 	await linkMatchedAssets(row, segments);
+	if (producedAssetId) await flagOutput(producedAssetId, 'timeline');
 	await recomputeTimeline(row.id);
 	log.info(`timeline ${row.id} imported: ${parsed.format} v${parsed.version}, ${segments.length} segments, ${sources.length} sources, ${[...bySource.values()].filter(m => m.asset).length} matched`);
 	return getTimeline(row.id);
+}
+
+// An imported timeline makes its produced asset a finished edit (D10). A flag
+// the user set is left alone.
+async function flagOutput(producedAssetId, source) {
+	await db.update(producedAssets).set({ isOutput: true, outputSource: source, updatedAt: sql`now()` })
+		.where(and(eq(producedAssets.id, producedAssetId), sql`(${producedAssets.isOutput} = false OR ${producedAssets.outputSource} <> 'user')`));
 }
 
 // Each distinct matched asset becomes a parent of the output (output_of).
@@ -190,13 +198,22 @@ export async function recomputeTimeline(id) {
 	return breakdown;
 }
 
+// A breakdown cached before the composition lanes existed (D10) is
+// recomputed on first read rather than by a data migration.
+function parseBreakdown(json) {
+	try { return JSON.parse(json || 'null'); } catch { return null; }
+}
+function isStale(breakdown) {
+	return !breakdown || !breakdown.composition;
+}
+
 export async function getTimeline(id) {
 	const [row] = await db.select().from(timelines).where(eq(timelines.id, id)).limit(1);
 	if (!row) return null;
 	const segments = await effectiveSegments(await loadSegments(id));
-	let breakdown = null;
+	let breakdown = parseBreakdown(row.breakdownJson);
+	if (isStale(breakdown)) breakdown = await recomputeTimeline(id);
 	let notes = [];
-	try { breakdown = JSON.parse(row.breakdownJson || 'null'); } catch { breakdown = null; }
 	try { notes = JSON.parse(row.notesJson || '[]'); } catch { notes = []; }
 	return { ...row, breakdown, notes, segments };
 }
@@ -205,11 +222,13 @@ export async function listTimelines({ projectId, producedAssetId }) {
 	const conds = [eq(timelines.projectId, projectId)];
 	if (producedAssetId) conds.push(eq(timelines.producedAssetId, producedAssetId));
 	const rows = await db.select().from(timelines).where(and(...conds)).orderBy(asc(timelines.createdAt));
-	return rows.map(r => {
-		let breakdown = null;
-		try { breakdown = JSON.parse(r.breakdownJson || 'null'); } catch { /* keep null */ }
-		return { ...r, breakdown };
-	});
+	const out = [];
+	for (const r of rows) {
+		let breakdown = parseBreakdown(r.breakdownJson);
+		if (isStale(breakdown)) breakdown = await recomputeTimeline(r.id);
+		out.push({ ...r, breakdown });
+	}
+	return out;
 }
 
 export async function updateTimelineSettings(id, { primaryTrackIndex, includeOverlays }) {
@@ -233,12 +252,17 @@ export async function updateSegment(timelineId, segmentId, { matchedAssetType, m
 	if (matchedAssetType !== undefined || matchedAssetId !== undefined) {
 		if (matchedAssetType && matchedAssetId) {
 			tableFor(matchedAssetType);
-			const ref = await resolveAssetRef(matchedAssetType, parseInt(matchedAssetId));
-			if (!ref) throw new Error('Matched asset not found');
+			const table = tableFor(matchedAssetType);
+			const [asset] = await db.select().from(table).where(eq(table.id, parseInt(matchedAssetId))).limit(1);
+			if (!asset) throw new Error('Matched asset not found');
+			// If the file at the clip's path is the picked asset by path or hash,
+			// record that evidence rather than the weaker 'manual'.
+			const hash = seg.sourcePath ? await io.hashFile(seg.sourcePath) : null;
+			const evidence = reconcileManualMatch({ path: seg.sourcePath, hash }, asset);
 			patch.matchedAssetType = matchedAssetType;
-			patch.matchedAssetId = ref.id;
-			patch.matchMethod = 'manual';
-			patch.matchConfidence = 1;
+			patch.matchedAssetId = asset.id;
+			patch.matchMethod = evidence.method;
+			patch.matchConfidence = evidence.confidence;
 		} else {
 			patch.matchedAssetType = null;
 			patch.matchedAssetId = null;
@@ -268,6 +292,23 @@ export async function recomputeTimelinesForAsset(type, id) {
 		.where(and(eq(timelineSegments.matchedAssetType, type), eq(timelineSegments.matchedAssetId, id)));
 	for (const r of rows) await recomputeTimeline(r.timelineId).catch(err => log.warn(`recompute ${r.timelineId} failed: ${err.message}`));
 	return rows.length;
+}
+
+// Finished edits in a project with their latest timeline's composition, for
+// the Outputs list.
+export async function listOutputs(projectId) {
+	const rows = await db.select().from(producedAssets).where(and(eq(producedAssets.projectId, projectId), eq(producedAssets.isOutput, true))).orderBy(desc(producedAssets.createdAt));
+	const tls = await db.select().from(timelines).where(eq(timelines.projectId, projectId)).orderBy(asc(timelines.createdAt));
+	const latest = new Map();
+	for (const t of tls) if (t.producedAssetId) latest.set(t.producedAssetId, t);
+	const out = [];
+	for (const r of rows) {
+		const t = latest.get(r.id);
+		let breakdown = t ? parseBreakdown(t.breakdownJson) : null;
+		if (t && isStale(breakdown)) breakdown = await recomputeTimeline(t.id);
+		out.push({ ...r, timeline: t ? { id: t.id, sequenceName: t.sequenceName, durationFrames: t.durationFrames, fps: t.fps, createdAt: t.createdAt, composition: breakdown?.composition || null, counts: breakdown?.counts || null } : null });
+	}
+	return out;
 }
 
 export async function deleteTimeline(id) {

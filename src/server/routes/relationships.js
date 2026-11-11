@@ -5,13 +5,12 @@ import { getActiveProject } from '../lib/projects.js';
 
 const router = Router();
 
-// Name search across the three asset tables, for the parent picker.
+// Name search across the three asset tables, for the asset pickers. A blank
+// query returns the most recent assets.
 router.get('/search', async (req, res) => {
 	const project = await getActiveProject();
 	if (!project) return res.status(400).json({ error: 'No active project' });
-	const q = String(req.query.q || '');
-	if (q.trim().length < 2) return res.json({ results: [] });
-	res.json({ results: await searchAssets(project.id, q, 20) });
+	res.json({ results: await searchAssets(project.id, String(req.query.q || ''), 20) });
 });
 
 router.get('/:type/:id', async (req, res) => {

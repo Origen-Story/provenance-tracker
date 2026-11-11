@@ -92,7 +92,7 @@ If you configure a Notion API key and database ID on your project, archival asse
 
 ### 6. C2PA manifest + export
 
-Under **Manifest** and **Export**, assemble Content Credentials manifests for produced assets and export structured records of a project's provenance chain.
+Under **Outputs**, each finished edit gets a composition view: the render playing above two lanes, picture and audio, coloured by origin class moment by moment, with mixed stretches (a graphic over a camera shot, a generated bed under narration) drawn as stripes. Import the sequence as Final Cut Pro XML from Premiere or Resolve, fix any clip the matcher could not place, and set origin classes from the clip list. The Statement, Credentials and Export tabs follow in later phases.
 
 ### 7. Signing assets with Content Credentials
 

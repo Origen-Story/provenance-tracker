@@ -69,6 +69,9 @@ export const assets = pgTable('assets', {
 	originClassConfirmed: boolean('origin_class_confirmed').default(false),
 	originClassSource: text('origin_class_source').default(''),
 	originIngredientClasses: text('origin_ingredient_classes').default('[]'),
+	// Free-text reason the user gave when setting the class by hand (why a
+	// signed or proposed class was overridden). Carried into the output manifest.
+	originClassNote: text('origin_class_note').default(''),
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
 });
@@ -167,6 +170,9 @@ export const archivalAssets = pgTable('archival_assets', {
 	originClassConfirmed: boolean('origin_class_confirmed').default(false),
 	originClassSource: text('origin_class_source').default(''),
 	originIngredientClasses: text('origin_ingredient_classes').default('[]'),
+	// Free-text reason the user gave when setting the class by hand (why a
+	// signed or proposed class was overridden). Carried into the output manifest.
+	originClassNote: text('origin_class_note').default(''),
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
 });
@@ -203,11 +209,19 @@ export const producedAssets = pgTable('produced_assets', {
 	captureSigned: boolean('capture_signed').default(false),
 	// Preserved path to the unsigned original after C2PA signing.
 	originalFilePath: text('original_file_path'),
+	// A finished edit (decision D10) rather than a source recording. Set when a
+	// timeline is imported, when the file's credentials list ingredients, or by
+	// the user; outputSource names which.
+	isOutput: boolean('is_output').default(false),
+	outputSource: text('output_source').default(''),
 	// Origin class (decision D3); see the assets table for the field notes.
 	originClass: text('origin_class').default('unknown'),
 	originClassConfirmed: boolean('origin_class_confirmed').default(false),
 	originClassSource: text('origin_class_source').default(''),
 	originIngredientClasses: text('origin_ingredient_classes').default('[]'),
+	// Free-text reason the user gave when setting the class by hand (why a
+	// signed or proposed class was overridden). Carried into the output manifest.
+	originClassNote: text('origin_class_note').default(''),
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
 });

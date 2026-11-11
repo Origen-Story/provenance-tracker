@@ -81,19 +81,60 @@ Deprecated: `c2pa.color_adjustments` (use `c2pa.adjustedColor`).
 | `componentOf` | The current asset is composed of multiple parts, this ingredient being one of them. |
 | `inputTo` | This ingredient was used as input to a computational process, such as an AI/ML model, that led to the creation or modification of this asset. |
 
-## Where the tracker's classes sit today
+## How the tracker uses them (decision D11)
 
-Not a decision; the starting point for one. The IPTC list answers one question, how the media was made. It has no term for who signed a file or for material being archival, so those two ideas are the tracker's own.
+The tracker's origin class is the IPTC code itself. Labels are the tracker's own, chosen to be plain. The left column is the spectrum position, which sets the colour.
 
-| Tracker class (D3) | Nearest standard term | Fit |
+| Spectrum position | Class label | IPTC code | In the picker's short list |
+|---|---|---|---|
+| Camera-captured | Captured | `digitalCapture` | yes |
+| | Captured (multi-frame) | `computationalCapture` | no, kept when a device declares it |
+| | Scanned | `print` | yes |
+| | Scanned from a negative | `negativeFilm` | no |
+| | Scanned from a transparency | `positiveFilm` | no |
+| | Composite, camera only | `compositeCapture` | yes |
+| | Human-edited | `humanEdits` | no |
+| Digital, no AI | Rendered from code | `algorithmicMedia` | yes |
+| | Human-made | `digitalCreation` | yes |
+| | Screen capture | `screenCapture` | yes |
+| | Virtual event recording | `virtualRecording` | yes |
+| | Data-driven | `dataDrivenMedia` | no |
+| AI-assisted | AI-enhanced | `algorithmicallyEnhanced` | yes |
+| | any "Digital, no AI" class with the AI-assisted flag | unchanged | flag |
+| Hybrid | Edited with generative AI | `compositeWithTrainedAlgorithmicMedia` | yes |
+| | Composite with AI | `compositeSynthetic` | yes |
+| | Composite | `composite` | no |
+| Fully synthetic | AI-generated | `trainedAlgorithmicMedia` | yes |
+| Unknown | Unknown | none | yes |
+
+Three things the IPTC list does not cover are attributes of an asset, not classes:
+
+- **Signed by.** Nobody, the capture device, the tool that made the file, or the creator at ingest. A class says how the media was made; a signature says who vouches for that.
+- **From an archive.** Custody and age, not a way of making media. The colour follows how the material was made: a scanned print is camera-captured, an upscale of it is AI-assisted.
+- **AI-assisted.** An AI model wrote the instructions (code, a design file) and an ordinary program made the pixels. `algorithmicMedia` assumes no trained model was involved and `digitalCreation` assumes a human with non-generative tools, so code written by an AI and rendered deterministically fits neither exactly. The tracker keeps the class that describes the pixels and adds the flag, which moves the asset from "Digital, no AI" to "AI-assisted". The flag is narrow: it is for a model authoring the instructions, not for general help along the way.
+
+### What real tools write
+
+Read from files in a test project on 2026-11-11. Tools apply the terms loosely, so the tracker stores what the file says and decides the spectrum position itself.
+
+| Tool | What it declares | How the tracker reads it |
 |---|---|---|
-| `captured_signed` | `digitalCapture` or `computationalCapture` | The source type is the same as `captured`. "Signed" is about who vouches, which the vocabulary does not cover. |
-| `captured` | `digitalCapture` | Exact. |
-| `archival` | `negativeFilm`, `positiveFilm`, `print`, or `digitalCapture` | No single term. Archival describes custody and age, not how the media was made. |
-| `archival_enhanced` | `algorithmicallyEnhanced`, action `c2pa.enhanced` | Exact when the enhancer does not change the main content. A generative upscaler that invents detail is `compositeWithTrainedAlgorithmicMedia`. |
-| `generated` | `trainedAlgorithmicMedia` | Exact. |
-| `composited` | `composite`, `compositeCapture`, `compositeSynthetic` | The standard splits one class into three by what the ingredients are; the composition view can compute which applies. |
-| `unknown` | none | Absence of a claim. |
-| not yet a class: graphics rendered from code | `algorithmicMedia` | Exact. Charts driven by data are `dataDrivenMedia`. |
-| not yet a class: titles and graphics made by hand in an editor | `digitalCreation` | Exact. Timeline generator clips are this. |
-| not yet a class: screen recordings | `screenCapture` | Exact. |
+| Google Pixel 10 Pro, video | `c2pa.created` with `computationalCapture` | Captured, signed by the device |
+| Adobe Firefly, video | `c2pa.created` with C2PA `empty`, then `c2pa.edited` with `compositeWithTrainedAlgorithmicMedia` | AI-generated: nothing but the model filled the canvas |
+| ElevenLabs, audio | `c2pa.created` with `trainedAlgorithmicMedia` | AI-generated |
+| Adobe Premiere Pro, export | `c2pa.created` with `compositeWithTrainedAlgorithmicMedia`, then `c2pa.placed` per ingredient | Composite with AI: it has placed ingredients, so it is a composite, not one edited asset |
+
+### Palette
+
+One colour per spectrum position, as CSS custom properties in `src/client/app.css`. The defaults below are the dark theme; a light theme and any downstream brand override the same six names.
+
+| Position | Custom property | Dark default |
+|---|---|---|
+| Camera-captured | `--pt-origin-captured` | `#5cb88a` |
+| Digital, no AI | `--pt-origin-digital` | `#a8d0ba` |
+| AI-assisted | `--pt-origin-assisted` | `#d4a054` |
+| Hybrid | `--pt-origin-hybrid` | `#5a9fd4` |
+| Fully synthetic | `--pt-origin-synthetic` | `#a264ef` |
+| Unknown | `--pt-origin-unknown` | `#888888`, drawn as a hatch |
+
+Green tones mean no generative AI, and lightness separates camera from digital. Two positions playing at once are drawn as diagonal stripes in both colours. Purple was chosen over red for fully synthetic so that no colour reads as a verdict.

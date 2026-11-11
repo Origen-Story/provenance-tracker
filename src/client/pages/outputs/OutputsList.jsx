@@ -58,7 +58,7 @@ function OutputCard({ o }) {
 			</div>
 			{comp ? (
 				<>
-					<LaneStrip title="" lane={comp.picture} durationSeconds={comp.durationSeconds} height="h-4" />
+					<LaneStrip title="" lane={comp.picture} durationSeconds={comp.durationSeconds} height="h-4" gutter={false} />
 					<div className="mt-1.5 flex items-center gap-3 text-[11px] text-text-secondary">
 						<span>{o.timeline.sequenceName}</span>
 						{unknown > 0 && <span className="text-amber-400">{unknown.toFixed(0)}% unknown</span>}

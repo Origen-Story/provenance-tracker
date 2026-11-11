@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import LaneStrip, { fmtClock, describeInterval, describeLayers } from './LaneStrip.jsx';
+import LaneStrip, { fmtClock, describeInterval, describeLayers, GUTTER } from './LaneStrip.jsx';
 import { originClassInfo, intervalBackground, MIXED, GAP } from '../origin/originClasses.js';
 
 function intervalAt(lane, seconds) {
@@ -61,9 +61,9 @@ function Readout({ label, lane, prefix, seconds }) {
 	if (!iv) return null;
 	return (
 		<div className="flex items-start gap-2 text-xs">
-			<span className="text-text-secondary w-12 shrink-0">{label}</span>
+			<span className={`${GUTTER} text-text-secondary`}>{label}</span>
 			<Swatch classes={iv.classes} />
-			<span className="text-text-primary">{describeInterval(iv, prefix)}</span>
+			<span className="text-text-primary">{describeInterval(iv)}</span>
 			{iv.layers?.length > 0 && <span className="text-text-secondary truncate" title={describeLayers(iv.layers, prefix)}>{describeLayers(iv.layers, prefix)}</span>}
 		</div>
 	);
@@ -90,9 +90,10 @@ export default function Composition({ asset, composition }) {
 		<div className="bg-card-bg border border-border rounded-lg p-4 space-y-4">
 			{src && isVideo && <video ref={mediaRef} src={src} controls preload="metadata" onTimeUpdate={onTime} onSeeked={onTime} className="w-full max-h-[28rem] bg-black rounded" />}
 			{src && isAudio && <audio ref={mediaRef} src={src} controls preload="metadata" onTimeUpdate={onTime} onSeeked={onTime} className="w-full" />}
-			<div className="flex items-center justify-between text-[11px] text-text-secondary">
+			<div className="flex items-center gap-2 text-[11px] text-text-secondary">
+				<span className={GUTTER} />
 				<span>{fmtClock(t)} / {fmtClock(dur)}</span>
-				<span>Click a lane to jump there</span>
+				<span className="ml-auto">Click a lane to jump there. The arrow beside a lane shows its tracks.</span>
 			</div>
 			<LaneStrip title="Picture" lane={composition.picture} durationSeconds={dur} prefix="V" currentTime={t} onSeek={seek} expanded={open.picture} onToggle={() => setOpen(o => ({ ...o, picture: !o.picture }))} />
 			<LaneStrip title="Audio" lane={composition.audio} durationSeconds={dur} prefix="A" currentTime={t} onSeek={seek} expanded={open.audio} onToggle={() => setOpen(o => ({ ...o, audio: !o.audio }))} />

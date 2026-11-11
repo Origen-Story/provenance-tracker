@@ -75,7 +75,16 @@ function MatchPicker({ onPick, onCancel }) {
 	);
 }
 
-const METHOD_LABELS = { path: 'same path', hash: 'same content (hash)', filename_size: 'same name and size', filename: 'same name only', manual: 'picked by hand', unmatched: 'no match', sequence: 'nested sequence', generator: 'generator' };
+// How a clip on the timeline was tied to a tracked asset, strongest first.
+const METHOD_LABELS = { path: 'same file', hash: 'identical copy', filename_size: 'same name and size', filename: 'same name only, check', manual: 'you picked this', unmatched: 'no match', sequence: 'nested sequence', generator: 'title or generator' };
+const METHOD_HELP = {
+	path: 'The timeline points at this exact file.',
+	hash: 'The file the timeline points at is byte-for-byte identical to this asset, even though the path or name differs.',
+	filename_size: 'Same file name and size as this asset. Very likely the same file.',
+	filename: 'Only the file name matches. Check that this is the right asset.',
+	manual: 'Nothing in the file ties it to this asset; you chose it.',
+	unmatched: 'No tracked asset matches this clip. Pick one, or import the file first.'
+};
 
 function SegmentRow({ seg, onFix, queryKeys }) {
 	const [picking, setPicking] = useState(false);
@@ -95,10 +104,10 @@ function SegmentRow({ seg, onFix, queryKeys }) {
 				) : seg.asset ? (
 					<div className="flex items-center gap-2">
 						<Link to={`${DETAIL_PATHS[seg.asset.type]}/${seg.asset.id}`} className="truncate max-w-[12rem] hover:text-accent" title={seg.asset.filename}>{seg.asset.label}</Link>
-						<span className={`text-[10px] ${weak ? 'text-amber-400' : 'text-text-secondary'}`} title={`How the clip was matched to the asset${seg.matchConfidence < 1 ? ` (${Math.round(seg.matchConfidence * 100)}% confidence)` : ''}`}>
+						<span className={`text-[10px] ${weak ? 'text-amber-400' : 'text-text-secondary'}`} title={`${METHOD_HELP[method] || 'How the clip was matched to the asset.'}${seg.matchConfidence < 1 ? ` (${Math.round(seg.matchConfidence * 100)}% confidence)` : ''}`}>
 							{METHOD_LABELS[method] || method}{seg.matchConfidence > 0 && seg.matchConfidence < 1 ? ` ${Math.round(seg.matchConfidence * 100)}%` : ''}
 						</span>
-						<button type="button" onClick={() => setPicking(true)} className="text-[11px] text-text-secondary hover:text-text-primary">change</button>
+						<button type="button" onClick={() => setPicking(true)} className="text-[11px] text-text-secondary hover:text-text-primary" title="Wrong asset? Pick the right one.">wrong asset?</button>
 					</div>
 				) : seg.sourceKind !== 'file' ? (
 					<span className="text-[11px] text-text-secondary">{METHOD_LABELS[method] || method}</span>
@@ -158,14 +167,14 @@ export default function OutputPage() {
 				<Link to="/outputs" className="hover:text-text-primary transition-colors">Outputs</Link>
 				<span>/</span>
 				<span className="text-text-primary">{a?.name || a?.filename || `#${id}`}</span>
-				<Link to={`/produced/${id}`} className="ml-auto text-xs text-accent hover:text-accent-hover">File details</Link>
+				<Link to={`/produced/${id}`} className="ml-auto px-2.5 py-1 border border-border rounded-md text-xs text-text-primary hover:border-accent/60 hover:text-accent" title="The file's own page: metadata, origin class, and the list of ingredients">File details and ingredients</Link>
 			</div>
 
 			<div className="mb-6 flex items-center gap-1 border-b border-border">
 				{TABS.map(tb => (
 					<button key={tb.id} type="button" disabled={!!tb.soon} onClick={() => setTab(tb.id)} title={tb.soon || ''}
 						className={`px-3 py-2 text-sm border-b-2 -mb-px ${tab === tb.id ? 'border-accent text-text-primary' : 'border-transparent text-text-secondary'} ${tb.soon ? 'opacity-40 cursor-not-allowed' : 'hover:text-text-primary'}`}>
-						{tb.label}{tb.soon ? ' ·' : ''}
+						{tb.label}{tb.soon && <span className="ml-1.5 text-[9px] uppercase tracking-wide border border-border rounded px-1 py-px">soon</span>}
 					</button>
 				))}
 			</div>
@@ -212,7 +221,7 @@ export default function OutputPage() {
 									<th className="pb-1 pr-2 font-medium">Track</th>
 									<th className="pb-1 pr-2 font-medium">Time</th>
 									<th className="pb-1 pr-2 font-medium">Clip</th>
-									<th className="pb-1 pr-2 font-medium">Matched asset</th>
+									<th className="pb-1 pr-2 font-medium" title="The tracked asset this clip was tied to, and how">Tracked asset, and how it was matched</th>
 									<th className="pb-1 font-medium">Origin class</th>
 								</tr>
 							</thead>

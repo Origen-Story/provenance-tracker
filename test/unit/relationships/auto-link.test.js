@@ -40,7 +40,7 @@ describe('findSourceCandidates', () => {
 
 describe('searchTerms', () => {
 	it('splits on spaces, underscores and hyphens so a clip name finds its file', () => {
-		expect(searchTerms('Firefly Antoni_Gaudi')).toEqual(['%firefly%', '%antoni%', '%gaudi%']);
+		expect(searchTerms('Harbour Sunrise_Wide')).toEqual(['%harbour%', '%sunrise%', '%wide%']);
 		expect(searchTerms('the-children  cheer')).toEqual(['%the%', '%children%', '%cheer%']);
 		expect(searchTerms('VPT-001')).toEqual(['%vpt%', '%001%']);
 	});

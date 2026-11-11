@@ -5,6 +5,15 @@ Reference for naming origin classes and writing manifests. The tracker should us
 - IPTC NewsCodes, Digital Source Type: <https://cv.iptc.org/newscodes/digitalsourcetype/>
 - C2PA Technical Specification 2.2, actions and ingredients: <https://spec.c2pa.org/specifications/specifications/2.2/specs/C2PA_Specification.html>
 
+### Credit and licence for the quoted definitions
+
+The code in this repository is under the Apache License 2.0. The definitions quoted on this page are not ours and keep their own licence:
+
+- The codes, labels and definitions in "IPTC digital source type" are from the IPTC NewsCodes, copyright IPTC, International Press Telecommunications Council (<https://iptc.org>), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). They are reproduced unchanged; the grouping and the notes around them are ours.
+- The action names and meanings, the ingredient relationships and the two C2PA source types are from the C2PA Technical Specification 2.2, copyright the Coalition for Content Provenance and Authenticity (<https://c2pa.org>), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). They are reproduced unchanged; the selection and ordering are ours.
+
+The same codes appear in `src/shared/origin-vocabulary.js` as identifiers; the labels and descriptions there are the tracker's own wording.
+
 ## IPTC digital source type
 
 How a piece of media was made. C2PA uses these as the `digitalSourceType` of an action, written as `http://cv.iptc.org/newscodes/digitalsourcetype/<code>`. The same codes appear unsigned in XMP as `Iptc4xmpExt:DigitalSourceType`.

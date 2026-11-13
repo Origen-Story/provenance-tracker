@@ -299,28 +299,3 @@ export async function deleteAsset(id) {
 	await removeRelationshipsFor('ai', id);
 	await db.delete(assets).where(eq(assets.id, id));
 }
-
-// Called after a successful c2pa-sign run. Repoints filePath at the signed
-// copy, refreshes hash/size/mime, stashes the unsigned original's path, and
-// upserts the c2pa manifest blob in asset_metadata (where AI-asset C2PA
-// summaries live; the assets table itself has no c2paJson column).
-export async function applySignature(id, { signedPath, fileHash, fileSize, mimeType, c2paJson, originalFilePath }) {
-	await db.update(assets).set({
-		filePath: signedPath,
-		fileHash,
-		fileSize,
-		mimeType,
-		originalFilePath,
-		updatedAt: sql`now()`
-	}).where(eq(assets.id, id));
-
-	const [existingBlob] = await db.select().from(assetMetadata)
-		.where(and(eq(assetMetadata.assetId, id), eq(assetMetadata.metadataType, 'c2pa')));
-	if (existingBlob) {
-		await db.update(assetMetadata).set({ rawJson: c2paJson, extractedAt: sql`now()` }).where(eq(assetMetadata.id, existingBlob.id));
-	} else {
-		await db.insert(assetMetadata).values({ assetId: id, metadataType: 'c2pa', rawJson: c2paJson });
-	}
-
-	return getAsset(id);
-}

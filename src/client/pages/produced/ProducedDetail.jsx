@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import SignAssetModal from '../../components/SignAssetModal.jsx';
+import SignedCopies from '../../components/SignedCopies.jsx';
 import OriginClassControl from '../../components/origin/OriginClassControl.jsx';
 import RelationshipsPanel from '../../components/origin/RelationshipsPanel.jsx';
 
@@ -150,6 +151,7 @@ export default function ProducedDetail() {
 							Sign with Content Credentials
 						</button>
 					)}
+					<SignedCopies type="produced" id={id} />
 
 					{Object.keys(exif).length > 0 && (
 						<details className="bg-card-bg border border-border rounded-lg">

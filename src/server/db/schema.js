@@ -305,6 +305,50 @@ export const timelineSegments = pgTable('timeline_segments', {
 	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow()
 });
 
+// The creator's statement for a finished edit (phase 4c): the words and who
+// says them. The numbers are not stored here; they are built from the
+// timeline when the statement is shown or signed, and the signed version is
+// frozen in signatures.statement_json.
+export const creatorStatements = pgTable('creator_statements', {
+	id: serial('id').primaryKey(),
+	projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+	producedAssetId: integer('produced_asset_id').notNull().references(() => producedAssets.id, { onDelete: 'cascade' }),
+	text: text('text').notNull().default(''),
+	authorName: text('author_name').default(''),
+	organization: text('organization').default(''),
+	// What the edit was made in (Premiere, Resolve). xmeml does not say reliably.
+	softwareAgent: text('software_agent').default(''),
+	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow()
+}, (t) => [uniqueIndex('creator_statements_produced_asset_idx').on(t.producedAssetId)]);
+
+// One signed copy of an asset or an output. The asset row keeps pointing at
+// the original (CLAUDE.md: originals are never modified, the row keeps the
+// original path); this row records the new file, what was signed into it and
+// how it read back. assetType/assetId follow D4 (no FK across the three tables).
+export const signatures = pgTable('signatures', {
+	id: serial('id').primaryKey(),
+	projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+	assetType: text('asset_type').notNull(),
+	assetId: integer('asset_id').notNull(),
+	kind: text('kind').notNull().default('asset'),              // 'asset' | 'output'
+	version: integer('version').notNull().default(1),
+	sourcePath: text('source_path').notNull(),
+	sourceHash: text('source_hash').default(''),
+	signedPath: text('signed_path').notNull(),
+	signedHash: text('signed_hash').default(''),
+	signedSize: integer('signed_size').default(0),
+	// The manifest definition without key paths, and c2patool's read-back.
+	definitionJson: text('definition_json').default('{}'),
+	reportJson: text('report_json'),
+	statementJson: text('statement_json'),
+	status: text('status').default(''),
+	signerName: text('signer_name').default(''),
+	signerIssuer: text('signer_issuer').default(''),
+	timestamped: boolean('timestamped').default(false),
+	createdAt: timestamp('created_at', { withTimezone: true }).defaultNow()
+});
+
 export const searchJobs = pgTable('search_jobs', {
 	id: serial('id').primaryKey(),
 	projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),

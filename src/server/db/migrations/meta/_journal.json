@@ -71,6 +71,13 @@
       "when": 1794420731138,
       "tag": "0009_origin_vocabulary",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794553925133,
+      "tag": "0010_daily_pete_wisdom",
+      "breakpoints": true
     }
   ]
 }

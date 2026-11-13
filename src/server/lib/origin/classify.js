@@ -90,6 +90,10 @@ function fromManifest(sig) {
 	// Parts placed into it: a composite, whatever single-asset term the tool wrote.
 	if (sig.components > 0 || sig.placed) {
 		if (COMPOSITE_CODES.includes(sig.createdType)) return { originClass: sig.createdType, source: 'c2pa_ingredients' };
+		// A re-signed edit (the tracker's own outputs) declares its composite
+		// class on the action that opens the parent, not on a created action.
+		const declaredComposite = sig.sourceTypes.find(s => COMPOSITE_CODES.includes(s));
+		if (declaredComposite) return { originClass: declaredComposite, source: 'c2pa_ingredients' };
 		if (sig.sourceTypes.some(s => GENERATIVE_CODES.includes(s))) return { originClass: 'compositeSynthetic', source: 'c2pa_ingredients' };
 		return { originClass: 'composite', source: 'c2pa_ingredients' };
 	}
@@ -157,6 +161,21 @@ export function proposeOriginClass({ table, c2paSummary = null, platform = '', p
 	if (table === 'produced') return done('digitalCapture', 'table_produced');
 	if (table === 'ai' && platform && platform !== 'unknown') return done('trainedAlgorithmicMedia', 'platform_parser');
 	return done('unknown', 'no_signal');
+}
+
+/**
+ * What a file's own credentials say it is, separate from the class the
+ * tracker holds (which the user may have set by hand). `credentials` is
+ * 'none' (no manifest), 'unreadable' (a manifest no reader could parse) or
+ * 'present'; `originClass` is the declared class, or null when the manifest
+ * names none.
+ */
+export function classClaimedByFile(c2paSummary) {
+	if (c2paSummary?._readError) return { credentials: 'unreadable', originClass: null };
+	const sig = c2paSignals(c2paSummary);
+	if (!sig.hasManifest) return { credentials: 'none', originClass: null };
+	const m = fromManifest(sig);
+	return { credentials: 'present', originClass: m ? m.originClass : null };
 }
 
 // Parse the stored JSON blobs defensively; rows imported before this module

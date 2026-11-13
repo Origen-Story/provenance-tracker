@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
-import { readFile, stat } from 'fs/promises';
+import { createReadStream } from 'fs';
+import { stat } from 'fs/promises';
 import path from 'path';
 
 const MIME_MAP = {
@@ -22,9 +23,12 @@ const MIME_MAP = {
 	'.pdf': 'application/pdf'
 };
 
+// Streamed, so a multi-gigabyte video is hashed without holding it in memory
+// (a single read is capped at 2 GB).
 export async function computeFileHash(filePath) {
-	const buf = await readFile(filePath);
-	return createHash('sha256').update(buf).digest('hex');
+	const hash = createHash('sha256');
+	for await (const chunk of createReadStream(filePath)) hash.update(chunk);
+	return hash.digest('hex');
 }
 
 export function getMimeType(filePath) {

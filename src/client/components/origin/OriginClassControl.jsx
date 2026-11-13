@@ -65,9 +65,13 @@ export default function OriginClassControl({ type, id, asset, queryKeys = [] }) 
 				{confirmed ? 'Confirmed.' : needsAttention ? 'Needs a decision.' : 'Proposed from metadata; confirm only if you want to vouch for it.'}{' '}
 				{explainSource(asset.originClassSource)}
 			</p>
-			{asset.signedBy && (
+			{asset.signedBy ? (
 				<p className="text-[11px] text-text-secondary">
 					<span className="text-success">✓ Signed</span> by {SIGNED_BY_LABELS[asset.signedBy] || asset.signedBy}{asset.signerName ? `: ${asset.signerName}` : ''}.
+				</p>
+			) : (
+				<p className="text-[11px] text-text-secondary">
+					<span className="text-amber-300">No readable Content Credentials in this file.</span> Nothing signed vouches for how it was made, so the class rests on {confirmed ? 'your word' : 'metadata and file type'}. A note saying why helps the statement.
 				</p>
 			)}
 			<div className="flex gap-2">

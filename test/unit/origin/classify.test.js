@@ -153,3 +153,28 @@ describe('parseJsonSafe', () => {
 		expect(parseJsonSafe(null)).toBeNull();
 	});
 });
+
+describe('classClaimedByFile', () => {
+	it('reports no credentials, unreadable ones, or the class a manifest declares', async () => {
+		const { classClaimedByFile } = await import('../../../src/server/lib/origin/classify.js');
+		expect(classClaimedByFile(null)).toEqual({ credentials: 'none', originClass: null });
+		expect(classClaimedByFile({ _readError: true })).toEqual({ credentials: 'unreadable', originClass: null });
+		expect(classClaimedByFile(pixel)).toEqual({ credentials: 'present', originClass: 'computationalCapture' });
+		expect(classClaimedByFile({ claimGenerator: 'Some Tool', assertions: [], ingredients: [] })).toEqual({ credentials: 'present', originClass: null });
+	});
+});
+
+describe('a re-signed edit (the tracker\'s own output)', () => {
+	it('keeps the composite class it declares on the opened action', () => {
+		const ownOutput = {
+			claimGenerator: 'provenance-tracker',
+			assertions: [{ label: 'c2pa.actions.v2', data: { actions: [
+				{ action: 'c2pa.opened', digitalSourceType: `${IPTC}compositeCapture` },
+				{ action: 'c2pa.placed', digitalSourceType: `${IPTC}computationalCapture` }
+			] } }],
+			ingredients: [{ title: 'final.mp4', relationship: 'parentOf' }, { title: 'take.mp4', relationship: 'componentOf' }],
+			signatureInfo: { issuer: 'Example Org', commonName: 'Example Dev Cert' }
+		};
+		expect(proposeOriginClass({ table: 'produced', c2paSummary: ownOutput })).toMatchObject({ originClass: 'compositeCapture', source: 'c2pa_ingredients', signedBy: 'creator' });
+	});
+});

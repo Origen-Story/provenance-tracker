@@ -61,14 +61,16 @@ On first launch you'll be prompted to create a project. Choose which modules to 
 - **Archival** — for historical/reference images from museums, archives, libraries
 - **Produced** (always on) — for original recordings, field audio, video, photos
 
-Set a storage path where imported files will be managed.
+Set a storage path where copied imports are kept. Files tracked in place (see below) stay where they are and need no storage path.
 
 ### 2. Import assets
 
 Go to **Import** and choose your asset type, then your import method:
 - **Upload** — drag and drop or browse files
-- **Scan folder** — point to a dump folder; the tool copies files into managed storage
+- **Scan folder** — point to a folder, optionally with its subfolders
 - **File path** — import a single file by path
+
+For scan and file path you choose between **keeping files where they are** (track in place, the default for produced media) and copying them into managed storage. In place suits video work: the edit project already links to the files, nothing is duplicated, and timelines match by path. The tracker never moves, renames or deletes an in-place file; Settings › Storage Integrity reports one that went missing or changed size.
 - **URL** (archival only) — download from a web source
 
 Metadata is extracted automatically. Fill in any gaps on the enrichment form, then confirm.
@@ -92,7 +94,7 @@ If you configure a Notion API key and database ID on your project, archival asse
 
 ### 6. C2PA manifest + export
 
-Under **Outputs**, each finished edit gets a composition view: the render playing above two lanes, picture and audio, coloured by origin class moment by moment, with mixed stretches (a graphic over a camera shot, a generated bed under narration) drawn as stripes. Import the sequence as Final Cut Pro XML from Premiere or Resolve, fix any clip the matcher could not place, and set origin classes from the clip list. The Statement, Credentials and Export tabs follow in later phases.
+Under **Outputs**, each finished edit gets a composition view: the render playing above two lanes, picture and audio, coloured by origin class moment by moment, with mixed stretches (a graphic over a camera shot, a generated bed under narration) drawn as stripes. Import the sequence as Final Cut Pro XML from Premiere or Resolve, fix any clip the matcher could not place, and set origin classes from the clip list. The **Statement** tab holds your creator statement beside exactly what will be signed (the numbers per lane and one row per ingredient, with its class, who set it, the file's own credentials and your note). The **Credentials** tab signs a new copy of the edit. The Export tab follows in a later phase.
 
 ### 7. Signing assets with Content Credentials
 
@@ -105,28 +107,27 @@ Any produced or AI asset that arrives without an embedded C2PA manifest (most El
 npm run cert:generate
 ```
 
-Then in **Project Settings**, paste the printed paths into the C2PA signing section. Optionally fill in a CAWG identity URL + name to embed a `cawg.identity` assertion pointing at your hosted identity document (see CAWG section below).
+Then in **Project Settings**, paste the printed paths into the C2PA signing section. Optionally fill in an identity URL (a page that says who you are); it is written as the author's link.
 
 **Signing a single asset:**
 
-On any produced or AI asset detail page that lacks Content Credentials, click **Sign with Content Credentials**. The modal pre-fills creator/organization/CAWG fields from the project, and the tool name from the asset's platform/equipment. Confirm and the tracker:
+On any produced or AI asset detail page that lacks Content Credentials, click **Sign with Content Credentials**. Set the asset's origin class first: the manifest declares it as how the file was made. Signing runs through the bundled `c2patool` (not the native binding, which Windows Smart App Control can block). The tracker:
 
-1. Reads cert + key from the configured paths
-2. Builds a manifest with `c2pa.actions`, `stds.schema-org.CreativeWork`, `c2pa.training-mining` opt-out, and (if configured) `cawg.identity`
-3. Writes a `<basename>.signed.<ext>` copy alongside the original
-4. Updates the asset record to point at the signed copy; preserves the unsigned path on `originalFilePath`
+1. Builds a manifest with `c2pa.actions.v2` (`c2pa.created` with the class as its IPTC digital source type), `stds.schema-org.CreativeWork` and the `c2pa.training-mining` opt-out
+2. Writes it to a `.c2pa` sidecar beside the file, named like it (`take.mp4` gets `take.c2pa`), optionally with a DigiCert time stamp. C2PA readers find a sidecar by that name. Signing again keeps the previous one as `take.v1.c2pa`
+3. Reads it back and lists it under **Signatures** with its status
 
-The original is never deleted. Assets re-signed against an already-signed file write a new `.signed.signed` — handy for layering iterations during development.
+The file and the asset record are never changed, so nothing is duplicated and edit projects keep their links. A file that already carries its own Content Credentials (a camera clip, a Firefly render) is not signed at ingest; its credentials are its provenance and are carried into any output you sign.
+
+**Signing a finished edit:** on the output's **Credentials** tab. The export is the parent, every tracked asset on the timeline is a placed ingredient with its class, and the creator statement is the `org.provenancetracker.creator_statement` assertion. Ingredients that carry their own credentials, embedded or in a sidecar, keep them inside the signed file. This is the one place the tracker writes a full new file: `<name>.signed.v<N>.<ext>`, because platforms and viewers only read what is inside the file.
 
 **About the dev cert:**
 
-The generator produces a two-step chain (a self-issued root CA + an end-entity signing cert) because c2pa-rs rejects fully self-signed leaves. Signatures from this cert verify cryptographically but won't appear as "trusted publisher" on contentcredentials.org — the trust signal is meant to come from the CAWG identity assertion (see below), not the cert chain. For production use a CA-issued cert.
+The generator produces a two-step chain (a self-issued root CA + an end-entity signing cert) because c2pa-rs rejects fully self-signed leaves. Signatures from this cert verify cryptographically but won't appear as "trusted publisher" on contentcredentials.org — so the tracker reports them as "Valid, unrecognised issuer". For production use a CA-issued cert.
 
 ### CAWG identity (current state)
 
-The tracker embeds a `cawg.identity` assertion in CAWG-1.2's declarative shape — `signer_payload` carries the identity URL and name, with `sig_type: cawg.x509.cose.unsigned`. Full COSE-signed CAWG identity is deferred to v0.3 (see TODO in [`c2pa-sign.js`](src/server/lib/extraction/c2pa-sign.js)) and depends on either c2pa-node exposing first-class CAWG signing or a public CAWG identity-claims-aggregation provider going live.
-
-For now, the assertion functions as a structured pointer at your hosted identity document. Strict CAWG verifiers will report it as unsigned; permissive readers (including contentcredentials.org) will surface the URL + name. This is by design — the project intentionally surfaces the gap between what individual creators / SMBs can sign today vs. what verified CAWG identity will eventually look like.
+The tracker does not write a CAWG identity assertion today. Earlier versions wrote an unsigned one (`signature: null`); current C2PA readers reject that and report the whole manifest as invalid (`assertion.required.missing`), so it was removed in phase 4c. The identity URL from Project Settings is carried on the CreativeWork author instead. A signed CAWG identity assertion (X.509) is possible through c2patool's `[cawg_x509_signer]` settings and is planned; see `docs/planned-features.md`.
 
 ## Deployment notes
 

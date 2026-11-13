@@ -9,7 +9,7 @@ Explanations that used to live in `CLAUDE.md`. `CLAUDE.md` is rules only; this f
 - **Database:** PostgreSQL via Drizzle ORM + `pg`
 - **Build:** Vite with `@vitejs/plugin-react`
 - **Dev:** `concurrently` runs Express (port 3001) and the Vite dev server (port 5173, proxies `/api` to Express)
-- **Extraction:** `exiftool-vendored` (EXIF and container tags, including video duration, frame rate and codec), `c2pa-node` (C2PA read and sign) with `c2patool` as a fallback reader (see `tools/README.md` once it lands), `png-chunks-extract`
+- **Extraction:** `exiftool-vendored` (EXIF and container tags, including video duration, frame rate and codec), `c2pa-node` (C2PA read, optional) with the bundled `c2patool` as the fallback reader and the only signer, `png-chunks-extract`
 
 ## Project structure
 
@@ -56,7 +56,10 @@ Why idempotent: a private downstream fork of this repo carries its own migration
 - `archival_assets`: archival images (museums, archives, historical sources)
 - `produced_assets`: original recordings (audio, video, photos)
 - `asset_relationships`: links between any two assets as `(type, id)` pairs across the three asset tables (D4), with `relationship_type` (`ingredient`, `derived_from`, `output_of`), `match_method` and `confidence`. No foreign keys; each table's delete function removes its rows.
-- `manifests`: C2PA Content Credentials manifests
+- `manifests`: legacy, unused (empty); superseded by `signatures`
+- `creator_statements`: the creator statement for an output (words and author; the numbers are built at sign time)
+- `in_place` on `assets`, `archival_assets`, `produced_assets` (D12): the row's `file_path` is the file where it already lived, not a managed copy
+- `signatures`: every signed copy of an asset or output: the new file, its hash, the manifest definition without key paths, the c2patool read-back and its status
 - `search_groups`, `search_jobs`, `search_candidates`: Wikimedia archive search
 - `project_config`: legacy single-project config (kept for migration)
 
@@ -110,7 +113,7 @@ Copy `.env.example` to `.env`:
 
 - **Notion** (optional): syncs archival assets to a Notion database, configured per project. API key is global in `.env`.
 - **ExifTool**: vendored via `exiftool-vendored`.
-- **C2PA**: `c2pa-node` for reading and signing; `c2patool` fallback for manifests newer than the bindings.
+- **C2PA**: reading tries `c2pa-node` and falls back to `c2patool`. Signing (phase 4c) is c2patool only: `src/server/lib/manifest/build.js` builds the manifest definition (pure), `c2patool.js` signs an output into a new `<name>.signed.v<N>.<ext>` (embedded) and a source asset into a `<name>.c2pa` sidecar (D13), then reads it back, `verify.js` turns the report into a status (`unrecognised_issuer` is the expected status for the dev certificate). Ingredients go in through `c2patool -i` records, with a sidecar attached as the record's manifest store when the file has one (`-i` reads embedded credentials only), so an ingredient with its own credentials keeps them inside the signed file. The asset row is never repointed at a signed copy; signed copies are rows in `signatures`.
 
 ## Testing
 

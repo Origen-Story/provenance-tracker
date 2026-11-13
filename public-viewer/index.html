@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Public viewer demo · Provenance Tracker</title>
+	<meta name="description" content="Demo of the provenance tracker's public viewer with a made-up film.">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+	<link rel="stylesheet" href="./viewer.css">
+	<style>
+		html { background: #0e0e0e; }
+		html:has(.ptv[data-theme='light']) { background: #fafaf8; }
+		body { margin: 0; }
+		.demo-note { max-width: 72rem; margin: 0 auto; padding: .75rem clamp(1rem, 3vw, 2rem); font: .8rem/1.5 system-ui, sans-serif; color: #8b8b88; }
+		.demo-note a { color: inherit; }
+	</style>
+</head>
+<body>
+	<p class="demo-note">
+		Demo with a made-up film; every name, signer and hash is invented.
+		Try <a href="?theme=light">the light theme</a>, <code>?youtube=&lt;id&gt;</code>, <code>?src=&lt;video url&gt;</code> or <code>?export=&lt;export json&gt;</code>.
+	</p>
+	<main id="film"></main>
+	<script type="module">
+		import { mountViewer } from './src/viewer.js';
+		const q = new URLSearchParams(location.search);
+		mountViewer(document.getElementById('film'), {
+			exportUrl: q.get('export') || './example/example.provenance.json',
+			video: q.get('youtube') ? { youtubeId: q.get('youtube') } : q.get('src') ? { src: q.get('src') } : null,
+			download: { url: q.get('download') || '#' },
+			theme: q.get('theme') === 'light' ? 'light' : 'dark'
+		});
+	</script>
+</body>
+</html>

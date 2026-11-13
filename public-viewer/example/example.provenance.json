@@ -1,0 +1,590 @@
+{
+  "format": "provenance-tracker.public-export",
+  "formatVersion": 1,
+  "generatedAt": "2026-11-14T09:31:00Z",
+  "generator": {
+    "name": "provenance-tracker",
+    "version": "example"
+  },
+  "film": {
+    "title": "A Morning at the Market",
+    "fileName": "morning-market.mp4",
+    "durationSeconds": 96,
+    "fps": 30,
+    "originClass": "compositeSynthetic",
+    "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/compositeSynthetic",
+    "position": "hybrid"
+  },
+  "statement": {
+    "text": "A short portrait of a neighbourhood market, made to show how a film can say where every part of it came from.\n\nThe interview and the closing shot were filmed on a phone that signs what it records. The opening view of the harbour and the music were generated with AI, and one shot of the square was widened with AI. The archive photograph has no credentials of its own, so I have said where it came from.",
+    "author": "A. Example",
+    "organization": "Example Studio",
+    "editedWith": "Premiere Pro",
+    "statedAt": "2026-11-14T09:30:00Z",
+    "statementVersion": 2
+  },
+  "composition": {
+    "picture": {
+      "byPosition": {
+        "synthetic": {
+          "seconds": 12,
+          "percent": 12.5
+        },
+        "captured": {
+          "seconds": 48,
+          "percent": 50
+        },
+        "assisted": {
+          "seconds": 8,
+          "percent": 8.33
+        },
+        "hybrid": {
+          "seconds": 8,
+          "percent": 8.33
+        },
+        "digital": {
+          "seconds": 10,
+          "percent": 10.42
+        }
+      },
+      "mixed": {
+        "seconds": 10,
+        "percent": 10.42,
+        "combos": {
+          "digital+synthetic": {
+            "seconds": 6,
+            "percent": 6.25
+          },
+          "captured+digital": {
+            "seconds": 4,
+            "percent": 4.17
+          }
+        }
+      },
+      "gap": {
+        "seconds": 0,
+        "percent": 0
+      },
+      "intervals": [
+        {
+          "start": 0,
+          "end": 6,
+          "positions": [
+            "digital",
+            "synthetic"
+          ],
+          "refs": [
+            "ing-1"
+          ],
+          "untracked": 1
+        },
+        {
+          "start": 6,
+          "end": 18,
+          "positions": [
+            "synthetic"
+          ],
+          "refs": [
+            "ing-1"
+          ]
+        },
+        {
+          "start": 18,
+          "end": 40,
+          "positions": [
+            "captured"
+          ],
+          "refs": [
+            "ing-3"
+          ]
+        },
+        {
+          "start": 40,
+          "end": 48,
+          "positions": [
+            "captured"
+          ],
+          "refs": [
+            "ing-4"
+          ]
+        },
+        {
+          "start": 48,
+          "end": 56,
+          "positions": [
+            "assisted"
+          ],
+          "refs": [
+            "ing-6"
+          ]
+        },
+        {
+          "start": 56,
+          "end": 70,
+          "positions": [
+            "captured"
+          ],
+          "refs": [
+            "ing-3"
+          ]
+        },
+        {
+          "start": 70,
+          "end": 78,
+          "positions": [
+            "hybrid"
+          ],
+          "refs": [
+            "ing-7"
+          ]
+        },
+        {
+          "start": 78,
+          "end": 88,
+          "positions": [
+            "digital"
+          ],
+          "refs": [
+            "ing-8"
+          ]
+        },
+        {
+          "start": 88,
+          "end": 92,
+          "positions": [
+            "captured"
+          ],
+          "refs": [
+            "ing-10"
+          ]
+        },
+        {
+          "start": 92,
+          "end": 96,
+          "positions": [
+            "digital",
+            "captured"
+          ],
+          "refs": [
+            "ing-10"
+          ],
+          "untracked": 1
+        }
+      ]
+    },
+    "audio": {
+      "byPosition": {
+        "synthetic": {
+          "seconds": 18,
+          "percent": 18.75
+        },
+        "captured": {
+          "seconds": 30,
+          "percent": 31.25
+        }
+      },
+      "mixed": {
+        "seconds": 48,
+        "percent": 50,
+        "combos": {
+          "captured+synthetic": {
+            "seconds": 46,
+            "percent": 47.92
+          },
+          "captured+synthetic+unknown": {
+            "seconds": 2,
+            "percent": 2.08
+          }
+        }
+      },
+      "gap": {
+        "seconds": 0,
+        "percent": 0
+      },
+      "intervals": [
+        {
+          "start": 0,
+          "end": 18,
+          "positions": [
+            "synthetic"
+          ],
+          "refs": [
+            "ing-2"
+          ]
+        },
+        {
+          "start": 18,
+          "end": 40,
+          "positions": [
+            "captured",
+            "synthetic"
+          ],
+          "refs": [
+            "ing-3",
+            "ing-2"
+          ]
+        },
+        {
+          "start": 40,
+          "end": 56,
+          "positions": [
+            "captured"
+          ],
+          "refs": [
+            "ing-5"
+          ]
+        },
+        {
+          "start": 56,
+          "end": 70,
+          "positions": [
+            "captured"
+          ],
+          "refs": [
+            "ing-3"
+          ]
+        },
+        {
+          "start": 70,
+          "end": 84,
+          "positions": [
+            "captured",
+            "synthetic"
+          ],
+          "refs": [
+            "ing-5",
+            "ing-2"
+          ]
+        },
+        {
+          "start": 84,
+          "end": 86,
+          "positions": [
+            "captured",
+            "unknown",
+            "synthetic"
+          ],
+          "refs": [
+            "ing-5",
+            "ing-9",
+            "ing-2"
+          ]
+        },
+        {
+          "start": 86,
+          "end": 96,
+          "positions": [
+            "captured",
+            "synthetic"
+          ],
+          "refs": [
+            "ing-5",
+            "ing-2"
+          ]
+        }
+      ]
+    }
+  },
+  "ingredients": [
+    {
+      "ref": "ing-1",
+      "title": "Opening view of the harbour",
+      "fileName": "gen_harbour_wide_v3.mp4",
+      "originClass": "trainedAlgorithmicMedia",
+      "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+      "position": "synthetic",
+      "aiAssisted": false,
+      "classSetBy": "proposal",
+      "fileCredentials": "present",
+      "classClaimedByFile": "trainedAlgorithmicMedia",
+      "signedBy": "tool",
+      "signerName": "Example Video Model",
+      "credentialsInSignedFile": "present",
+      "note": "",
+      "pictureSeconds": 18,
+      "audioSeconds": 0
+    },
+    {
+      "ref": "ing-2",
+      "title": "Music: morning theme",
+      "fileName": "score_morning_theme.wav",
+      "originClass": "trainedAlgorithmicMedia",
+      "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+      "position": "synthetic",
+      "aiAssisted": false,
+      "classSetBy": "proposal",
+      "fileCredentials": "present",
+      "classClaimedByFile": "trainedAlgorithmicMedia",
+      "signedBy": "tool",
+      "signerName": "Example Music Model",
+      "credentialsInSignedFile": "present",
+      "note": "",
+      "pictureSeconds": 0,
+      "audioSeconds": 66
+    },
+    {
+      "ref": "ing-3",
+      "title": "Interview with a stallholder",
+      "fileName": "PXL_20261104_101530.mp4",
+      "originClass": "computationalCapture",
+      "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/computationalCapture",
+      "position": "captured",
+      "aiAssisted": false,
+      "classSetBy": "creator",
+      "fileCredentials": "present",
+      "classClaimedByFile": "computationalCapture",
+      "signedBy": "device",
+      "signerName": "Example Phone",
+      "credentialsInSignedFile": "present",
+      "note": "",
+      "pictureSeconds": 36,
+      "audioSeconds": 36
+    },
+    {
+      "ref": "ing-4",
+      "title": "Market photograph, 1962",
+      "fileName": "scan_0042.tif",
+      "originClass": "print",
+      "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/print",
+      "position": "captured",
+      "aiAssisted": false,
+      "classSetBy": "creator",
+      "fileCredentials": "none",
+      "classClaimedByFile": null,
+      "signedBy": "",
+      "signerName": "",
+      "credentialsInSignedFile": "none",
+      "note": "Scanned by the creator from a family print; no credentials at the time.",
+      "pictureSeconds": 8,
+      "audioSeconds": 0
+    },
+    {
+      "ref": "ing-5",
+      "title": "Narration",
+      "fileName": "vo_take3.wav",
+      "originClass": "digitalCapture",
+      "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture",
+      "position": "captured",
+      "aiAssisted": false,
+      "classSetBy": "creator",
+      "fileCredentials": "present",
+      "classClaimedByFile": "digitalCapture",
+      "signedBy": "creator",
+      "signerName": "Example Studio",
+      "credentialsInSignedFile": "present",
+      "note": "",
+      "pictureSeconds": 0,
+      "audioSeconds": 42
+    },
+    {
+      "ref": "ing-6",
+      "title": "Archive film, restored",
+      "fileName": "archive_reel_07_upscaled.mov",
+      "originClass": "algorithmicallyEnhanced",
+      "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicallyEnhanced",
+      "position": "assisted",
+      "aiAssisted": false,
+      "classSetBy": "proposal",
+      "fileCredentials": "present",
+      "classClaimedByFile": "algorithmicallyEnhanced",
+      "signedBy": "tool",
+      "signerName": "Example Upscaler",
+      "credentialsInSignedFile": "present",
+      "note": "",
+      "pictureSeconds": 8,
+      "audioSeconds": 0
+    },
+    {
+      "ref": "ing-7",
+      "title": "Stall, background extended with AI",
+      "fileName": "stall_wide_genfill.mp4",
+      "originClass": "compositeWithTrainedAlgorithmicMedia",
+      "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia",
+      "position": "hybrid",
+      "aiAssisted": false,
+      "classSetBy": "creator",
+      "fileCredentials": "none",
+      "classClaimedByFile": null,
+      "signedBy": "",
+      "signerName": "",
+      "credentialsInSignedFile": "none",
+      "note": "Camera footage; the sky and the far side of the square were generated to widen the frame.",
+      "pictureSeconds": 8,
+      "audioSeconds": 0
+    },
+    {
+      "ref": "ing-8",
+      "title": "Screen recording of the provenance tracker",
+      "fileName": "screen-01-tracker.mp4",
+      "originClass": "screenCapture",
+      "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/screenCapture",
+      "position": "digital",
+      "aiAssisted": false,
+      "classSetBy": "creator",
+      "fileCredentials": "none",
+      "classClaimedByFile": null,
+      "signedBy": "",
+      "signerName": "",
+      "credentialsInSignedFile": "none",
+      "note": "Recorded on the creator’s computer.",
+      "pictureSeconds": 10,
+      "audioSeconds": 0
+    },
+    {
+      "ref": "ing-9",
+      "title": "Sound effect: shop door",
+      "fileName": "sfx_door_02.wav",
+      "originClass": "unknown",
+      "digitalSourceType": null,
+      "position": "unknown",
+      "aiAssisted": false,
+      "classSetBy": "proposal",
+      "fileCredentials": "none",
+      "classClaimedByFile": null,
+      "signedBy": "",
+      "signerName": "",
+      "credentialsInSignedFile": "none",
+      "note": "",
+      "pictureSeconds": 0,
+      "audioSeconds": 2
+    },
+    {
+      "ref": "ing-10",
+      "title": "Closing shot, the square at noon",
+      "fileName": "PXL_20261104_114210.mp4",
+      "originClass": "computationalCapture",
+      "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/computationalCapture",
+      "position": "captured",
+      "aiAssisted": false,
+      "classSetBy": "proposal",
+      "fileCredentials": "present",
+      "classClaimedByFile": "computationalCapture",
+      "signedBy": "device",
+      "signerName": "Example Phone",
+      "credentialsInSignedFile": "present",
+      "note": "",
+      "pictureSeconds": 8,
+      "audioSeconds": 0
+    }
+  ],
+  "untracked": [],
+  "editorMadeClips": 2,
+  "signedFile": {
+    "fileName": "morning-market.signed.v1.mp4",
+    "sha256": "af02401ae9b5adb63e5187d9ad3fd143ba091eabf1962f621ab6a76d8b376303",
+    "bytes": 412345678,
+    "version": 1,
+    "signedAt": "2026-11-14T09:30:05.000Z"
+  },
+  "signature": {
+    "status": "valid",
+    "statusLabel": "Valid",
+    "hashVerified": true,
+    "issuerRecognised": true,
+    "signer": {
+      "commonName": "Example Studio",
+      "issuer": "Example Trust Services CA"
+    },
+    "algorithm": "Es256",
+    "timestamped": true,
+    "timestampTime": "2026-11-14T09:30:04Z",
+    "manifestCount": 7,
+    "failures": []
+  },
+  "vocabulary": {
+    "positions": [
+      {
+        "id": "captured",
+        "label": "Camera-captured",
+        "long": "Camera-captured only",
+        "desc": "Recorded from real life by a camera, a microphone or a scanner. No generative AI."
+      },
+      {
+        "id": "digital",
+        "label": "Digital, no AI",
+        "long": "Digital, no AI",
+        "desc": "Made or recorded on a computer without a generative model: titles, graphics, screen recordings."
+      },
+      {
+        "id": "assisted",
+        "label": "AI-assisted",
+        "long": "AI-assisted adjustments",
+        "desc": "A model helped, but did not invent the content: an upscale or clean-up, or code an AI wrote that an ordinary program rendered."
+      },
+      {
+        "id": "hybrid",
+        "label": "Hybrid",
+        "long": "Hybrid generated elements",
+        "desc": "Real and generated material in one asset: a generative edit, or a composite that includes AI."
+      },
+      {
+        "id": "synthetic",
+        "label": "Fully synthetic",
+        "long": "Fully synthetic",
+        "desc": "Made by a generative model."
+      },
+      {
+        "id": "unknown",
+        "label": "Unknown",
+        "long": "Not on the spectrum yet",
+        "desc": "Nothing reliable says how this was made."
+      }
+    ],
+    "classes": {
+      "compositeSynthetic": {
+        "label": "Composite with AI",
+        "position": "hybrid",
+        "desc": "Several pieces put together, at least one of them AI-generated.",
+        "iptc": "http://cv.iptc.org/newscodes/digitalsourcetype/compositeSynthetic"
+      },
+      "trainedAlgorithmicMedia": {
+        "label": "AI-generated",
+        "position": "synthetic",
+        "desc": "Made by a generative model from a prompt or reference.",
+        "iptc": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"
+      },
+      "computationalCapture": {
+        "label": "Captured (multi-frame)",
+        "position": "captured",
+        "desc": "A capture the device merged from several frames, as phone HDR does. No generative model.",
+        "iptc": "http://cv.iptc.org/newscodes/digitalsourcetype/computationalCapture"
+      },
+      "print": {
+        "label": "Scanned",
+        "position": "captured",
+        "desc": "Digitised from a print or other physical original.",
+        "iptc": "http://cv.iptc.org/newscodes/digitalsourcetype/print"
+      },
+      "digitalCapture": {
+        "label": "Captured",
+        "position": "captured",
+        "desc": "Recorded from real life by a camera or microphone.",
+        "iptc": "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture"
+      },
+      "algorithmicallyEnhanced": {
+        "label": "AI-enhanced",
+        "position": "assisted",
+        "desc": "Upscaled, restored or cleaned by an algorithm without changing what it shows.",
+        "iptc": "http://cv.iptc.org/newscodes/digitalsourcetype/algorithmicallyEnhanced"
+      },
+      "compositeWithTrainedAlgorithmicMedia": {
+        "label": "Edited with generative AI",
+        "position": "hybrid",
+        "desc": "One asset changed by a generative model: generative fill, a replaced background.",
+        "iptc": "http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia"
+      },
+      "screenCapture": {
+        "label": "Screen capture",
+        "position": "digital",
+        "desc": "A recording or still of a computer or phone screen.",
+        "iptc": "http://cv.iptc.org/newscodes/digitalsourcetype/screenCapture"
+      },
+      "unknown": {
+        "label": "Unknown",
+        "position": "unknown",
+        "desc": "No reliable signal yet; set it by hand.",
+        "iptc": null
+      }
+    }
+  }
+}

@@ -3,11 +3,12 @@ import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
-import { mkdir, readdir, stat, copyFile, unlink } from 'fs/promises';
+import { mkdir, copyFile, unlink } from 'fs/promises';
 import { getActiveProject } from '../lib/projects.js';
 import { extractAIAsset } from '../lib/extraction/ai-extraction.js';
 import { extractExifFromPath } from '../lib/archival/extraction.js';
 import { computeFileHash } from '../lib/core/file-utils.js';
+import { listImportableFiles } from '../lib/core/scan-folder.js';
 import { db } from '../db/index.js';
 import { assets, archivalAssets, producedAssets } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
@@ -157,163 +158,115 @@ router.post('/', upload.array('files', 50), async (req, res) => {
 });
 
 /**
+ * Import one file that already exists on disk. Managed: copy it into the
+ * project's storage folder and extract from the copy. In place (D12): extract
+ * from the file where it is and record that path; nothing is copied, and the
+ * tracker never moves, renames or deletes it.
+ */
+async function importExisting({ project, sourcePath, module, inPlace, deleteOriginal }) {
+	const fileHash = await computeFileHash(sourcePath);
+	const dup = await findDuplicateByHash(project.id, fileHash, module);
+	if (dup) {
+		if (deleteOriginal && !inPlace) await unlink(sourcePath).catch(() => {});
+		return { duplicate: true, existingAsset: dup, error: `Duplicate: already in catalog${dup.name ? ` as "${dup.name}"` : dup.assetId ? ` as ${dup.assetId}` : ''}` };
+	}
+	let filePath = sourcePath;
+	if (!inPlace) {
+		const storageDir = getStorageDir(project, module);
+		if (!existsSync(storageDir)) await mkdir(storageDir, { recursive: true });
+		filePath = uniqueName(storageDir, path.basename(sourcePath).replace(/[^a-zA-Z0-9._-]/g, '_'));
+		await copyFile(sourcePath, filePath);
+		if (deleteOriginal) await unlink(sourcePath).catch(() => {});
+	}
+	let extracted;
+	if (module === 'archival') {
+		extracted = await extractExifFromPath(filePath);
+		extracted.accessDate = new Date().toISOString().slice(0, 10);
+		extracted.sourceUrl = '';
+	} else if (module === 'produced') {
+		extracted = await extractExifFromPath(filePath);
+		extracted.recordingDate = '';
+	} else {
+		extracted = await extractAIAsset(filePath);
+	}
+	return { extracted: { ...extracted, inPlace: !!inPlace } };
+}
+
+function refuseDeletingTrackedFiles(inPlace, deleteOriginal, res) {
+	if (inPlace && deleteOriginal) {
+		res.status(400).json({ error: 'A file tracked in place is the original. Untick "delete originals" to track files where they are.' });
+		return true;
+	}
+	return false;
+}
+
+/**
  * POST /api/upload/scan
- * Scan a local folder, copy files into managed storage, run extraction on each.
+ * Import every supported file in a local folder.
  *
- * Body: { folderPath, module, deleteOriginals }
+ * Body: { folderPath, module, inPlace, recursive, deleteOriginals }
  */
 router.post('/scan', async (req, res) => {
 	const project = await getActiveProject();
 	if (!project) return res.status(400).json({ error: 'No active project' });
 
-	const { folderPath, module = 'ai-assets', deleteOriginals = false } = req.body;
+	const { folderPath, module = 'ai-assets', inPlace = false, recursive = false, deleteOriginals = false } = req.body;
 	if (!folderPath) return res.status(400).json({ error: 'folderPath required' });
 	if (!existsSync(folderPath)) return res.status(400).json({ error: 'Folder not found' });
+	if (refuseDeletingTrackedFiles(inPlace, deleteOriginals, res)) return;
 
-	const storageDir = getStorageDir(project, module);
-	if (!existsSync(storageDir)) {
-		await mkdir(storageDir, { recursive: true });
-	}
-
-	// Supported file extensions
-	const SUPPORTED = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.tif', '.tiff', '.bmp', '.svg', '.mp4', '.mov', '.mp3', '.wav', '.flac', '.ogg']);
-
-	const entries = await readdir(folderPath);
-	const files = [];
-	// Track subdirectories to warn the user
-	const subdirs = [];
-	for (const entry of entries) {
-		const fullPath = path.join(folderPath, entry);
-		const s = await stat(fullPath);
-		if (s.isDirectory()) {
-			subdirs.push(entry);
-			continue;
-		}
-		const ext = path.extname(entry).toLowerCase();
-		if (!SUPPORTED.has(ext)) continue;
-		if (s.isFile()) files.push({ name: entry, path: fullPath, size: s.size });
-	}
-
+	const { files, skippedFolders } = await listImportableFiles(folderPath, { recursive: !!recursive });
 	if (files.length === 0) {
 		return res.json({
 			results: [],
-			subdirectories: subdirs,
-			message: 'No supported files found in this folder.' + (subdirs.length ? ` Note: ${subdirs.length} subdirector${subdirs.length === 1 ? 'y' : 'ies'} found but not scanned (${subdirs.join(', ')}).` : '')
+			subdirectories: skippedFolders,
+			message: 'No supported files found in this folder.' + (skippedFolders.length ? ` Note: ${skippedFolders.length} subfolder${skippedFolders.length === 1 ? '' : 's'} not scanned (${skippedFolders.join(', ')}). Tick "include subfolders" to scan them.` : '')
 		});
 	}
 
 	const results = [];
-	let deleted = 0;
 	let duplicates = 0;
-
 	for (const file of files) {
 		try {
-			// Compute hash from source first for duplicate check
-			const fileHash = await computeFileHash(file.path);
-			const dup = await findDuplicateByHash(project.id, fileHash, module);
-			if (dup) {
+			const r = await importExisting({ project, sourcePath: file.path, module, inPlace, deleteOriginal: deleteOriginals });
+			if (r.duplicate) {
 				duplicates++;
-				// Delete the original even if it's a duplicate, if the flag is set
-				if (deleteOriginals) {
-					await unlink(file.path).catch(() => {});
-					deleted++;
-				}
-				results.push({
-					success: false,
-					filename: file.name,
-					duplicate: true,
-					existingAsset: dup,
-					error: `Duplicate: already in catalog${dup.name ? ` as "${dup.name}"` : dup.assetId ? ` as ${dup.assetId}` : ''}`
-				});
-				continue;
-			}
-
-			const destPath = uniqueName(storageDir, file.name);
-			await copyFile(file.path, destPath);
-
-			// Delete original if requested
-			if (deleteOriginals) {
-				await unlink(file.path).catch(() => {});
-				deleted++;
-			}
-
-			let extracted;
-			if (module === 'archival') {
-				extracted = await extractExifFromPath(destPath);
-				extracted.accessDate = new Date().toISOString().slice(0, 10);
-				extracted.sourceUrl = '';
-			} else if (module === 'produced') {
-				extracted = await extractExifFromPath(destPath);
-				extracted.recordingDate = '';
+				results.push({ success: false, filename: file.relativePath, duplicate: true, existingAsset: r.existingAsset, error: r.error });
 			} else {
-				extracted = await extractAIAsset(destPath);
+				results.push({ success: true, ...r.extracted });
 			}
-
-			results.push({ success: true, ...extracted });
 		} catch (err) {
-			results.push({ success: false, filename: file.name, error: err.message });
+			results.push({ success: false, filename: file.relativePath, error: err.message });
 		}
 	}
 
 	res.json({
 		results,
-		subdirectories: subdirs,
-		deleted: deleteOriginals ? deleted : 0,
+		subdirectories: skippedFolders,
+		deleted: deleteOriginals && !inPlace ? results.filter(r => r.success || r.duplicate).length : 0,
 		duplicates
 	});
 });
 
 /**
  * POST /api/upload/file
- * Import a single file by path. Copies to managed storage, runs extraction.
+ * Import a single file by path.
  *
- * Body: { filePath, module, deleteOriginal }
+ * Body: { filePath, module, inPlace, deleteOriginal }
  */
 router.post('/file', async (req, res) => {
 	const project = await getActiveProject();
 	if (!project) return res.status(400).json({ error: 'No active project' });
 
-	const { filePath, module = 'ai-assets', deleteOriginal = false } = req.body;
+	const { filePath, module = 'ai-assets', inPlace = false, deleteOriginal = false } = req.body;
 	if (!filePath) return res.status(400).json({ error: 'filePath required' });
 	if (!existsSync(filePath)) return res.status(400).json({ error: 'File not found' });
-
-	const storageDir = getStorageDir(project, module);
-	if (!existsSync(storageDir)) {
-		await mkdir(storageDir, { recursive: true });
-	}
+	if (refuseDeletingTrackedFiles(inPlace, deleteOriginal, res)) return;
 
 	try {
-		// Check for duplicates by hash first
-		const fileHash = await computeFileHash(filePath);
-		const dup = await findDuplicateByHash(project.id, fileHash, module);
-		if (dup) {
-			if (deleteOriginal) await unlink(filePath).catch(() => {});
-			return res.status(409).json({
-				error: `Duplicate: this file already exists in the catalog${dup.name ? ` as "${dup.name}"` : dup.assetId ? ` as ${dup.assetId}` : ''}`,
-				duplicate: true,
-				existingAsset: dup
-			});
-		}
-
-		const filename = path.basename(filePath).replace(/[^a-zA-Z0-9._-]/g, '_');
-		const destPath = uniqueName(storageDir, filename);
-		await copyFile(filePath, destPath);
-
-		if (deleteOriginal) await unlink(filePath).catch(() => {});
-
-		let extracted;
-		if (module === 'archival') {
-			extracted = await extractExifFromPath(destPath);
-			extracted.accessDate = new Date().toISOString().slice(0, 10);
-			extracted.sourceUrl = '';
-		} else if (module === 'produced') {
-			extracted = await extractExifFromPath(destPath);
-			extracted.recordingDate = '';
-		} else {
-			extracted = await extractAIAsset(destPath);
-		}
-
-		res.json({ success: true, deleted: deleteOriginal, ...extracted });
+		const r = await importExisting({ project, sourcePath: filePath, module, inPlace, deleteOriginal });
+		if (r.duplicate) return res.status(409).json({ error: r.error, duplicate: true, existingAsset: r.existingAsset });
+		res.json({ success: true, deleted: !!deleteOriginal && !inPlace, ...r.extracted });
 	} catch (err) {
 		res.status(400).json({ error: err.message });
 	}

@@ -136,6 +136,7 @@ export async function createAsset(projectId, data) {
 		assetId,
 		description: data.description || '',
 		filePath: data.filePath,
+		inPlace: !!data.inPlace,
 		fileHash: data.fileHash || '',
 		fileSize: data.fileSize || 0,
 		mimeType: data.mimeType || '',

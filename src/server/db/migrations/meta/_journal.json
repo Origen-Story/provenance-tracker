@@ -78,6 +78,13 @@
       "when": 1794553925133,
       "tag": "0010_daily_pete_wisdom",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794558563004,
+      "tag": "0011_mixed_kingpin",
+      "breakpoints": true
     }
   ]
 }

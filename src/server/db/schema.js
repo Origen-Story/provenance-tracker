@@ -45,6 +45,9 @@ export const assets = pgTable('assets', {
 	assetId: text('asset_id').notNull().unique(),
 	description: text('description').default(''),
 	filePath: text('file_path').notNull(),
+	// Tracked in place (D12): filePath is the file where it already lived, not a
+	// copy in managed storage. The tracker never moves, renames or deletes it.
+	inPlace: boolean('in_place').default(false),
 	fileHash: text('file_hash').default(''),
 	fileSize: integer('file_size').default(0),
 	mimeType: text('mime_type').default(''),
@@ -151,6 +154,9 @@ export const archivalAssets = pgTable('archival_assets', {
 	name: text('name').notNull().default(''),
 	filename: text('filename').notNull().default(''),
 	filePath: text('file_path').notNull(),
+	// Tracked in place (D12): filePath is the file where it already lived, not a
+	// copy in managed storage. The tracker never moves, renames or deletes it.
+	inPlace: boolean('in_place').default(false),
 	fileHash: text('file_hash').default(''),
 	fileSize: integer('file_size').default(0),
 	mimeType: text('mime_type').default(''),
@@ -197,6 +203,9 @@ export const producedAssets = pgTable('produced_assets', {
 	name: text('name').notNull().default(''),
 	filename: text('filename').notNull().default(''),
 	filePath: text('file_path').notNull(),
+	// Tracked in place (D12): filePath is the file where it already lived, not a
+	// copy in managed storage. The tracker never moves, renames or deletes it.
+	inPlace: boolean('in_place').default(false),
 	fileHash: text('file_hash').default(''),
 	fileSize: integer('file_size').default(0),
 	mimeType: text('mime_type').default(''),

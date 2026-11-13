@@ -63,6 +63,7 @@ export async function createProducedAsset(projectId, data) {
 		name: data.name || '',
 		filename: data.filename || '',
 		filePath: data.filePath,
+		inPlace: !!data.inPlace,
 		fileHash: data.fileHash || '',
 		fileSize: data.fileSize || 0,
 		mimeType: data.mimeType || '',

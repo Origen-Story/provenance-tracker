@@ -3,7 +3,7 @@ import path from 'node:path';
 import {
 	buildOutputManifest, buildCreatorStatement, buildAssetManifest, versionedSignedPath,
 	placedAssetKeys, outputClassOf, STATEMENT_LABEL, PARENT_LABEL, sidecarPathFor, archivedSidecarPath, planSidecar,
-	cleanPublicTitle, PUBLIC_TITLE_MAX
+	cleanPublicTitle, PUBLIC_TITLE_MAX, compactIntervals
 } from '../../../src/server/lib/manifest/build.js';
 
 const IPTC = 'http://cv.iptc.org/newscodes/digitalsourcetype/';
@@ -92,6 +92,29 @@ describe('buildCreatorStatement', () => {
 		const { ingredients } = buildOutputManifest({ output, timeline, composition, segments, assets, statement, statedAt: 'x', generator: GENERATOR });
 		expect(ingredients.find(i => i.label === 'ing-1').title).toBe('take-01.mp4');
 		expect(ingredients[0].title).toBe('final.mp4');
+	});
+
+	it('carries what plays when, by ingredient ref, so the public strip is covered by the signature', () => {
+		// Placed in order of first use: take (ing-1), voice (ing-2), generated clip (ing-3).
+		expect(s.composition.picture.intervals).toEqual([
+			{ start: 0, end: 2, positions: ['captured', 'digital'], refs: ['ing-1'], untracked: 1 },
+			{ start: 2, end: 6, positions: ['captured'], refs: ['ing-1'] },
+			{ start: 6, end: 10, positions: ['synthetic'], refs: ['ing-3'] }
+		]);
+		expect(s.composition.audio.intervals).toEqual([{ start: 0, end: 10, positions: ['captured'], refs: ['ing-2'] }]);
+	});
+
+	it('merges adjacent intervals that read the same', () => {
+		const refOf = new Map([['produced:11', 'ing-1']]);
+		const lane = { intervals: [
+			{ startSeconds: 0, endSeconds: 1, positions: ['captured'], layers: [L('produced', 11)] },
+			{ startSeconds: 1, endSeconds: 3, positions: ['captured'], layers: [L('produced', 11)] },
+			{ startSeconds: 3, endSeconds: 4, positions: [], layers: [] }
+		] };
+		expect(compactIntervals(lane, refOf)).toEqual([
+			{ start: 0, end: 3, positions: ['captured'], refs: ['ing-1'] },
+			{ start: 3, end: 4, positions: [], refs: [] }
+		]);
 	});
 
 	it('lists clips it could not tie to an asset, and counts editor-made titles', () => {

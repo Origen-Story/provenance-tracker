@@ -6,7 +6,7 @@ import { Router } from 'express';
 import { getActiveProject } from '../lib/projects.js';
 import { getProducedAsset, markOutput } from '../lib/produced/produced.js';
 import { listOutputs } from '../lib/timeline/timelines.js';
-import { previewStatement, saveStatement, signOutput, listSignatures } from '../lib/manifest/signing.js';
+import { previewStatement, saveStatement, signOutput, listSignatures, publicExportFor } from '../lib/manifest/signing.js';
 import { DEFAULT_TIMESTAMP_URL } from '../lib/manifest/generator.js';
 
 const router = Router();
@@ -75,6 +75,22 @@ router.post('/:id/sign', async (req, res) => {
 	try {
 		const timestampUrl = req.body?.timestamp === false ? '' : DEFAULT_TIMESTAMP_URL;
 		res.json(await signOutput(ctx.project, ctx.id, { timestampUrl }));
+	} catch (err) {
+		res.status(err.status || 500).json({ error: err.message });
+	}
+});
+
+// The public export of a signed copy, as JSON. ?signature=<id> picks a copy
+// (default: the latest); ?download=1 sends it as a file.
+router.get('/:id/public-export', async (req, res) => {
+	const ctx = await outputInProject(req, res);
+	if (!ctx) return;
+	const signatureId = req.query.signature != null ? parseInt(req.query.signature) : undefined;
+	if (signatureId !== undefined && !Number.isInteger(signatureId)) return res.status(400).json({ error: 'signature must be an integer id' });
+	try {
+		const { data, fileName } = await publicExportFor(ctx.project, ctx.id, { signatureId });
+		if (req.query.download) res.attachment(fileName);
+		res.type('application/json').send(JSON.stringify(data, null, 2));
 	} catch (err) {
 		res.status(err.status || 500).json({ error: err.message });
 	}

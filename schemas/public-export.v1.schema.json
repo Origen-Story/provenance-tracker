@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Origen-Story/provenance-tracker/blob/main/schemas/public-export.v1.schema.json",
+  "title": "Provenance Tracker public export, format version 1",
+  "description": "What a public page needs to show how a signed film was made. Built from one signed output's record: the creator statement as signed into the file, and how the signed file read back. Contains no file paths and no database ids.",
+  "type": "object",
+  "required": ["format", "formatVersion", "generatedAt", "generator", "film", "statement", "composition", "ingredients", "untracked", "editorMadeClips", "signedFile", "signature", "vocabulary"],
+  "additionalProperties": false,
+  "properties": {
+    "format": { "const": "provenance-tracker.public-export" },
+    "formatVersion": { "const": 1 },
+    "generatedAt": { "type": "string" },
+    "generator": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": { "name": { "type": "string" }, "version": { "type": "string" } }
+    },
+    "film": {
+      "type": "object",
+      "required": ["title", "fileName", "durationSeconds", "fps", "originClass", "digitalSourceType", "position"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string", "description": "The public title, or the file name when none was set." },
+        "fileName": { "type": "string" },
+        "durationSeconds": { "type": ["number", "null"] },
+        "fps": { "type": ["number", "null"] },
+        "originClass": { "type": "string", "description": "IPTC digital source type code, or 'unknown'." },
+        "digitalSourceType": { "type": ["string", "null"] },
+        "position": { "$ref": "#/$defs/position" }
+      }
+    },
+    "statement": {
+      "type": "object",
+      "required": ["text", "author", "organization", "editedWith", "statedAt", "statementVersion"],
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string" },
+        "author": { "type": "string" },
+        "organization": { "type": "string" },
+        "editedWith": { "type": "string" },
+        "statedAt": { "type": ["string", "null"] },
+        "statementVersion": { "type": "integer", "minimum": 2 }
+      }
+    },
+    "composition": {
+      "type": "object",
+      "required": ["picture", "audio"],
+      "additionalProperties": false,
+      "properties": {
+        "picture": { "$ref": "#/$defs/lane" },
+        "audio": { "$ref": "#/$defs/lane" }
+      }
+    },
+    "ingredients": { "type": "array", "items": { "$ref": "#/$defs/ingredient" } },
+    "untracked": {
+      "type": "array",
+      "description": "Clips the tracker could not tie to a tracked asset. Clip names are left out.",
+      "items": {
+        "type": "object",
+        "required": ["track", "startSeconds", "endSeconds", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "track": { "type": "string" },
+          "startSeconds": { "type": ["number", "null"] },
+          "endSeconds": { "type": ["number", "null"] },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "editorMadeClips": { "type": "integer", "minimum": 0, "description": "Titles and other generator clips made in the editor." },
+    "signedFile": {
+      "type": "object",
+      "required": ["fileName", "sha256", "bytes", "version", "signedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "fileName": { "type": "string" },
+        "sha256": { "type": "string", "description": "Hex SHA-256 of the signed file, to check a download against." },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "version": { "type": ["integer", "null"] },
+        "signedAt": { "type": ["string", "null"] }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "required": ["status", "statusLabel", "hashVerified", "issuerRecognised", "signer", "algorithm", "timestamped", "timestampTime", "manifestCount", "failures"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["valid", "unrecognised_issuer", "hash_mismatch", "invalid", "absent"] },
+        "statusLabel": { "type": "string" },
+        "hashVerified": { "type": "boolean" },
+        "issuerRecognised": { "type": "boolean" },
+        "signer": {
+          "type": ["object", "null"],
+          "required": ["commonName", "issuer"],
+          "additionalProperties": false,
+          "properties": { "commonName": { "type": "string" }, "issuer": { "type": "string" } }
+        },
+        "algorithm": { "type": "string" },
+        "timestamped": { "type": "boolean" },
+        "timestampTime": { "type": ["string", "null"] },
+        "manifestCount": { "type": "integer", "minimum": 0 },
+        "failures": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "vocabulary": {
+      "type": "object",
+      "required": ["positions", "classes"],
+      "additionalProperties": false,
+      "properties": {
+        "positions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "long", "desc"],
+            "additionalProperties": false,
+            "properties": { "id": { "$ref": "#/$defs/position" }, "label": { "type": "string" }, "long": { "type": "string" }, "desc": { "type": "string" } }
+          }
+        },
+        "classes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["label", "position", "desc", "iptc"],
+            "additionalProperties": false,
+            "properties": { "label": { "type": "string" }, "position": { "$ref": "#/$defs/position" }, "desc": { "type": "string" }, "iptc": { "type": ["string", "null"] } }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "position": { "enum": ["captured", "digital", "assisted", "hybrid", "synthetic", "unknown"] },
+    "stat": {
+      "type": "object",
+      "required": ["seconds", "percent"],
+      "properties": { "seconds": { "type": ["number", "null"] }, "percent": { "type": "number" }, "combos": { "type": "object" } }
+    },
+    "lane": {
+      "type": ["object", "null"],
+      "required": ["byPosition", "mixed", "gap", "intervals"],
+      "additionalProperties": false,
+      "properties": {
+        "byPosition": { "type": "object", "additionalProperties": { "$ref": "#/$defs/stat" } },
+        "mixed": { "$ref": "#/$defs/stat" },
+        "gap": { "$ref": "#/$defs/stat" },
+        "intervals": {
+          "type": "array",
+          "description": "Tiles the film's duration. Positions are what plays; refs are the ingredients playing, top track first; untracked counts layers that are not tracked assets.",
+          "items": {
+            "type": "object",
+            "required": ["start", "end", "positions", "refs"],
+            "additionalProperties": false,
+            "properties": {
+              "start": { "type": ["number", "null"] },
+              "end": { "type": ["number", "null"] },
+              "positions": { "type": "array", "items": { "$ref": "#/$defs/position" } },
+              "refs": { "type": "array", "items": { "type": "string" } },
+              "untracked": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      }
+    },
+    "ingredient": {
+      "type": "object",
+      "required": ["ref", "title", "fileName", "originClass", "digitalSourceType", "position", "aiAssisted", "classSetBy", "fileCredentials", "classClaimedByFile", "signedBy", "signerName", "credentialsInSignedFile", "note", "pictureSeconds", "audioSeconds"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": { "type": "string", "description": "The ingredient's label in the manifest (ing-1, ing-2...)." },
+        "title": { "type": "string", "description": "The public title, or the file name when none was set." },
+        "fileName": { "type": "string" },
+        "originClass": { "type": "string" },
+        "digitalSourceType": { "type": ["string", "null"] },
+        "position": { "$ref": "#/$defs/position" },
+        "aiAssisted": { "type": "boolean" },
+        "classSetBy": { "enum": ["creator", "proposal"] },
+        "fileCredentials": { "enum": ["none", "unreadable", "present"], "description": "Content Credentials in the asset file itself, as tracked." },
+        "classClaimedByFile": { "type": ["string", "null"] },
+        "signedBy": { "type": "string" },
+        "signerName": { "type": "string" },
+        "credentialsInSignedFile": { "enum": ["none", "present", "unknown"], "description": "Whether the ingredient's own manifest was carried into the signed file, as it read back. 'unknown' when the read-back entry could not be matched to this ingredient." },
+        "note": { "type": "string" },
+        "pictureSeconds": { "type": ["number", "null"] },
+        "audioSeconds": { "type": ["number", "null"] }
+      }
+    }
+  }
+}

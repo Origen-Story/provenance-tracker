@@ -27,8 +27,9 @@ import { positionsIn } from '../timeline/compose.js';
 import { classClaimedByFile } from '../origin/classify.js';
 
 export const STATEMENT_LABEL = 'org.provenancetracker.creator_statement';
-// v2 (2026-11-13) adds publicTitle on the output and on each ingredient: the
-// name the creator chose for the public viewer, empty when not set.
+// v2 (2026-11-13) adds, for the public viewer: publicTitle on the output and
+// on each ingredient (empty when not set), and per lane the compact
+// `intervals` list (what plays when, by ingredient ref).
 export const STATEMENT_VERSION = 2;
 export const PUBLIC_TITLE_MAX = 120;
 export const PARENT_LABEL = 'ing-parent';
@@ -202,13 +203,39 @@ function presenceByAsset(composition) {
 	return out;
 }
 
-function laneSummary(lane) {
+// What plays when, compactly: per interval the spectrum positions and the
+// ingredients (by ref) playing, top track first, plus how many layers are not
+// tracked assets (editor titles, unmatched clips). Adjacent intervals that
+// read the same are merged. This is what the public viewer draws, so the strip
+// is covered by the signature, not rebuilt from a timeline that may have moved.
+export function compactIntervals(lane, refOf) {
+	const out = [];
+	for (const iv of lane?.intervals || []) {
+		const refs = [];
+		let untracked = 0;
+		for (const l of iv.layers || []) {
+			const ref = l.matchedAssetType && l.matchedAssetId ? refOf.get(assetKey(l.matchedAssetType, l.matchedAssetId)) : undefined;
+			if (ref) { if (!refs.includes(ref)) refs.push(ref); } else untracked++;
+		}
+		const entry = { start: seconds(iv.startSeconds), end: seconds(iv.endSeconds), positions: [...(iv.positions || [])], refs, ...(untracked ? { untracked } : {}) };
+		const prev = out[out.length - 1];
+		if (prev && prev.end === entry.start && prev.positions.join() === entry.positions.join() && prev.refs.join() === entry.refs.join() && (prev.untracked || 0) === untracked) {
+			prev.end = entry.end;
+		} else {
+			out.push(entry);
+		}
+	}
+	return out;
+}
+
+function laneSummary(lane, refOf) {
 	if (!lane) return null;
 	const stat = (s) => ({ seconds: seconds(s?.seconds), percent: percent(s?.percent ?? 0) });
 	return {
 		byPosition: Object.fromEntries(Object.entries(lane.byPosition || {}).map(([p, s]) => [p, stat(s)])),
 		mixed: { ...stat(lane.mixed), combos: Object.fromEntries(Object.entries(lane.mixed?.combos || {}).map(([k, s]) => [k, stat(s)])) },
-		gap: stat(lane.gap)
+		gap: stat(lane.gap),
+		intervals: compactIntervals(lane, refOf)
 	};
 }
 
@@ -253,7 +280,9 @@ export function buildCreatorStatement({ output, timeline, composition, segments,
 	const outputKey = assetKey(output.type || 'produced', output.id);
 	const presence = presenceByAsset(composition);
 	const outputClass = outputClassOf(output, composition);
-	const ingredients = placedAssetKeys(segments, outputKey).map((k, i) => {
+	const placed = placedAssetKeys(segments, outputKey);
+	const refOf = new Map(placed.map((k, i) => [k, ingredientLabel(i)]));
+	const ingredients = placed.map((k, i) => {
 		const a = assets.get(k) || {};
 		const claimed = classClaimedByFile(a.c2paSummary);
 		const on = presence.get(k) || { picture: 0, audio: 0 };
@@ -305,7 +334,7 @@ export function buildCreatorStatement({ output, timeline, composition, segments,
 			durationSeconds: seconds(composition?.durationSeconds),
 			fps: round(timeline?.fps ?? composition?.fps, 3)
 		},
-		composition: { picture: laneSummary(composition?.picture), audio: laneSummary(composition?.audio) },
+		composition: { picture: laneSummary(composition?.picture, refOf), audio: laneSummary(composition?.audio, refOf) },
 		ingredients,
 		unresolved,
 		editorGeneratedClips: generated

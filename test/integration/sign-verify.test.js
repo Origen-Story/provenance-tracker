@@ -14,6 +14,8 @@ import { extractC2pa, resolveC2patoolPath } from '../../src/server/lib/extractio
 import { signWithC2patool } from '../../src/server/lib/manifest/c2patool.js';
 import { buildOutputManifest, buildAssetManifest, STATEMENT_LABEL } from '../../src/server/lib/manifest/build.js';
 import { interpretReport } from '../../src/server/lib/manifest/verify.js';
+import { buildPublicExport } from '../../src/server/lib/manifest/public-export.js';
+import { validate } from '../helpers/json-schema-lite.js';
 
 const haveOpenssl = spawnSync('openssl', ['version'], { encoding: 'utf8' }).status === 0;
 const haveC2patool = spawnSync(resolveC2patoolPath(), ['--version'], { encoding: 'utf8' }).status === 0;
@@ -128,7 +130,7 @@ describe.skipIf(!haveOpenssl || !haveC2patool)('sign and read back through c2pat
 			{ enabled: true, trackKind: 'video', trackIndex: 1, startFrame: 0, endFrame: 60, sourceKind: 'file', matchedAssetType: 'produced', matchedAssetId: 2 },
 			{ enabled: true, trackKind: 'audio', trackIndex: 1, startFrame: 0, endFrame: 60, sourceKind: 'file', matchedAssetType: 'produced', matchedAssetId: 3 }
 		];
-		const { definition, ingredients } = buildOutputManifest({
+		const { definition, ingredients, statement: signedStatement } = buildOutputManifest({
 			output: { type: 'produced', id: 1, filePath: exportPath },
 			timeline: { sequenceName: 'Seq', fps: 30 }, composition, segments, assets,
 			statement: { text: 'Test statement.', authorName: 'Test Creator' }, statedAt: '2026-01-01T00:00:00Z', generator: GENERATOR
@@ -146,5 +148,17 @@ describe.skipIf(!haveOpenssl || !haveC2patool)('sign and read back through c2pat
 		const active = readReport(outputPath).manifests[report.active_manifest];
 		const statement = active.assertions.find(a => a.label === STATEMENT_LABEL).data;
 		expect(statement.ingredients[1]).toMatchObject({ title: 'tone.wav', note: 'Recorded without credentials.' });
+
+		// The public export from this real read-back matches its schema and
+		// sees both ingredients' credentials inside the signed file.
+		const schema = JSON.parse(readFileSync(path.join(ROOT, 'schemas', 'public-export.v1.schema.json'), 'utf8'));
+		const exported = buildPublicExport({
+			signature: { kind: 'output', version: 1, signedPath: outputPath, signedHash: '0'.repeat(64), signedSize: readFileSync(outputPath).length, statement: signedStatement, report, createdAt: new Date() },
+			generatedAt: new Date().toISOString(), generator: GENERATOR
+		});
+		expect(validate(schema, exported)).toEqual([]);
+		expect(exported.ingredients.map(i => [i.fileName, i.credentialsInSignedFile])).toEqual([['camera.png', 'present'], ['tone.wav', 'present']]);
+		expect(exported.composition.picture.intervals).toEqual([{ start: 0, end: 2, positions: ['captured'], refs: ['ing-1'] }]);
+		expect(JSON.stringify(exported)).not.toContain(dir);
 	}, 60000);
 });

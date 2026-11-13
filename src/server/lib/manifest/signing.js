@@ -19,6 +19,7 @@ import { buildOutputManifest, buildCreatorStatement, versionedSignedPath, assetK
 import { interpretReport } from './verify.js';
 import { signWithC2patool, storableDefinition } from './c2patool.js';
 import { GENERATOR } from './generator.js';
+import { buildPublicExport, publicExportFileName } from './public-export.js';
 import { signAsset } from '../extraction/c2pa-sign.js';
 
 const TEXT_LIMIT = 4000;
@@ -205,4 +206,25 @@ export async function listSignatures(type, id) {
 		.where(and(eq(signatures.assetType, type), eq(signatures.assetId, id)))
 		.orderBy(desc(signatures.createdAt));
 	return rows.map(withVerification);
+}
+
+/**
+ * The public export (phase 4d) of one signed copy of an output: the latest,
+ * or the one named by `signatureId`. Built from the signature record alone.
+ */
+export async function publicExportFor(project, producedAssetId, { signatureId } = {}) {
+	const where = [
+		eq(signatures.projectId, project.id),
+		eq(signatures.assetType, 'produced'),
+		eq(signatures.assetId, producedAssetId),
+		eq(signatures.kind, 'output')
+	];
+	if (signatureId != null) where.push(eq(signatures.id, signatureId));
+	const [row] = await db.select().from(signatures).where(and(...where)).orderBy(desc(signatures.createdAt)).limit(1);
+	if (!row) throw Object.assign(new Error(signatureId != null ? 'That signed copy was not found for this output.' : 'Sign the output first: the public export is made from a signed copy.'), { status: 404 });
+	try {
+		return { data: buildPublicExport({ signature: row, generatedAt: new Date().toISOString(), generator: GENERATOR }), fileName: publicExportFileName(row.signedPath) };
+	} catch (err) {
+		throw Object.assign(err, { status: 409 });
+	}
 }

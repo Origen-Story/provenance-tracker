@@ -27,7 +27,10 @@ import { positionsIn } from '../timeline/compose.js';
 import { classClaimedByFile } from '../origin/classify.js';
 
 export const STATEMENT_LABEL = 'org.provenancetracker.creator_statement';
-export const STATEMENT_VERSION = 1;
+// v2 (2026-11-13) adds publicTitle on the output and on each ingredient: the
+// name the creator chose for the public viewer, empty when not set.
+export const STATEMENT_VERSION = 2;
+export const PUBLIC_TITLE_MAX = 120;
 export const PARENT_LABEL = 'ing-parent';
 
 const round = (n, places) => (n == null || !Number.isFinite(n) ? null : Number(n.toFixed(places)));
@@ -36,6 +39,17 @@ const percent = (n) => round(n, 2);
 
 export function fileNameOf(p) {
 	return String(p || '').split(/[\\/]/).pop();
+}
+
+// A public title is one line of plain text: whitespace (including line
+// breaks) collapsed, control characters dropped, trimmed, capped.
+export function cleanPublicTitle(value) {
+	return String(value ?? '')
+		.replace(/[\u0000-\u001f\u007f]+/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, PUBLIC_TITLE_MAX)
+		.trim();
 }
 
 export function assetKey(type, id) {
@@ -246,6 +260,7 @@ export function buildCreatorStatement({ output, timeline, composition, segments,
 		return {
 			ref: ingredientLabel(i),
 			title: fileNameOf(a.filePath),
+			publicTitle: cleanPublicTitle(a.publicTitle),
 			originClass: a.originClass || 'unknown',
 			digitalSourceType: sourceTypeUri(a.originClass),
 			position: spectrumPosition(a.originClass, { aiAssisted: !!a.aiAssisted }),
@@ -283,6 +298,7 @@ export function buildCreatorStatement({ output, timeline, composition, segments,
 		editedWith: statement.softwareAgent || '',
 		output: {
 			title: fileNameOf(output.filePath),
+			publicTitle: cleanPublicTitle(output.publicTitle),
 			originClass: outputClass,
 			digitalSourceType: sourceTypeUri(outputClass),
 			sequence: timeline?.sequenceName || '',

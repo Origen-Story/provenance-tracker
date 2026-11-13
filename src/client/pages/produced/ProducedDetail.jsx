@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import SignAssetModal from '../../components/SignAssetModal.jsx';
 import SignedCopies from '../../components/SignedCopies.jsx';
 import OriginClassControl from '../../components/origin/OriginClassControl.jsx';
+import PublicTitleField from '../../components/origin/PublicTitleField.jsx';
 import RelationshipsPanel from '../../components/origin/RelationshipsPanel.jsx';
 
 const ASSET_TYPES = ['audio', 'video', 'image', 'document', 'other'];
@@ -142,6 +143,7 @@ export default function ProducedDetail() {
 						)
 					)}
 					<OriginClassControl type="produced" id={id} asset={asset} queryKeys={[['produced', id], ['produced']]} />
+					<PublicTitleField type="produced" id={id} asset={asset} fileName={asset.filename} queryKeys={[['produced', id], ['produced']]} />
 					<RelationshipsPanel type="produced" id={id} queryKeys={[['produced', id], ['produced']]} />
 
 					{!asset.c2paJson && (

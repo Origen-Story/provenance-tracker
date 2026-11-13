@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import {
 	buildOutputManifest, buildCreatorStatement, buildAssetManifest, versionedSignedPath,
-	placedAssetKeys, outputClassOf, STATEMENT_LABEL, PARENT_LABEL, sidecarPathFor, archivedSidecarPath, planSidecar
+	placedAssetKeys, outputClassOf, STATEMENT_LABEL, PARENT_LABEL, sidecarPathFor, archivedSidecarPath, planSidecar,
+	cleanPublicTitle, PUBLIC_TITLE_MAX
 } from '../../../src/server/lib/manifest/build.js';
 
 const IPTC = 'http://cv.iptc.org/newscodes/digitalsourcetype/';
@@ -12,7 +13,7 @@ const dir = path.join(path.sep, 'media', 'project');
 // A 10 s edit: a camera take on V1 for 0-6 s, a generated clip on V1 for
 // 6-10 s, a title on V2 over 0-2 s, and a voice on A1 throughout.
 const assets = new Map([
-	['produced:11', { filePath: path.join(dir, 'take-01.mp4'), originClass: 'computationalCapture', originClassConfirmed: true, originClassNote: 'The phone stopped signing after a system update.', c2paSummary: null }],
+	['produced:11', { filePath: path.join(dir, 'take-01.mp4'), originClass: 'computationalCapture', originClassConfirmed: true, originClassNote: 'The phone stopped signing after a system update.', publicTitle: '  Street interview,\n phone camera ', c2paSummary: null }],
 	['ai:21', { filePath: path.join(dir, 'gen-01.mp4'), originClass: 'trainedAlgorithmicMedia', originClassConfirmed: false, signedBy: 'tool', signerName: 'Gen Tool', c2paSummary: {
 		claimGenerator: 'Gen Tool', ingredients: [], signatureInfo: { issuer: 'Gen Inc', commonName: 'Gen Tool' },
 		assertions: [{ label: 'c2pa.actions.v2', data: { actions: [{ action: 'c2pa.created', digitalSourceType: `${IPTC}trainedAlgorithmicMedia` }] } }]
@@ -47,7 +48,7 @@ const composition = {
 		byPosition: { captured: { seconds: 10, percent: 100 } }, mixed: { seconds: 0, percent: 0, combos: {} }, gap: { seconds: 0, percent: 0 }
 	}
 };
-const output = { type: 'produced', id: 1, filePath: path.join(dir, 'final.mp4'), originClass: 'compositeSynthetic', originClassConfirmed: false };
+const output = { type: 'produced', id: 1, filePath: path.join(dir, 'final.mp4'), publicTitle: 'A Short Film', originClass: 'compositeSynthetic', originClassConfirmed: false };
 const timeline = { sequenceName: 'Final', fps: 30 };
 const statement = { text: '  A short film about provenance.  ', authorName: 'A. Creator', organization: 'Example Studio', softwareAgent: 'Premiere Pro', identityUrl: 'https://example.org/id' };
 
@@ -62,11 +63,11 @@ describe('buildCreatorStatement', () => {
 	const s = buildCreatorStatement({ output, timeline, composition, segments, assets, statement, statedAt: '2026-11-13T10:00:00Z' });
 
 	it('carries the creator\'s words and who says them', () => {
-		expect(s).toMatchObject({ version: 1, statedAt: '2026-11-13T10:00:00Z', text: 'A short film about provenance.', author: 'A. Creator', organization: 'Example Studio', editedWith: 'Premiere Pro' });
+		expect(s).toMatchObject({ version: 2, statedAt: '2026-11-13T10:00:00Z', text: 'A short film about provenance.', author: 'A. Creator', organization: 'Example Studio', editedWith: 'Premiere Pro' });
 	});
 
 	it('names the output by file name only, never a path', () => {
-		expect(s.output).toMatchObject({ title: 'final.mp4', originClass: 'compositeSynthetic', digitalSourceType: `${IPTC}compositeSynthetic`, durationSeconds: 10, fps: 30 });
+		expect(s.output).toMatchObject({ title: 'final.mp4', publicTitle: 'A Short Film', originClass: 'compositeSynthetic', digitalSourceType: `${IPTC}compositeSynthetic`, durationSeconds: 10, fps: 30 });
 		expect(JSON.stringify(s)).not.toContain(dir);
 	});
 
@@ -79,12 +80,18 @@ describe('buildCreatorStatement', () => {
 	it('records, per ingredient, the class, who set it, what the file itself claims, and the note', () => {
 		const [take, voice, gen] = s.ingredients;
 		expect(take).toMatchObject({
-			ref: 'ing-1', title: 'take-01.mp4', originClass: 'computationalCapture', position: 'captured', classSetBy: 'creator',
+			ref: 'ing-1', title: 'take-01.mp4', publicTitle: 'Street interview, phone camera', originClass: 'computationalCapture', position: 'captured', classSetBy: 'creator',
 			fileCredentials: 'none', classClaimedByFile: null, signedBy: '', note: 'The phone stopped signing after a system update.',
 			pictureSeconds: 6, audioSeconds: 0
 		});
-		expect(voice).toMatchObject({ title: 'voice.wav', audioSeconds: 10, pictureSeconds: 0 });
+		expect(voice).toMatchObject({ title: 'voice.wav', publicTitle: '', audioSeconds: 10, pictureSeconds: 0 });
 		expect(gen).toMatchObject({ title: 'gen-01.mp4', classSetBy: 'proposal', fileCredentials: 'present', classClaimedByFile: 'trainedAlgorithmicMedia', signedBy: 'tool', signerName: 'Gen Tool', position: 'synthetic', pictureSeconds: 4 });
+	});
+
+	it('keeps the C2PA ingredient title as the file name, whatever the public title', () => {
+		const { ingredients } = buildOutputManifest({ output, timeline, composition, segments, assets, statement, statedAt: 'x', generator: GENERATOR });
+		expect(ingredients.find(i => i.label === 'ing-1').title).toBe('take-01.mp4');
+		expect(ingredients[0].title).toBe('final.mp4');
 	});
 
 	it('lists clips it could not tie to an asset, and counts editor-made titles', () => {
@@ -199,5 +206,23 @@ describe('sidecar naming and re-signing (D13)', () => {
 		const p = planSidecar({ inputPath: input, sidecarExists: true, currentSignature: null, latestVersion: 0 });
 		expect(p.action).toBe('refuse');
 		expect(p.reason).toMatch(/take-01\.c2pa.*did not write/);
+	});
+});
+
+describe('cleanPublicTitle', () => {
+	it('makes one trimmed line of plain text', () => {
+		expect(cleanPublicTitle('  Street\r\n  interview\t(take 2) ')).toBe('Street interview (take 2)');
+		expect(cleanPublicTitle('a\u0000b')).toBe('a b');
+	});
+	it('treats missing values as empty', () => {
+		expect(cleanPublicTitle(undefined)).toBe('');
+		expect(cleanPublicTitle(null)).toBe('');
+		expect(cleanPublicTitle('   ')).toBe('');
+	});
+	it('caps the length without leaving a trailing space', () => {
+		const long = 'word '.repeat(60);
+		const out = cleanPublicTitle(long);
+		expect(out.length).toBeLessThanOrEqual(PUBLIC_TITLE_MAX);
+		expect(out).toBe(out.trim());
 	});
 });

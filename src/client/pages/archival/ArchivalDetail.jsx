@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import OriginClassControl from '../../components/origin/OriginClassControl.jsx';
+import PublicTitleField from '../../components/origin/PublicTitleField.jsx';
 import RelationshipsPanel from '../../components/origin/RelationshipsPanel.jsx';
 
 const MEDIA_TYPES = ['photograph', 'illustration', 'map', 'document', 'other'];
@@ -101,6 +102,7 @@ export default function ArchivalDetail() {
 					</div>
 
 					<OriginClassControl type="archival" id={id} asset={asset} queryKeys={[['archival', id], ['archival']]} />
+					<PublicTitleField type="archival" id={id} asset={asset} fileName={asset.filename} queryKeys={[['archival', id], ['archival']]} />
 					<RelationshipsPanel type="archival" id={id} queryKeys={[['archival', id], ['archival']]} />
 
 					{Object.keys(exif).length > 0 && (

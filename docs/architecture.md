@@ -59,6 +59,7 @@ Why idempotent: a private downstream fork of this repo carries its own migration
 - `manifests`: legacy, unused (empty); superseded by `signatures`
 - `creator_statements`: the creator statement for an output (words and author; the numbers are built at sign time)
 - `in_place` on `assets`, `archival_assets`, `produced_assets` (D12): the row's `file_path` is the file where it already lived, not a managed copy
+- `public_title` on the same three tables: the name the public viewer shows, empty for the file name. Signed into the creator statement (v2) as `publicTitle` on the output and each ingredient; the C2PA ingredient `title` stays the file name
 - `signatures`: every signed copy of an asset or output: the new file, its hash, the manifest definition without key paths, the c2patool read-back and its status
 - `search_groups`, `search_jobs`, `search_candidates`: Wikimedia archive search
 - `project_config`: legacy single-project config (kept for migration)

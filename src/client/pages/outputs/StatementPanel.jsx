@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { POSITIONS, originClassDef, positionDef, pillStyle, positionColor, DETAIL_PATHS } from '../../components/origin/originClasses.js';
 import { fmtClock } from '../../components/timeline/LaneStrip.jsx';
+import PublicTitleField from '../../components/origin/PublicTitleField.jsx';
 
 async function jsonOrThrow(r) {
 	const j = await r.json();
@@ -106,6 +107,10 @@ export default function StatementPanel({ producedId, segments }) {
 						{save.isError && <span className="text-xs text-danger">{save.error.message}</span>}
 					</div>
 				</div>
+				{s && (
+					<PublicTitleField type="produced" id={producedId} asset={{ publicTitle: s.output.publicTitle }} fileName={s.output.title}
+						label="Public title of this film" queryKeys={[['produced', String(producedId)]]} />
+				)}
 			</div>
 
 			<div className="space-y-4">
@@ -118,7 +123,7 @@ export default function StatementPanel({ producedId, segments }) {
 							<div className="flex items-center gap-2 flex-wrap">
 								<h3 className="text-sm font-medium text-text-primary">What will be signed</h3>
 								<ClassPill code={s.output.originClass} />
-								<span className="text-xs text-text-secondary ml-auto">{s.output.title} · {fmtClock(s.output.durationSeconds)}</span>
+								<span className="text-xs text-text-secondary ml-auto">{s.output.publicTitle || s.output.title} · {fmtClock(s.output.durationSeconds)}</span>
 							</div>
 							<div className="grid sm:grid-cols-2 gap-4">
 								<LaneNumbers title="Picture" lane={s.composition.picture} />
@@ -145,7 +150,10 @@ export default function StatementPanel({ producedId, segments }) {
 										{s.ingredients.map(i => (
 											<tr key={i.ref} className="border-t border-border/60 align-top">
 												<td className="py-1.5 pr-2 max-w-[14rem]">
-													{assetLinks.get(i.title) ? <Link to={assetLinks.get(i.title)} className="truncate block hover:text-accent" title={i.title}>{i.title}</Link> : <span className="truncate block" title={i.title}>{i.title}</span>}
+													{assetLinks.get(i.title) ? <Link to={assetLinks.get(i.title)} className="truncate block hover:text-accent" title={i.title}>{i.publicTitle || i.title}</Link> : <span className="truncate block" title={i.title}>{i.publicTitle || i.title}</span>}
+													{i.publicTitle
+														? <div className="text-[11px] text-text-secondary font-mono truncate" title={i.title}>{i.title}</div>
+														: <div className="text-[11px] text-text-secondary">no public title, the page shows the file name</div>}
 													{i.note && <div className="text-[11px] text-text-secondary mt-0.5 whitespace-pre-line">{i.note}</div>}
 												</td>
 												<td className="py-1.5 pr-2"><ClassPill code={i.originClass} aiAssisted={i.aiAssisted} /></td>

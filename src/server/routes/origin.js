@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { ORIGIN_CLASSES, setOriginClass, applyProposal, proposeForAsset, reproposeProject } from '../lib/origin/origin.js';
+import { ORIGIN_CLASSES, setOriginClass, setPublicTitle, applyProposal, proposeForAsset, reproposeProject } from '../lib/origin/origin.js';
 import { ASSET_TYPES } from '../lib/relationships/relationships.js';
 import { getActiveProject } from '../lib/projects.js';
 
@@ -53,6 +53,17 @@ router.patch('/:type/:id', async (req, res) => {
 		res.json(row);
 	} catch (err) {
 		res.status(400).json({ error: err.message });
+	}
+});
+
+// The name the public viewer shows; empty clears it (the file name is used).
+router.patch('/:type/:id/public-title', async (req, res) => {
+	const ref = parseRef(req, res);
+	if (!ref) return;
+	try {
+		res.json(await setPublicTitle(ref.type, ref.id, req.body?.publicTitle));
+	} catch (err) {
+		res.status(err.message === 'Asset not found' ? 404 : 400).json({ error: err.message });
 	}
 });
 

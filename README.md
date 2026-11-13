@@ -119,7 +119,7 @@ On any produced or AI asset detail page that lacks Content Credentials, click **
 
 The file and the asset record are never changed, so nothing is duplicated and edit projects keep their links. A file that already carries its own Content Credentials (a camera clip, a Firefly render) is not signed at ingest; its credentials are its provenance and are carried into any output you sign.
 
-**Signing a finished edit:** on the output's **Credentials** tab. The export is the parent, every tracked asset on the timeline is a placed ingredient with its class, and the creator statement is the `org.provenancetracker.creator_statement` assertion. Ingredients that carry their own credentials, embedded or in a sidecar, keep them inside the signed file. This is the one place the tracker writes a full new file: `<name>.signed.v<N>.<ext>`, because platforms and viewers only read what is inside the file.
+**Signing a finished edit:** on the output's **Credentials** tab. The export is the parent, every tracked asset on the timeline is a placed ingredient with its class, and the creator statement is the `org.provenancetracker.creator_statement` assertion. Ingredients that carry their own credentials, embedded or in a sidecar, keep them inside the signed file. This is the one place the tracker writes a full new file: `<name>.signed.v<N>.<ext>`, because platforms and viewers only read what is inside the file. Set **public titles** first (on each asset's page, and for the film on the Statement tab): they are the names the public viewer shows, and they are signed into the statement.
 
 **About the dev cert:**
 

@@ -48,6 +48,9 @@ export const assets = pgTable('assets', {
 	// Tracked in place (D12): filePath is the file where it already lived, not a
 	// copy in managed storage. The tracker never moves, renames or deletes it.
 	inPlace: boolean('in_place').default(false),
+	// The name the public viewer shows for this asset, and that the signed
+	// creator statement carries (statement v2). Empty means the file name.
+	publicTitle: text('public_title').default(''),
 	fileHash: text('file_hash').default(''),
 	fileSize: integer('file_size').default(0),
 	mimeType: text('mime_type').default(''),
@@ -157,6 +160,9 @@ export const archivalAssets = pgTable('archival_assets', {
 	// Tracked in place (D12): filePath is the file where it already lived, not a
 	// copy in managed storage. The tracker never moves, renames or deletes it.
 	inPlace: boolean('in_place').default(false),
+	// The name the public viewer shows for this asset, and that the signed
+	// creator statement carries (statement v2). Empty means the file name.
+	publicTitle: text('public_title').default(''),
 	fileHash: text('file_hash').default(''),
 	fileSize: integer('file_size').default(0),
 	mimeType: text('mime_type').default(''),
@@ -206,6 +212,9 @@ export const producedAssets = pgTable('produced_assets', {
 	// Tracked in place (D12): filePath is the file where it already lived, not a
 	// copy in managed storage. The tracker never moves, renames or deletes it.
 	inPlace: boolean('in_place').default(false),
+	// The name the public viewer shows for this asset, and that the signed
+	// creator statement carries (statement v2). Empty means the file name.
+	publicTitle: text('public_title').default(''),
 	fileHash: text('file_hash').default(''),
 	fileSize: integer('file_size').default(0),
 	mimeType: text('mime_type').default(''),

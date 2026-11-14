@@ -111,6 +111,66 @@ export function laneSentence(lane, kind = 'picture') {
 	return `${lead} ${phrase(first)}${second ? `; ${second.rounded}% ${phrase(second)}` : ''}${tail}.`;
 }
 
+// What each position is called in the generated summary.
+const SUMMARY_NOUN = {
+	picture: { captured: 'camera footage', digital: 'computer-made material without AI', assisted: 'AI-assisted material', hybrid: 'part-AI-generated material', synthetic: 'AI-generated imagery', unknown: 'material of unknown origin' },
+	audio: { captured: 'recorded sound', digital: 'computer-made sound without AI', assisted: 'AI-assisted sound', hybrid: 'part-AI-generated sound', synthetic: 'AI-generated sound', unknown: 'sound of unknown origin' }
+};
+
+/**
+ * How much of a lane each position appears in, as a fraction of the time
+ * anything plays. Kinds overlap, so these do not add up to 1.
+ */
+export function lanePresence(lane) {
+	const seconds = {};
+	let total = 0;
+	for (const s of lane?.intervals || []) {
+		if (!s.positions.length) continue;
+		const len = s.end - s.start;
+		total += len;
+		for (const p of new Set(s.positions)) seconds[p] = (seconds[p] || 0) + len;
+	}
+	return SPECTRUM.filter(id => seconds[id]).map(id => ({ id, share: seconds[id] / total })).sort((a, b) => b.share - a.share);
+}
+
+/** A share in words rather than a number. */
+export function shareWord(share) {
+	if (share >= 0.995) return 'all';
+	if (share >= 0.9) return 'nearly all';
+	if (share >= 0.6) return 'most';
+	if (share >= 0.4) return 'about half';
+	if (share >= 0.15) return 'some';
+	return 'a little';
+}
+
+/**
+ * The summary shown under the title when the creator has written no
+ * statement: what kind of film it is, then which kinds run through the
+ * picture and the sound, in words rather than percentages.
+ */
+export function filmSummary(exp) {
+	const lanes = { picture: lanePresence(exp.composition?.picture), audio: lanePresence(exp.composition?.audio) };
+	const has = new Set([...lanes.picture, ...lanes.audio].map(r => r.id));
+	const real = has.has('captured');
+	const generated = has.has('synthetic') || has.has('hybrid');
+	const lead = generated && real ? 'A hybrid film, combining real footage with AI-generated material.'
+		: generated ? 'A film made with generative AI.'
+		: has.has('assisted') ? (real ? 'Real footage, with some help from AI.' : 'Made with some help from AI.')
+		: real ? 'Filmed and recorded for real, with no generative AI.'
+		: has.size ? 'Made on a computer, with no generative AI.' : '';
+	const lane = (kind, where, verb) => {
+		const rows = lanes[kind].slice(0, 3);
+		if (!rows.length) return '';
+		const name = (r) => SUMMARY_NOUN[kind][r.id] || r.id;
+		const [first, ...rest] = rows;
+		const tail = rest.map(r => `${name(r)} in ${shareWord(r.share)}`);
+		const list = tail.length > 1 ? `${tail.slice(0, -1).join(', ')} and ${tail.at(-1)}` : tail[0];
+		const head = `${name(first)[0].toUpperCase()}${name(first).slice(1)} ${verb} ${shareWord(first.share)} of the ${where}`;
+		return `${head}${list ? `, ${list}` : ''}.`;
+	};
+	return [lead, lane('picture', 'picture', 'appears in'), lane('audio', 'soundtrack', 'is heard in')].filter(Boolean).join(' ');
+}
+
 /** The share of a lane in which generative AI plays any part (assisted, hybrid, synthetic). */
 export function aiShare(lane) {
 	if (!lane) return 0;
@@ -138,6 +198,86 @@ export function sectionDetail(section, exp) {
 		ingredients: section.refs.map(r => byRef.get(r)).filter(Boolean).map(i => ({ ...i, classLabel: classes[i.originClass]?.label || i.originClass })),
 		untracked: section.untracked || 0
 	};
+}
+
+/**
+ * Where one spectrum position plays on a lane, as runs of touching sections
+ * merged together: [{ start, end, refs }], refs being the ingredients of that
+ * position in the run. For the "layers" view of the strip.
+ */
+export function positionRuns(lane, id, exp) {
+	const byRef = new Map((exp?.ingredients || []).map(i => [i.ref, i]));
+	const runs = [];
+	for (const s of lane?.intervals || []) {
+		if (!s.positions.includes(id)) continue;
+		const refs = s.refs.filter(r => byRef.get(r)?.position === id);
+		const last = runs[runs.length - 1];
+		if (last && Math.abs(last.end - s.start) < 1e-6) {
+			last.end = s.end;
+			for (const r of refs) if (!last.refs.includes(r)) last.refs.push(r);
+		} else runs.push({ start: s.start, end: s.end, refs: [...refs] });
+	}
+	return runs;
+}
+
+/** The spectrum positions that play on a lane at all, in spectrum order. */
+export function lanePositions(lane) {
+	const seen = new Set((lane?.intervals || []).flatMap(s => s.positions));
+	return SPECTRUM.filter(id => seen.has(id));
+}
+
+// Total length of a set of [start, end] ranges, overlaps counted once
+// (a stereo pair on A1 and A2 is one sound).
+function unionSeconds(ranges) {
+	let total = 0;
+	let end = -Infinity;
+	for (const [s, e] of [...ranges].sort((x, y) => x[0] - y[0])) {
+		if (e <= end) continue;
+		total += e - Math.max(s, end);
+		end = e;
+	}
+	return total;
+}
+
+/**
+ * Clips not tied to a tracked source (a nested sequence, an unmatched clip),
+ * as rows for the source list: one per reason and start time, so a nested
+ * sequence's picture and sound tracks are one row. Untitled on purpose: the
+ * export leaves clip names out.
+ */
+export function untrackedItems(exp) {
+	const groups = new Map();
+	for (const u of exp.untracked || []) {
+		const key = `${u.reason}|${Math.round((u.startSeconds ?? 0) * 10)}`;
+		if (!groups.has(key)) groups.set(key, []);
+		groups.get(key).push(u);
+	}
+	return [...groups.values()].map((list, n) => {
+		const first = list[0];
+		const range = (u) => [u.startSeconds ?? 0, u.endSeconds ?? 0];
+		const classed = list.find(u => u.originClass && u.originClass !== 'unknown');
+		return {
+			ref: `untracked-${n + 1}`,
+			untracked: true,
+			reason: first.reason,
+			title: first.reason === 'nested sequence' ? 'Nested sequence' : 'Clip without a tracked source',
+			tracks: list.map(u => u.track),
+			startSeconds: Math.min(...list.map(u => u.startSeconds ?? 0)),
+			endSeconds: Math.max(...list.map(u => u.endSeconds ?? 0)),
+			originClass: classed?.originClass || 'unknown',
+			position: classed?.position || 'unknown',
+			aiAssisted: false,
+			pictureSeconds: unionSeconds(list.filter(u => /^V/i.test(u.track)).map(range)),
+			audioSeconds: unionSeconds(list.filter(u => !/^V/i.test(u.track)).map(range))
+		};
+	});
+}
+
+/** Sources for the list, tracked and not: one position, or all; longest-used first. */
+export function filterIngredients(exp, id = null) {
+	return [...(exp.ingredients || []), ...untrackedItems(exp)]
+		.filter(i => !id || id === 'mixed' || i.position === id || (id === 'unknown' && !SPECTRUM.includes(i.position)))
+		.sort((a, b) => (b.pictureSeconds + b.audioSeconds) - (a.pictureSeconds + a.audioSeconds));
 }
 
 /** Ingredients grouped by spectrum position, in spectrum order, longest-used first. */

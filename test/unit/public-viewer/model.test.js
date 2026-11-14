@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import {
 	clock, sectionAt, laneShares, laneSentence, mixSentence, aiShare, sectionDetail, ingredientsBySpectrum,
-	ingredientProvenance, signatureVerdict, groupHash, formatBytes, assertViewable
+	ingredientProvenance, signatureVerdict, groupHash, formatBytes, assertViewable, positionRuns, lanePositions, filterIngredients, lanePresence, shareWord, filmSummary, untrackedItems
 } from '../../../public-viewer/src/model.js';
 import { validate } from '../../helpers/json-schema-lite.js';
 
@@ -151,5 +151,82 @@ describe('small formatters', () => {
 		expect(() => assertViewable({ format: 'x' })).toThrow(/not a provenance tracker/);
 		expect(() => assertViewable({ ...example, formatVersion: 2 })).toThrow(/format 1/);
 		expect(assertViewable(example)).toBe(example);
+	});
+});
+
+describe('layers and filters', () => {
+	const exp = {
+		ingredients: [
+			{ ref: 'a', position: 'captured', pictureSeconds: 10, audioSeconds: 0 },
+			{ ref: 'b', position: 'assisted', pictureSeconds: 4, audioSeconds: 0 },
+			{ ref: 'c', position: 'captured', pictureSeconds: 30, audioSeconds: 0 }
+		]
+	};
+	const lane = { intervals: [
+		{ start: 0, end: 2, positions: ['captured'], refs: ['a'] },
+		{ start: 2, end: 5, positions: ['assisted', 'captured'], refs: ['b', 'c'] },
+		{ start: 5, end: 6, positions: [], refs: [] },
+		{ start: 6, end: 9, positions: ['captured'], refs: ['c'] }
+	] };
+	it('merges touching sections of one position into runs, keeping its sources', () => {
+		expect(positionRuns(lane, 'captured', exp)).toEqual([{ start: 0, end: 5, refs: ['a', 'c'] }, { start: 6, end: 9, refs: ['c'] }]);
+		expect(positionRuns(lane, 'assisted', exp)).toEqual([{ start: 2, end: 5, refs: ['b'] }]);
+		expect(positionRuns(lane, 'synthetic', exp)).toEqual([]);
+	});
+	it('lists the positions a lane uses, in spectrum order', () => {
+		expect(lanePositions(lane)).toEqual(['captured', 'assisted']);
+		expect(lanePositions(undefined)).toEqual([]);
+	});
+	it('filters the source list by position, longest-used first', () => {
+		expect(filterIngredients(exp).map(i => i.ref)).toEqual(['c', 'a', 'b']);
+		expect(filterIngredients(exp, 'captured').map(i => i.ref)).toEqual(['c', 'a']);
+		expect(filterIngredients(exp, 'mixed').length).toBe(3);
+	});
+});
+
+describe('filmSummary', () => {
+	const lane = (...parts) => ({ intervals: parts.map(([start, end, positions]) => ({ start, end, positions, refs: [] })) });
+	it('counts overlapping kinds against the time anything plays, ignoring gaps', () => {
+		const l = lane([0, 6, ['captured']], [6, 8, ['assisted', 'captured']], [8, 10, []]);
+		expect(lanePresence(l)).toEqual([{ id: 'captured', share: 1 }, { id: 'assisted', share: 0.25 }]);
+	});
+	it('says shares in words', () => {
+		expect([1, 0.95, 0.7, 0.45, 0.2, 0.05].map(shareWord)).toEqual(['all', 'nearly all', 'most', 'about half', 'some', 'a little']);
+	});
+	it('names a hybrid film and what runs through its picture and sound, without percentages', () => {
+		const exp = { composition: {
+			picture: lane([0, 7, ['captured']], [7, 9, ['assisted', 'captured']], [9, 10, ['synthetic']]),
+			audio: lane([0, 10, ['synthetic', 'captured']])
+		} };
+		const s = filmSummary(exp);
+		expect(s).toBe('A hybrid film, combining real footage with AI-generated material. Camera footage appears in nearly all of the picture, AI-assisted material in some and AI-generated imagery in a little. Recorded sound is heard in all of the soundtrack, AI-generated sound in all.');
+		expect(s).not.toMatch(/[0-9]/);
+	});
+	it('says so plainly when there is no generative AI', () => {
+		expect(filmSummary({ composition: { picture: lane([0, 5, ['captured']]), audio: lane([0, 5, ['captured']]) } }))
+			.toBe('Filmed and recorded for real, with no generative AI. Camera footage appears in all of the picture. Recorded sound is heard in all of the soundtrack.');
+	});
+});
+
+describe('untrackedItems', () => {
+	const exp = { ingredients: [], untracked: [
+		{ track: 'V4', startSeconds: 10.5, endSeconds: 22.7, reason: 'nested sequence', originClass: 'compositeSynthetic', position: 'hybrid' },
+		{ track: 'A1', startSeconds: 10.5, endSeconds: 23.4, reason: 'nested sequence', originClass: 'compositeSynthetic', position: 'hybrid' },
+		{ track: 'A2', startSeconds: 10.5, endSeconds: 23.4, reason: 'nested sequence', originClass: 'compositeSynthetic', position: 'hybrid' },
+		{ track: 'V2', startSeconds: 40, endSeconds: 42, reason: 'no tracked asset' }
+	] };
+	it('makes one row per nested sequence, its stereo pair counted once, keeping the class it was given', () => {
+		const [nested, loose] = untrackedItems(exp);
+		expect(nested).toMatchObject({ title: 'Nested sequence', tracks: ['V4', 'A1', 'A2'], originClass: 'compositeSynthetic', position: 'hybrid', startSeconds: 10.5, endSeconds: 23.4 });
+		expect(nested.pictureSeconds).toBeCloseTo(12.2, 5);
+		expect(nested.audioSeconds).toBeCloseTo(12.9, 5);
+		expect(loose).toMatchObject({ title: 'Clip without a tracked source', originClass: 'unknown', position: 'unknown', pictureSeconds: 2, audioSeconds: 0 });
+	});
+	it('puts them in the filtered list beside tracked sources', () => {
+		expect(filterIngredients(exp, 'hybrid').map(i => i.title)).toEqual(['Nested sequence']);
+		expect(filterIngredients(exp, 'unknown').map(i => i.title)).toEqual(['Clip without a tracked source']);
+	});
+	it('reads an export from before statement v3 (no class) as unknown', () => {
+		expect(untrackedItems({ untracked: [{ track: 'V1', startSeconds: 0, endSeconds: 1, reason: 'nested sequence' }] })[0].position).toBe('unknown');
 	});
 });

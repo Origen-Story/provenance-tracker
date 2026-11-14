@@ -11,26 +11,28 @@
 	<link rel="stylesheet" href="./viewer.css">
 	<style>
 		html { background: #0e0e0e; }
-		html:has(.ptv[data-theme='light']) { background: #fafaf8; }
+		html:has(.ptv[data-theme='light']) { background: #ffffff; }
 		body { margin: 0; }
 		.demo-note { max-width: 72rem; margin: 0 auto; padding: .75rem clamp(1rem, 3vw, 2rem); font: .8rem/1.5 system-ui, sans-serif; color: #8b8b88; }
 		.demo-note a { color: inherit; }
 	</style>
 </head>
 <body>
-	<p class="demo-note">
-		Demo with a made-up film; every name, signer and hash is invented.
-		Try <a href="?theme=light">the light theme</a>, <code>?youtube=&lt;id&gt;</code>, <code>?src=&lt;video url&gt;</code> or <code>?export=&lt;export json&gt;</code>.
-	</p>
 	<main id="film"></main>
+	<footer class="demo-note">
+		<span id="demo-film">Demo with a made-up film; every name, signer and hash is invented.</span>
+		Try <a href="?theme=light">the light theme</a>, <code>?youtube=&lt;id&gt;</code>, <code>?src=&lt;video url&gt;</code> or <code>?export=&lt;export json&gt;</code>.
+	</footer>
 	<script type="module">
 		import { mountViewer } from './src/viewer.js';
 		const q = new URLSearchParams(location.search);
+		if (q.get('export')) document.getElementById('demo-film').textContent = 'Showing an export you chose.';
 		mountViewer(document.getElementById('film'), {
 			exportUrl: q.get('export') || './example/example.provenance.json',
 			video: q.get('youtube') ? { youtubeId: q.get('youtube') } : q.get('src') ? { src: q.get('src') } : null,
 			download: { url: q.get('download') || '#' },
-			theme: q.get('theme') === 'light' ? 'light' : 'dark'
+			theme: q.get('theme') === 'light' ? 'light' : 'dark',
+			appName: 'Origen Story Provenance Tracker'
 		});
 	</script>
 </body>

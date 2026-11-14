@@ -1,5 +1,5 @@
 // Player adapters. Each returns { ready: Promise, time(): seconds, seek(t),
-// playing(): boolean, destroy() } so the viewer can follow and drive any of
+// playing(): boolean, play(), pause(), destroy() } so the viewer can follow and drive any of
 // them the same way.
 //
 // - videoPlayer: a <video> element, e.g. the signed file itself.
@@ -24,6 +24,8 @@ export function videoPlayer(container, { src, poster = '', title = '' }) {
 		time: () => v.currentTime,
 		seek: (t) => { v.currentTime = t; },
 		playing: () => !v.paused && !v.ended,
+		play: () => v.play().catch(() => {}),
+		pause: () => v.pause(),
 		destroy: () => v.remove()
 	};
 }
@@ -70,7 +72,9 @@ export function youtubePlayer(container, { videoId, title = '' }) {
 		ready,
 		time: () => (player?.getCurrentTime ? player.getCurrentTime() : 0),
 		seek: (t) => player?.seekTo?.(t, true),
-		playing: () => state === 1,
+		playing: () => state === 1 || state === 3,
+		play: () => player?.playVideo?.(),
+		pause: () => player?.pauseVideo?.(),
 		destroy: () => player?.destroy?.()
 	};
 }
@@ -81,30 +85,23 @@ export function clockPlayer(container, { duration }) {
 	let raf = 0;
 	const bar = document.createElement('div');
 	bar.className = 'ptv-clock';
-	const button = document.createElement('button');
-	button.type = 'button';
-	button.className = 'ptv-clock-button';
 	const label = document.createElement('span');
 	label.className = 'ptv-clock-label';
-	label.textContent = 'No video on this page: play the timeline on its own.';
-	bar.append(button, label);
+	label.textContent = 'No video on this page: press Play to run the timeline on its own.';
+	bar.append(label);
 	container.append(bar);
 	const now = () => (started == null ? t : Math.min(duration, t + (performance.now() - started) / 1000));
-	const render = () => { button.textContent = started == null ? 'Play' : 'Pause'; button.setAttribute('aria-pressed', String(started != null)); };
 	const tick = () => {
-		if (started != null && now() >= duration) { t = duration; started = null; render(); return; }
+		if (started != null && now() >= duration) { t = duration; started = null; return; }
 		raf = requestAnimationFrame(tick);
 	};
-	button.addEventListener('click', () => {
-		if (started == null) { if (t >= duration) t = 0; started = performance.now(); tick(); } else { t = now(); started = null; cancelAnimationFrame(raf); }
-		render();
-	});
-	render();
 	return {
 		ready: Promise.resolve(),
 		time: now,
 		seek: (s) => { t = Math.max(0, Math.min(duration, s)); if (started != null) started = performance.now(); },
 		playing: () => started != null,
+		play: () => { if (started != null) return; if (t >= duration) t = 0; started = performance.now(); tick(); },
+		pause: () => { if (started == null) return; t = now(); started = null; cancelAnimationFrame(raf); },
 		destroy: () => { cancelAnimationFrame(raf); bar.remove(); }
 	};
 }

@@ -141,6 +141,39 @@ Do **not** expose the Express server (port 3001) or the built client directly to
 
 For single-user local work, `npm run dev` (development) or `npm start` (production build served from `dist/`) is the intended usage pattern.
 
+### Running a copy on a second machine (for a demo)
+
+To show the dashboard from a laptop, copy the code, the database and the media, and treat the copy as read-only: no imports and no signing there, so the main machine stays the record. Signing certificates are not needed on the copy.
+
+**What the copy needs.** The database stores absolute file paths. Files tracked in place (D12) must exist at the same paths on the second machine, or the integrity check reports them as missing and previews do not play. Managed copies live in `data/` (gitignored), which is copied too.
+
+1. **On the main machine**, back up the database and copy the backup, `.env` and the media to the second machine by hand (USB drive or your own cloud storage, never through git):
+   ```bash
+   pg_dump --format=custom --no-owner --no-privileges --file provenance_full_YYYY-MM-DD.dump --dbname "<DATABASE_URL from .env>"
+   ```
+2. **Make the paths match.** On macOS or Linux, a symlink at the original path is enough. On Windows the paths start with a drive letter; two ways to have the same letter after every restart:
+   - **An external drive** holding the media: in Disk Management, right-click its volume, *Change Drive Letter and Paths*, and give it the letter the main machine uses. Windows remembers the letter for that drive, and the laptop's own disk stays free.
+   - **A folder shown as a drive**, persistent across restarts (unlike `subst`). In an administrator PowerShell, then restart once:
+     ```powershell
+     New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\DOS Devices' -Name 'P:' -PropertyType String -Value '\??\C:\Demo\P'
+     # to undo: Remove-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\DOS Devices' -Name 'P:'
+     ```
+3. **On the second machine**, install Node 24, Git and PostgreSQL 16 or later (a native install is lighter than Docker Desktop), then:
+   ```bash
+   git clone https://github.com/Origen-Story/provenance-tracker.git   # into the same path as on the main machine
+   cd provenance-tracker
+   git checkout <branch the main machine runs>
+   npm install
+   # put the copied .env in the repo root, and the copied data/ folder beside it
+   # the user, password and database name come from DATABASE_URL (postgres://user:password@host:port/database)
+   psql -U postgres -c "CREATE ROLE <user> LOGIN PASSWORD '<password>'"
+   createdb -U postgres -O <user> <database>
+   pg_restore --no-owner --no-privileges --dbname "<DATABASE_URL from .env>" provenance_full_YYYY-MM-DD.dump
+   npm run db:migrate   # should find nothing to apply
+   npm run dev
+   ```
+4. **Before the demo**, open a few assets and the timeline view to check that previews play and nothing is reported missing.
+
 ## What gets extracted automatically
 
 | Platform | What's extracted | What you'll need to add |

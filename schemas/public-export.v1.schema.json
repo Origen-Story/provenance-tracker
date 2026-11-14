@@ -64,7 +64,9 @@
           "track": { "type": "string" },
           "startSeconds": { "type": ["number", "null"] },
           "endSeconds": { "type": ["number", "null"] },
-          "reason": { "type": "string" }
+          "reason": { "type": "string" },
+          "originClass": { "type": "string", "description": "The class given to the clip itself, or unknown. Statement v3 and later." },
+          "position": { "type": "string", "description": "Spectrum position of originClass. Statement v3 and later." }
         }
       }
     },

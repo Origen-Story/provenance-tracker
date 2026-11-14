@@ -30,7 +30,9 @@ export const STATEMENT_LABEL = 'org.provenancetracker.creator_statement';
 // v2 (2026-11-13) adds, for the public viewer: publicTitle on the output and
 // on each ingredient (empty when not set), and per lane the compact
 // `intervals` list (what plays when, by ingredient ref).
-export const STATEMENT_VERSION = 2;
+// v3: each unresolved clip carries its class (a per-clip override, such as a
+// nested sequence the creator classed by hand) and its spectrum position.
+export const STATEMENT_VERSION = 3;
 export const PUBLIC_TITLE_MAX = 120;
 export const PARENT_LABEL = 'ing-parent';
 
@@ -315,7 +317,9 @@ export function buildCreatorStatement({ output, timeline, composition, segments,
 			track: trackName(s),
 			startSeconds: seconds(s.startSeconds ?? (timeline?.fps ? s.startFrame / timeline.fps : null)),
 			endSeconds: seconds(s.endSeconds ?? (timeline?.fps ? s.endFrame / timeline.fps : null)),
-			reason: s.sourceKind === 'sequence' ? 'nested sequence' : 'no tracked asset'
+			reason: s.sourceKind === 'sequence' ? 'nested sequence' : 'no tracked asset',
+			originClass: s.originClass || 'unknown',
+			position: spectrumPosition(s.originClass || 'unknown', { aiAssisted: !!s.aiAssisted })
 		});
 	}
 	return {

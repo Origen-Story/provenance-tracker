@@ -119,8 +119,9 @@ export function buildPublicExport({ signature, generatedAt, generator }) {
 		})),
 		ingredients,
 		// Clips the tracker could not tie to an asset, and titles made in the
-		// editor. Clip names are left out; times and the reason are enough.
-		untracked: (statement.unresolved || []).map(u => ({ track: u.track, startSeconds: u.startSeconds, endSeconds: u.endSeconds, reason: u.reason })),
+		// editor. Clip names are left out; times, the reason and the class the
+		// creator gave the clip (statement v3; unknown before) are enough.
+		untracked: (statement.unresolved || []).map(u => ({ track: u.track, startSeconds: u.startSeconds, endSeconds: u.endSeconds, reason: u.reason, originClass: u.originClass || 'unknown', position: u.position || 'unknown' })),
 		editorMadeClips: statement.editorGeneratedClips || 0,
 		signedFile: {
 			fileName: fileNameOf(signature.signedPath),

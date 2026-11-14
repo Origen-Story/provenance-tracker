@@ -113,7 +113,7 @@ describe('buildPublicExport', () => {
 		// Numeric ids; vocabulary.positions[].id is a position name such as "captured".
 		expect(json).not.toMatch(/"(id|assetId|projectId|matchedAssetId|signatureId)":\d/);
 		expect(json).not.toContain('matchedAsset');
-		expect(e.untracked).toEqual([{ track: 'V2', startSeconds: 1, endSeconds: 2, reason: 'no tracked asset' }]);
+		expect(e.untracked).toEqual([{ track: 'V2', startSeconds: 1, endSeconds: 2, reason: 'no tracked asset', originClass: 'unknown', position: 'unknown' }]);
 	});
 
 	it('includes labels for the classes it uses, so a viewer needs no other vocabulary', () => {

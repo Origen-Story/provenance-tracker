@@ -63,7 +63,7 @@ describe('buildCreatorStatement', () => {
 	const s = buildCreatorStatement({ output, timeline, composition, segments, assets, statement, statedAt: '2026-11-13T10:00:00Z' });
 
 	it('carries the creator\'s words and who says them', () => {
-		expect(s).toMatchObject({ version: 2, statedAt: '2026-11-13T10:00:00Z', text: 'A short film about provenance.', author: 'A. Creator', organization: 'Example Studio', editedWith: 'Premiere Pro' });
+		expect(s).toMatchObject({ version: 3, statedAt: '2026-11-13T10:00:00Z', text: 'A short film about provenance.', author: 'A. Creator', organization: 'Example Studio', editedWith: 'Premiere Pro' });
 	});
 
 	it('names the output by file name only, never a path', () => {
@@ -118,8 +118,14 @@ describe('buildCreatorStatement', () => {
 	});
 
 	it('lists clips it could not tie to an asset, and counts editor-made titles', () => {
-		expect(s.unresolved).toEqual([{ clip: 'missing.mov', track: 'V3', startSeconds: 1, endSeconds: 2, reason: 'no tracked asset' }]);
+		expect(s.unresolved).toEqual([{ clip: 'missing.mov', track: 'V3', startSeconds: 1, endSeconds: 2, reason: 'no tracked asset', originClass: 'unknown', position: 'unknown' }]);
 		expect(s.editorGeneratedClips).toBe(1);
+	});
+
+	it('keeps the class the creator gave an untracked clip, such as a nested sequence (v3)', () => {
+		const nested = seg({ trackIndex: 4, startFrame: 30, endFrame: 90, sourceKind: 'sequence', clipName: 'subclip', originClass: 'compositeSynthetic' });
+		const v3 = buildCreatorStatement({ output, timeline, composition, segments: [...segments, nested], assets, statement, statedAt: '2026-11-13T10:00:00Z' });
+		expect(v3.unresolved.at(-1)).toEqual({ clip: 'subclip', track: 'V4', startSeconds: 1, endSeconds: 3, reason: 'nested sequence', originClass: 'compositeSynthetic', position: 'hybrid' });
 	});
 });
 

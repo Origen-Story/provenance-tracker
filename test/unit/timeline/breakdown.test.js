@@ -110,7 +110,7 @@ describe('segmentsFromTimeline', () => {
 		expect(bd.primary.byClass.captured_signed.frames).toBe(100);
 		expect(bd.primary.byClass.generated.frames).toBe(100);
 		expect(bd.primary.byClass.unknown.frames).toBe(140); // nested 40 + unmatched renamed clip 100
-		expect(bd.primary.gap.frames).toBe(60);              // the disabled clip's slot
+		expect(bd.primary.gap.frames).toBe(80);              // the disabled clip's slot, and 400-420 where only the V2 overlay runs
 		expect(bd.audio.byClass.captured_signed.frames).toBe(100); // pair collapsed
 		expect(sumPercent(bd.primary)).toBeCloseTo(100, 6);
 	});

@@ -32,6 +32,16 @@ const CAPTURE_DEVICE_PATTERNS = [/pixel camera/i, /c2pa sdk for android/i, /\ble
 // Claim generators that mean the creator signed the file themselves.
 const CREATOR_SIGNER_PATTERNS = [/provenance[-_ ]?tracker/i, /\bc2patool\b/i];
 
+// An action's source type: the spec field, else a vendor-namespaced
+// parameter. Firefly signs files from partner models (Seedance and others)
+// with only `c2pa.opened` and `parameters["com.adobe.digitalSourceType"]`.
+function actionSourceType(act) {
+	if (act.digitalSourceType) return act.digitalSourceType;
+	const params = act.parameters || {};
+	const key = Object.keys(params).find(k => k === 'digitalSourceType' || k.endsWith('.digitalSourceType'));
+	return key ? params[key] : undefined;
+}
+
 // Flatten the parts of a stored C2PA summary that classification cares about.
 export function c2paSignals(summary) {
 	if (!summary || typeof summary !== 'object' || summary._readError) {
@@ -42,7 +52,7 @@ export function c2paSignals(summary) {
 		if (!String(a.label || '').startsWith('c2pa.actions')) continue;
 		for (const act of a.data?.actions || []) actions.push(act);
 	}
-	const sourceTypes = actions.map(a => normalizeSourceType(a.digitalSourceType)).filter(Boolean);
+	const sourceTypes = actions.map(a => normalizeSourceType(actionSourceType(a))).filter(Boolean);
 	const created = actions.find(a => a.action === 'c2pa.created');
 	const ingredients = summary.ingredients || [];
 	return {
@@ -50,7 +60,7 @@ export function c2paSignals(summary) {
 		readError: false,
 		actions,
 		sourceTypes,
-		createdType: created ? normalizeSourceType(created.digitalSourceType) : null,
+		createdType: created ? normalizeSourceType(actionSourceType(created)) : null,
 		ingredients: ingredients.length,
 		// A parentOf ingredient is the file's own earlier version, not a part.
 		components: ingredients.filter(i => (i.relationship || 'componentOf') === 'componentOf').length,

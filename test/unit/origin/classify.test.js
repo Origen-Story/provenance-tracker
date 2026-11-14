@@ -30,6 +30,14 @@ const premiereExport = {
 	ingredients: [{ title: 'a.wav', relationship: 'componentOf' }, { title: 'b.mp4', relationship: 'componentOf' }],
 	signatureInfo: { issuer: 'Adobe Inc.', commonName: 'Adobe Premiere' }
 };
+// A Firefly partner model (Seedance): no created action; the source type is a
+// vendor parameter on c2pa.opened, and an image prompt is an inputTo ingredient.
+const fireflyPartner = {
+	claimGenerator: 'Adobe Firefly',
+	assertions: [{ label: 'c2pa.actions.v2', data: { actions: [{ action: 'c2pa.opened', parameters: { ingredients: [{ url: 'self#jumbf=c2pa.assertions/c2pa.ingredient.v3__1' }], 'com.adobe.modelId': 'seedance', 'com.adobe.digitalSourceType': `${IPTC}trainedAlgorithmicMedia` } }] } }],
+	ingredients: [{ format: 'image/png', relationship: 'inputTo' }, { format: 'video/mp4', relationship: 'parentOf' }],
+	signatureInfo: { issuer: 'Adobe Inc.', commonName: 'Adobe Firefly C2PA' }
+};
 const created = (code, extra = {}) => ({
 	claimGenerator: 'Some Tool 1.0',
 	assertions: [{ label: 'c2pa.actions.v2', data: { actions: [{ action: 'c2pa.created', digitalSourceType: code ? `${IPTC}${code}` : undefined }] } }],
@@ -49,6 +57,12 @@ describe('c2paSignals', () => {
 	it('counts component ingredients apart from a parent', () => {
 		expect(c2paSignals(premiereExport)).toMatchObject({ ingredients: 2, components: 2, placed: true });
 		expect(c2paSignals(created('digitalCapture', { ingredients: [{ title: 'self.wav', relationship: 'parentOf' }] }))).toMatchObject({ ingredients: 1, components: 0, placed: false });
+	});
+	it('reads a vendor-namespaced source type parameter when the action has none', () => {
+		const s = c2paSignals(fireflyPartner);
+		expect(s.sourceTypes).toEqual(['trainedAlgorithmicMedia']);
+		expect(s.components).toBe(0);
+		expect(proposeOriginClass({ table: 'ai', c2paSummary: fireflyPartner, platform: 'unknown' })).toMatchObject({ originClass: 'trainedAlgorithmicMedia', source: 'c2pa_generated_action', signedBy: 'tool' });
 	});
 	it('treats a read error blob as no manifest', () => {
 		expect(c2paSignals({ _readError: true }).hasManifest).toBe(false);

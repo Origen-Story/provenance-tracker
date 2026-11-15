@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
 import PageHeader from '../../components/layout/PageHeader.jsx';
 import OriginBadge from '../../components/origin/OriginBadge.jsx';
+import AssetThumb from '../../components/AssetThumb.jsx';
 
 const ASSET_TYPES = ['audio', 'video', 'image', 'document', 'other'];
 
@@ -111,19 +112,8 @@ export default function ProducedList() {
 										{asset.missingFields.length} missing
 									</div>
 								)}
-								<OriginBadge asset={asset} type="produced" className="absolute bottom-2 left-2 z-10" />
-								{asset.mimeType?.startsWith('image/') ? (
-									<img src={`/api/preview?path=${encodeURIComponent(asset.filePath)}`}
-										alt={asset.name} className="w-full h-full object-cover" loading="lazy" />
-								) : asset.mimeType?.startsWith('audio/') ? (
-									<svg className="w-8 h-8 text-text-secondary opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-										<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-									</svg>
-								) : (
-									<svg className="w-8 h-8 text-text-secondary opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-										<rect x="2" y="2" width="20" height="20" rx="2"/><polygon points="10 8 16 12 10 16 10 8"/>
-									</svg>
-								)}
+								<span className="absolute bottom-2 left-2 z-10 flex rounded bg-card-bg/90"><OriginBadge asset={asset} type="produced" /></span>
+								<AssetThumb filePath={asset.filePath} mimeType={asset.mimeType} alt={asset.name} />
 							</div>
 							<div className="p-3">
 								<p className="font-medium text-text-primary text-sm leading-tight truncate">{asset.name || 'Untitled'}</p>

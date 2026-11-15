@@ -114,7 +114,7 @@
 .ptv-lede { font-size: clamp(1rem, 1.5vw, 1.12rem); color: var(--ptv-text); text-wrap: pretty; }
 .ptv-lede p { margin: 0; }
 .ptv-lede p + p { margin-top: .5rem; }
-.ptv-lede-statement { font-family: var(--ptv-font-display); color: var(--ptv-heading); }
+.ptv-lede-statement { color: var(--ptv-heading); }
 .ptv-lede-by { font-family: var(--ptv-font-body); font-size: .875rem; color: var(--ptv-muted); white-space: nowrap; }
 
 /* ---- player ------------------------------------------------------------- */

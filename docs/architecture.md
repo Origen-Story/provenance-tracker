@@ -108,8 +108,20 @@ Copy `.env.example` to `.env`:
 
 - `DATABASE_URL`: PostgreSQL connection string
 - `PORT`: Express port (default 3001)
+- `HOST`: address the server listens on (default `127.0.0.1`). `ALLOWED_HOSTS`: comma-separated host names the API answers to beside the loopback ones.
 - `NOTION_API_KEY`: optional, for Notion sync (archival module)
 - `APP_CONTACT`: email or URL sent in the User-Agent on outbound HTTP. Wikimedia's policy requires identification; unidentified clients are throttled. Centralised in `src/server/lib/user-agent.js`.
+
+## Local-only API
+
+There is no login, so reach is the access control. Two layers, both in `src/server/lib/core/local-only.js` (pure, unit-tested) and wired in `src/server/index.js`:
+
+- **Bind.** `app.listen(PORT, HOST)` with `HOST` defaulting to `127.0.0.1`. Other devices get a refused connection.
+- **Request check.** `localOnly` is the first middleware on `/api`, before any body is parsed. It refuses a `Host` header that is not a loopback name (DNS rebinding), an `Origin` that is not the same host and port as `Host` (another site's form post, which needs no CORS preflight), and anything the browser marks `Sec-Fetch-Site: cross-site`.
+
+The Vite proxy must forward the browser's `Host` unchanged for the second rule to pass in development, which is why `vite.config.js` uses the long proxy form with `changeOrigin: false` (the short string form sets it to `true`).
+
+Three smaller rules live beside it: `/api/preview` serves image, video and audio only (`isPreviewable`); a project leaves the API through `toProjectResponse`, which drops the signing paths; and update and import routes take request fields from named lists (`archival/fields.js`, `core/import-rules.js`). The reasoning and the limits are in `docs/threat-model.md`; what leaves the machine is in `docs/network.md`.
 
 ## External integrations
 

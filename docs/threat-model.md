@@ -1,0 +1,51 @@
+# Threat model
+
+What the tracker protects, from whom, and what it leaves to you. Written for version 0.2.0. The companion document is [network.md](network.md): exactly what leaves the machine.
+
+## What kind of program this is
+
+A single-user tool that runs on your own computer. It has no login. One person starts it, uses it in a browser on the same machine, and stops it. Everything below follows from that.
+
+## What is worth protecting
+
+| Thing | Why it matters |
+| --- | --- |
+| The signing key | Whoever holds it can sign files as you |
+| Your media and the catalog | Unreleased work, file paths, prompts, notes |
+| The record itself | A provenance record that can be silently altered is worth nothing |
+| Your original files | The tracker reads them; it must never damage or delete them |
+
+## What the tracker defends against
+
+| Threat | Defence | Where |
+| --- | --- | --- |
+| Another device on the same network (shared office, hotel, conference Wi-Fi) opens the app or its API | The server listens on `127.0.0.1` only, so the connection is refused before any code runs. The Vite dev server does the same | `src/server/index.js`, `listenHost` |
+| A web page you visit sends requests to the local API (a hidden form post needs no permission from the server) | A request whose `Origin` is not the tracker's own page is refused, and so is any request the browser labels cross-site | `src/server/lib/core/local-only.js` |
+| DNS rebinding: a site points its own name at `127.0.0.1` so the browser treats the API as that site's | A request whose `Host` header is not `localhost`, `127.0.0.1` or `::1` is refused | same |
+| The file preview is used to read a key, a `.env` file or a document | The preview serves image, video and audio files only, judged by extension, and answers "wrong type" before it says whether a file exists | `src/server/routes/preview.js`, `isPreviewable` |
+| The API reveals where the signing key is | Project responses carry `signingConfigured` (true or false) and never the two paths. The settings form sends a path only to replace one | `src/server/lib/core/project-response.js` |
+| A request overwrites fields the server owns (a file path, a hash, the project a row belongs to) | Each update route accepts a named list of fields | `src/server/lib/archival/fields.js` and the matching lists for the other asset kinds |
+| An import writes outside the project's storage, or deletes a file it did not import | The storage folder comes from a fixed list of module names. "Delete originals" removes a source only after the tracker has copied it; a duplicate and a file tracked in place are never deleted | `src/server/lib/core/import-rules.js` |
+| The bundled database is reachable from the network | Docker publishes Postgres on `127.0.0.1` only | `docker-compose.yml` |
+| A signature or public export leaks local paths | The stored manifest definition has the key paths removed; the public export holds file names, never paths | `src/server/lib/manifest/` |
+| A secret is committed | `.env` and `certs/` are gitignored; tests never touch them | `.gitignore` |
+
+## What it does not defend against
+
+Be clear-eyed about these. None is hidden.
+
+- **Other programs and other accounts on the same computer.** Anything that can open a connection to `127.0.0.1` can use the API, because there is no login. On a shared computer, do not leave the tracker running.
+- **Malware or someone with access to your files.** The signing key is a PEM file on disk, not held in the operating system's keychain or on a hardware token. Protect it the way you protect the disk. Holding the key somewhere safer is planned.
+- **A hostile media file.** The tracker hands every imported file to ExifTool, to the C2PA reader and (for video frames) to ffmpeg. A file crafted to exploit one of those is a risk the tracker inherits. Keep them current.
+- **Reading other media on your disk.** The preview and the import forms take a file path, because you point the tracker at files where they already live. A local caller can therefore preview any picture, video or sound file on the machine, and ask the importer to read any path. Confining these to a project's own folders is planned.
+- **Fetching an address you give it.** Importing an archival image by URL makes the server fetch that address. Only you can ask, since the API is local-only.
+- **Running it on a network on purpose.** Setting `HOST` makes the server listen beyond this machine. There is still no login, so you must put one in front of it (see the README's deployment notes). `ALLOWED_HOSTS` only names which hosts the API answers to; it is not authentication.
+- **Database edits.** Someone who can write to the database can change the record. There is no tamper-evident history yet; an append-only history is planned.
+- **Whether a statement is true.** A creator statement and an origin class are what the creator declares. Signing proves the file and the statement have not changed since they were signed. It does not prove the statement.
+- **Who signed.** With the development certificate (`npm run cert:generate`), a signature shows the file is intact but verifiers report the signer as unrecognised. That is correct: a self-made certificate proves nothing about identity.
+- **Credentials found in imported files.** The tracker reads and shows them. It does not yet keep the validation result or check the issuer against a trust list, so "has credentials" must not be read as "has trusted credentials".
+- **Copies on platforms.** Video platforms re-encode uploads and drop the credentials. The signed file you host and the public record are what a viewer can check.
+
+## Reporting a problem
+
+See [SECURITY.md](../SECURITY.md).

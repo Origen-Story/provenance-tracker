@@ -4,6 +4,7 @@ import { eq, desc, asc, sql, count, and, ilike } from 'drizzle-orm';
 import { ARCHIVAL_ENRICHMENT_CONDITION, getArchivalMissingFields } from '../dashboard.js';
 import { applyProposal } from '../origin/origin.js';
 import { removeRelationshipsFor } from '../relationships/relationships.js';
+import { pickArchivalUpdates } from './fields.js';
 
 export async function listArchivalAssets(projectId, {
 	search = '', medium = '', enrichment = '', searchGroupId = '', sortBy = 'createdAt', sortDir = 'desc', limit = 100, offset = 0
@@ -78,10 +79,14 @@ export async function createArchivalAsset(projectId, data) {
 	return classified || row;
 }
 
-export async function updateArchivalAsset(id, updates) {
-	await db.update(archivalAssets)
-		.set({ ...updates, updatedAt: sql`now()` })
-		.where(eq(archivalAssets.id, id));
+// `body` is a request body: only the fields named in fields.js are written.
+export async function updateArchivalAsset(id, body) {
+	const updates = pickArchivalUpdates(body);
+	if (Object.keys(updates).length) {
+		await db.update(archivalAssets)
+			.set({ ...updates, updatedAt: sql`now()` })
+			.where(eq(archivalAssets.id, id));
+	}
 	return getArchivalAsset(id);
 }
 

@@ -5,7 +5,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import { getMimeType } from '../lib/core/file-utils.js';
+import { getMimeType, isPreviewable } from '../lib/core/file-utils.js';
 import { thumbnailKey, frameTime, frameArgs, durationArgs } from '../lib/core/thumbnail.js';
 import { createLogger } from '../lib/logger.js';
 
@@ -51,9 +51,11 @@ async function makeFrame(input, output) {
 router.get('/frame', async (req, res) => {
 	const filePath = req.query.path;
 	if (!filePath) return res.status(400).json({ error: 'path required' });
+	if (typeof filePath !== 'string') return res.status(400).json({ error: 'path must be one value' });
 	const resolved = path.resolve(filePath);
-	if (!existsSync(resolved)) return res.status(404).json({ error: 'File not found' });
+	// Type before existence, so the answer never says whether some other file is there.
 	if (!getMimeType(resolved).startsWith('video/')) return res.status(415).json({ error: 'Not a video' });
+	if (!existsSync(resolved)) return res.status(404).json({ error: 'File not found' });
 	if (ffmpegMissing) return res.status(501).json({ error: 'ffmpeg is not installed' });
 
 	const output = path.join(THUMB_DIR, thumbnailKey(resolved, statSync(resolved)));
@@ -80,16 +82,27 @@ router.get('/frame', async (req, res) => {
 // Streams a local file for the UI. Honours HTTP Range requests so <video>
 // and <audio> can seek (the player sends ranges once it knows the length;
 // without 206 responses seeking rewinds to the start).
+//
+// Only image, video and audio files are served (by extension). The path can
+// be any file on disk, because import previews a file before it is tracked,
+// so the type check is what keeps keys, .env files and documents out.
 router.get('/', (req, res) => {
 	const filePath = req.query.path;
 	if (!filePath) return res.status(400).json({ error: 'path required' });
+	if (typeof filePath !== 'string') return res.status(400).json({ error: 'path must be one value' });
 
 	const resolved = path.resolve(filePath);
+	// Type before existence, so the answer never says whether some other file is there.
+	if (!isPreviewable(resolved)) return res.status(415).json({ error: 'Only image, video and audio files can be previewed' });
 	if (!existsSync(resolved)) return res.status(404).json({ error: 'File not found' });
 
 	const { size } = statSync(resolved);
 	const mimeType = getMimeType(resolved);
 	res.setHeader('Content-Type', mimeType);
+	// A file opened directly in a tab (an SVG can carry script) runs sandboxed,
+	// with no access to the tracker's own origin. <img>, <video> and <audio>
+	// ignore this header.
+	res.setHeader('Content-Security-Policy', 'sandbox');
 	res.setHeader('Cache-Control', 'public, max-age=3600');
 	res.setHeader('Accept-Ranges', 'bytes');
 

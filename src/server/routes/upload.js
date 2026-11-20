@@ -9,6 +9,7 @@ import { extractAIAsset } from '../lib/extraction/ai-extraction.js';
 import { extractExifFromPath } from '../lib/archival/extraction.js';
 import { computeFileHash } from '../lib/core/file-utils.js';
 import { listImportableFiles } from '../lib/core/scan-folder.js';
+import { IMPORT_MODULES, isImportModule, moduleFolder, mayDeleteSource } from '../lib/core/import-rules.js';
 import { db } from '../db/index.js';
 import { assets, archivalAssets, producedAssets } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
@@ -16,16 +17,19 @@ import { eq, and } from 'drizzle-orm';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_STORAGE = path.resolve(__dirname, '../../../data');
 
-const MODULE_FOLDERS = {
-	'archival': 'archival-images',
-	'ai-assets': 'ai-assets',
-	'produced': 'produced-assets'
-};
-
+// `module` comes from the request. Callers check it with refuseUnknownModule
+// first; an unknown name throws here and is never used as a folder name.
 function getStorageDir(project, module) {
+	const folder = moduleFolder(module);
+	if (!folder) throw new Error(`Unknown module "${module}"`);
 	const base = project?.storagePath || DEFAULT_STORAGE;
-	const folder = MODULE_FOLDERS[module] || module;
 	return path.join(base, folder);
+}
+
+function refuseUnknownModule(module, res) {
+	if (isImportModule(module)) return false;
+	res.status(400).json({ error: `module must be one of: ${IMPORT_MODULES.join(', ')}` });
+	return true;
 }
 
 function uniqueName(dir, filename) {
@@ -99,10 +103,21 @@ const router = Router();
  *   deleteOriginals: "true" | "false" (default false) — for upload, always deletes temp
  */
 router.post('/', upload.array('files', 50), async (req, res) => {
+	// multer has already written the uploads to the temp folder; a refused
+	// request must not leave them there.
+	const discardUploads = () => Promise.all((req.files || []).map(f => unlink(f.path).catch(() => {})));
+
 	const project = await getActiveProject();
-	if (!project) return res.status(400).json({ error: 'No active project' });
+	if (!project) {
+		await discardUploads();
+		return res.status(400).json({ error: 'No active project' });
+	}
 
 	const module = req.body.module || 'ai-assets';
+	if (!isImportModule(module)) {
+		await discardUploads();
+		return refuseUnknownModule(module, res);
+	}
 	const storageDir = getStorageDir(project, module);
 
 	if (!existsSync(storageDir)) {
@@ -167,16 +182,20 @@ async function importExisting({ project, sourcePath, module, inPlace, deleteOrig
 	const fileHash = await computeFileHash(sourcePath);
 	const dup = await findDuplicateByHash(project.id, fileHash, module);
 	if (dup) {
-		if (deleteOriginal && !inPlace) await unlink(sourcePath).catch(() => {});
+		// Nothing was imported, so the source is left exactly where it is,
+		// whatever "delete originals" says.
 		return { duplicate: true, existingAsset: dup, error: `Duplicate: already in catalog${dup.name ? ` as "${dup.name}"` : dup.assetId ? ` as ${dup.assetId}` : ''}` };
 	}
 	let filePath = sourcePath;
+	let deleted = false;
 	if (!inPlace) {
 		const storageDir = getStorageDir(project, module);
 		if (!existsSync(storageDir)) await mkdir(storageDir, { recursive: true });
 		filePath = uniqueName(storageDir, path.basename(sourcePath).replace(/[^a-zA-Z0-9._-]/g, '_'));
 		await copyFile(sourcePath, filePath);
-		if (deleteOriginal) await unlink(sourcePath).catch(() => {});
+		if (mayDeleteSource({ deleteOriginal, inPlace, duplicate: false, copied: true })) {
+			deleted = await unlink(sourcePath).then(() => true, () => false);
+		}
 	}
 	let extracted;
 	if (module === 'archival') {
@@ -189,7 +208,7 @@ async function importExisting({ project, sourcePath, module, inPlace, deleteOrig
 	} else {
 		extracted = await extractAIAsset(filePath);
 	}
-	return { extracted: { ...extracted, inPlace: !!inPlace } };
+	return { extracted: { ...extracted, inPlace: !!inPlace }, deleted };
 }
 
 function refuseDeletingTrackedFiles(inPlace, deleteOriginal, res) {
@@ -211,6 +230,7 @@ router.post('/scan', async (req, res) => {
 	if (!project) return res.status(400).json({ error: 'No active project' });
 
 	const { folderPath, module = 'ai-assets', inPlace = false, recursive = false, deleteOriginals = false } = req.body;
+	if (refuseUnknownModule(module, res)) return;
 	if (!folderPath) return res.status(400).json({ error: 'folderPath required' });
 	if (!existsSync(folderPath)) return res.status(400).json({ error: 'Folder not found' });
 	if (refuseDeletingTrackedFiles(inPlace, deleteOriginals, res)) return;
@@ -226,6 +246,7 @@ router.post('/scan', async (req, res) => {
 
 	const results = [];
 	let duplicates = 0;
+	let deleted = 0;
 	for (const file of files) {
 		try {
 			const r = await importExisting({ project, sourcePath: file.path, module, inPlace, deleteOriginal: deleteOriginals });
@@ -233,6 +254,7 @@ router.post('/scan', async (req, res) => {
 				duplicates++;
 				results.push({ success: false, filename: file.relativePath, duplicate: true, existingAsset: r.existingAsset, error: r.error });
 			} else {
+				if (r.deleted) deleted++;
 				results.push({ success: true, ...r.extracted });
 			}
 		} catch (err) {
@@ -243,7 +265,8 @@ router.post('/scan', async (req, res) => {
 	res.json({
 		results,
 		subdirectories: skippedFolders,
-		deleted: deleteOriginals && !inPlace ? results.filter(r => r.success || r.duplicate).length : 0,
+		// Counted from the files actually removed, not from the request.
+		deleted,
 		duplicates
 	});
 });
@@ -259,6 +282,7 @@ router.post('/file', async (req, res) => {
 	if (!project) return res.status(400).json({ error: 'No active project' });
 
 	const { filePath, module = 'ai-assets', inPlace = false, deleteOriginal = false } = req.body;
+	if (refuseUnknownModule(module, res)) return;
 	if (!filePath) return res.status(400).json({ error: 'filePath required' });
 	if (!existsSync(filePath)) return res.status(400).json({ error: 'File not found' });
 	if (refuseDeletingTrackedFiles(inPlace, deleteOriginal, res)) return;
@@ -266,7 +290,7 @@ router.post('/file', async (req, res) => {
 	try {
 		const r = await importExisting({ project, sourcePath: filePath, module, inPlace, deleteOriginal });
 		if (r.duplicate) return res.status(409).json({ error: r.error, duplicate: true, existingAsset: r.existingAsset });
-		res.json({ success: true, deleted: !!deleteOriginal && !inPlace, ...r.extracted });
+		res.json({ success: true, deleted: r.deleted, ...r.extracted });
 	} catch (err) {
 		res.status(400).json({ error: err.message });
 	}

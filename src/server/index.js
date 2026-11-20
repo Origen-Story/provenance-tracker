@@ -4,6 +4,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { pool } from './db/index.js';
 import { createLogger } from './lib/logger.js';
+import { listenHost, allowedHostnames, isLoopbackHost, localOnly } from './lib/core/local-only.js';
 import { startQueueWorker, releaseStaleLeases } from './lib/search/queue.js';
 import { startSearchJobWorker, releaseStaleSearchJobs } from './lib/search/search-jobs.js';
 
@@ -28,8 +29,18 @@ import outputsRouter from './routes/outputs.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3001;
+// Loopback unless HOST says otherwise: there is no login, so being reachable
+// only from this machine is the access control (docs/threat-model.md).
+const HOST = listenHost(process.env);
 
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '../../package.json'), 'utf8'));
+
+// Before any body is parsed: refuse API requests that do not come from the
+// tracker's own pages on this machine (another site's form, DNS rebinding).
+app.use('/api', localOnly({
+	allowedHosts: allowedHostnames(process.env),
+	onRefuse: (req, reason) => log.warn(`refused ${req.method} ${req.originalUrl.split('?')[0]}: ${reason}`)
+}));
 
 app.use(express.json({ limit: '10mb' }));
 // Express 5 leaves req.body undefined when a request carries no JSON body
@@ -84,8 +95,11 @@ app.use((err, _req, res, _next) => {
 	res.status(err.status || 500).json({ error: err.message || 'Internal error' });
 });
 
-app.listen(PORT, async () => {
-	log.info(`✓ Provenance Tracker API running on http://localhost:${PORT}`);
+app.listen(PORT, HOST, async () => {
+	log.info(`✓ Provenance Tracker API listening on http://${HOST.includes(':') ? `[${HOST}]` : HOST}:${PORT}`);
+	if (!isLoopbackHost(HOST)) {
+		log.warn(`HOST=${HOST}: the API is reachable from other machines and has no login. Requests are still refused unless their Host header is this address or is listed in ALLOWED_HOSTS. See README, "Deployment notes".`);
+	}
 	if (!process.env.APP_CONTACT) {
 		log.warn('APP_CONTACT is not set. Archive Search calls Wikimedia, whose User-Agent policy requires identification (email or URL). Unidentified clients are throttled or blocked — set APP_CONTACT in .env if you plan to use the archival module.');
 	}

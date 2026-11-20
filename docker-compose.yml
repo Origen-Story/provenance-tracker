@@ -5,8 +5,10 @@ services:
       POSTGRES_DB: provenance
       POSTGRES_USER: provenance
       POSTGRES_PASSWORD: localdev
+    # Published on this machine only. Without the address Docker publishes
+    # the port on every network interface, with the password below.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 

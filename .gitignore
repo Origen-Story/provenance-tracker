@@ -32,6 +32,10 @@ Thumbs.db
 # Internal docs (specs, briefs, planning — not for public repo)
 Documents/
 
+# Session handoffs: working notes between sessions, kept locally and backed
+# up outside git. The two published before this rule remain in git history.
+handoffs/
+
 # Env
 .env
 .env.*

@@ -26,5 +26,5 @@ Local web app that records where multimedia assets came from (camera, archive, A
 - Architecture, queue behaviour, environment: docs/architecture.md
 - What the tool defends against, and what leaves the machine: docs/threat-model.md, docs/network.md
 - Decisions D1 to D8: docs/decisions.md
-- Session handoffs: docs/handoffs/NN_session_handoff_YYYY-MM-DD.md
+- Session handoffs: handoffs/NN_session_handoff_YYYY-MM-DD.md at the repo root. Gitignored and never committed; nothing goes in docs/handoffs/.
 - Planned work: docs/planned-features.md

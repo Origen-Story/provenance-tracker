@@ -125,7 +125,7 @@ function IntegrityCheck({ project }) {
 		}
 	}
 
-	const healthy = result && result.orphanFiles.length === 0 && result.missingFiles.length === 0;
+	const healthy = result && result.orphanFiles.length === 0 && result.missingFiles.length === 0 && !(result.changedFiles?.length);
 
 	return (
 		<section className="bg-card-bg border border-border rounded-xl p-6">
@@ -140,14 +140,15 @@ function IntegrityCheck({ project }) {
 				)}
 			</div>
 			<p className="text-sm text-text-secondary mb-4">
-				Check for orphan files in managed storage and missing files referenced by the database.
+				Check for files the database points at that are missing or, for files tracked in place, changed since import; and for orphan files in managed storage.
 			</p>
 
 			{!project.storagePath && (
-				<p className="text-sm text-text-secondary italic">No storage path configured. Set one in project settings to enable integrity checks.</p>
+				<p className="text-xs text-text-secondary italic mb-3">No storage path configured, so there is no managed folder to scan for orphans. Tracked files are still checked.</p>
 			)}
 
-			{project.storagePath && (
+			{(
+
 				<>
 					<button onClick={runCheck} disabled={loading}
 						className="px-4 py-2 bg-card-bg border border-border hover:bg-card-hover text-text-primary rounded-lg text-sm font-medium transition-colors disabled:opacity-40 flex items-center gap-2">
@@ -218,6 +219,25 @@ function IntegrityCheck({ project }) {
 									</div>
 									<p className="text-xs text-text-secondary mt-2">
 										These database records point to files that no longer exist on disk. The files may have been moved or deleted.
+									</p>
+								</div>
+							)}
+
+							{/* In-place files whose size changed since import (D12) */}
+							{result.changedFiles?.length > 0 && (
+								<div>
+									<h4 className="text-sm font-medium text-amber-400 mb-2">Changed files (tracked in place, size differs from import)</h4>
+									<div className="space-y-1 max-h-48 overflow-y-auto">
+										{result.changedFiles.map((f, i) => (
+											<div key={i} className="flex items-center justify-between text-xs bg-app-bg rounded px-3 py-1.5">
+												<span className="text-text-primary truncate">{f.label}</span>
+												<span className="text-text-secondary font-mono text-xs shrink-0 ml-2 truncate max-w-48" title={f.filePath}>{f.filePath}</span>
+												<span className="text-text-secondary shrink-0 ml-2">{(f.recordedSize / 1048576).toFixed(1)} → {(f.currentSize / 1048576).toFixed(1)} MB</span>
+											</div>
+										))}
+									</div>
+									<p className="text-xs text-text-secondary mt-2">
+										These files live outside managed storage and have been edited or replaced since they were imported. The record and any class or note on it describe the earlier file. Re-import the file if the change was intended.
 									</p>
 								</div>
 							)}

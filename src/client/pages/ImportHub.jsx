@@ -33,6 +33,19 @@ function TypeIcon({ type }) {
 	);
 }
 
+function InPlaceOption({ inPlace, setInPlace }) {
+	return (
+		<label className="flex items-start gap-2 text-sm text-text-secondary cursor-pointer select-none">
+			<input type="checkbox" checked={inPlace} onChange={e => setInPlace(e.target.checked)}
+				className="rounded border-border accent-accent mt-0.5" />
+			<span>
+				<span className="text-text-primary">Keep files where they are</span> (track in place)
+				<span className="block text-xs">The tracker records the path and never moves, renames or deletes the file. Moving or editing it later shows up in the integrity check. Untick to copy into managed storage instead.</span>
+			</span>
+		</label>
+	);
+}
+
 export default function ImportHub() {
 	const navigate = useNavigate();
 	const qc = useQueryClient();
@@ -66,6 +79,12 @@ export default function ImportHub() {
 	const [batchSaving, setBatchSaving] = useState(false);
 	const [batchSaved, setBatchSaved] = useState(0);
 	const [deleteOriginals, setDeleteOriginals] = useState(false);
+	// Track in place (D12): record files where they are instead of copying them
+	// into managed storage. The default for produced media, whose files already
+	// live in an edit project that links to them.
+	const [inPlace, setInPlace] = useState(preselected === 'produced');
+	const [recursive, setRecursive] = useState(false);
+	useEffect(() => { setInPlace(assetCategory === 'produced'); }, [assetCategory]);
 	const [scanInfo, setScanInfo] = useState(null); // { subdirectories, deleted, duplicates }
 
 	// === AI Asset enrichment fields ===
@@ -208,7 +227,7 @@ export default function ImportHub() {
 			const res = await fetch('/api/upload/scan', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ folderPath: folderPath.trim(), module: assetCategory, deleteOriginals })
+				body: JSON.stringify({ folderPath: folderPath.trim(), module: assetCategory, inPlace, recursive, deleteOriginals: inPlace ? false : deleteOriginals })
 			});
 			const data = await res.json().catch(() => ({ error: `Server error (${res.status})` }));
 			if (!res.ok) { setExtractError(data.error || 'Scan failed'); return; }
@@ -248,7 +267,7 @@ export default function ImportHub() {
 			const res = await fetch('/api/upload/file', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ filePath: pathInput.trim(), module: assetCategory, deleteOriginal: deleteOriginals })
+				body: JSON.stringify({ filePath: pathInput.trim(), module: assetCategory, inPlace, deleteOriginal: inPlace ? false : deleteOriginals })
 			});
 			const data = await res.json().catch(() => ({ error: `Server error (${res.status})` }));
 			if (!res.ok) { setExtractError(data.error || 'Extraction failed'); return; }
@@ -310,7 +329,7 @@ export default function ImportHub() {
 			filePath: extracted.filePath, filename: extracted.filename, fileHash: extracted.fileHash,
 			fileSize: extracted.fileSize, mimeType: extracted.mimeType, assetType: extracted.assetType,
 			platform, description, notes, digitalSourceType, generationDate,
-			exifJson: extracted.exifJson, c2paJson: extracted.c2paJson,
+			exifJson: extracted.exifJson, c2paJson: extracted.c2paJson, inPlace: !!extracted.inPlace,
 			pngChunksJson: extracted.pngChunksJson, platformJson: extracted.platformJson,
 			generationParams: {
 				prompt, negativePrompt, modelName, modelVersion,
@@ -330,7 +349,7 @@ export default function ImportHub() {
 			filePath: extracted.filePath, filename: extracted.filename,
 			fileHash: extracted.fileHash, fileSize: extracted.fileSize,
 			mimeType: extracted.mimeType, exifJson: extracted.exifJson,
-			c2paJson: extracted.c2paJson || null
+			c2paJson: extracted.c2paJson || null, inPlace: !!extracted.inPlace
 		});
 	}
 
@@ -343,7 +362,7 @@ export default function ImportHub() {
 			filePath: extracted.filePath, filename: extracted.filename,
 			fileHash: extracted.fileHash, fileSize: extracted.fileSize,
 			mimeType: extracted.mimeType, exifJson: extracted.exifJson,
-			c2paJson: extracted.c2paJson || null
+			c2paJson: extracted.c2paJson || null, inPlace: !!extracted.inPlace
 		});
 	}
 
@@ -360,7 +379,7 @@ export default function ImportHub() {
 				let body;
 				if (assetCategory === 'ai-assets') {
 					body = {
-						filePath: item.filePath, filename: item.filename, fileHash: item.fileHash,
+						filePath: item.filePath, filename: item.filename, fileHash: item.fileHash, inPlace: !!item.inPlace,
 						fileSize: item.fileSize, mimeType: item.mimeType, assetType: item.assetType,
 						platform: item.platform || 'unknown', description: '',
 						digitalSourceType: DIGITAL_SOURCE_TYPES[0].value,
@@ -379,7 +398,7 @@ export default function ImportHub() {
 				} else if (assetCategory === 'archival') {
 					body = {
 						name: item.filename?.replace(/\.[^.]+$/, '').replace(/_/g, ' ') || '',
-						filePath: item.filePath, filename: item.filename, fileHash: item.fileHash,
+						filePath: item.filePath, filename: item.filename, fileHash: item.fileHash, inPlace: !!item.inPlace,
 						fileSize: item.fileSize, mimeType: item.mimeType,
 						exifJson: item.exifJson, c2paJson: item.c2paJson || null,
 						accessDate: item.accessDate || new Date().toISOString().slice(0, 10),
@@ -391,7 +410,7 @@ export default function ImportHub() {
 					const mt = item.mimeType || '';
 					body = {
 						name: item.filename?.replace(/\.[^.]+$/, '').replace(/_/g, ' ') || '',
-						filePath: item.filePath, filename: item.filename, fileHash: item.fileHash,
+						filePath: item.filePath, filename: item.filename, fileHash: item.fileHash, inPlace: !!item.inPlace,
 						fileSize: item.fileSize, mimeType: item.mimeType,
 						exifJson: item.exifJson, c2paJson: item.c2paJson || null,
 						assetType: mt.startsWith('audio/') ? 'audio' : mt.startsWith('video/') ? 'video' : mt.startsWith('image/') ? 'image' : 'other'
@@ -499,13 +518,21 @@ export default function ImportHub() {
 									onKeyDown={e => e.key === 'Enter' && folderPath.trim() && handleScan()}
 									placeholder="C:\path\to\archival-images"
 									className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm" />
-								<p className="text-xs text-text-secondary mt-1">All supported files will be copied to managed storage and scanned. Subdirectories are not included.</p>
+								<p className="text-xs text-text-secondary mt-1">{inPlace ? 'Supported files are recorded where they are; nothing is copied.' : 'Supported files are copied to managed storage and scanned.'}</p>
 							</div>
+							<InPlaceOption inPlace={inPlace} setInPlace={setInPlace} />
 							<label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer select-none">
-								<input type="checkbox" checked={deleteOriginals} onChange={e => setDeleteOriginals(e.target.checked)}
+								<input type="checkbox" checked={recursive} onChange={e => setRecursive(e.target.checked)}
 									className="rounded border-border accent-accent" />
-								Delete originals after copying to managed storage
+								Include subfolders
 							</label>
+							{!inPlace && (
+								<label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer select-none">
+									<input type="checkbox" checked={deleteOriginals} onChange={e => setDeleteOriginals(e.target.checked)}
+										className="rounded border-border accent-accent" />
+									Delete originals after copying to managed storage
+								</label>
+							)}
 							<div className="flex items-center gap-3">
 								<button onClick={handleScan} disabled={!folderPath.trim() || extracting}
 									className="px-5 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-40 flex items-center gap-2">
@@ -541,13 +568,16 @@ export default function ImportHub() {
 									onKeyDown={e => e.key === 'Enter' && pathInput.trim() && handleExtractSubmit()}
 									placeholder="C:\Users\...\image.jpg"
 									className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm" />
-								<p className="text-xs text-text-secondary mt-1">File will be copied to managed storage and scanned.</p>
+								<p className="text-xs text-text-secondary mt-1">{inPlace ? 'The file is recorded where it is; nothing is copied.' : 'The file is copied to managed storage and scanned.'}</p>
 							</div>
-							<label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer select-none">
-								<input type="checkbox" checked={deleteOriginals} onChange={e => setDeleteOriginals(e.target.checked)}
-									className="rounded border-border accent-accent" />
-								Delete original after copying to managed storage
-							</label>
+							<InPlaceOption inPlace={inPlace} setInPlace={setInPlace} />
+							{!inPlace && (
+								<label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer select-none">
+									<input type="checkbox" checked={deleteOriginals} onChange={e => setDeleteOriginals(e.target.checked)}
+										className="rounded border-border accent-accent" />
+									Delete original after copying to managed storage
+								</label>
+							)}
 							<button onClick={handleExtractSubmit} disabled={!pathInput.trim() || extracting}
 								className="px-5 py-2 bg-accent hover:bg-accent-hover text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-40 flex items-center gap-2">
 								{extracting ? <><Spinner /> Extracting...</> : 'Extract metadata →'}

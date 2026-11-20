@@ -4,6 +4,7 @@ import { eq, count, sql } from 'drizzle-orm';
 import { existsSync } from 'fs';
 import { mkdir } from 'fs/promises';
 import path from 'path';
+import { signingPathUpdates } from './core/project-response.js';
 
 const MANAGED_FOLDERS = ['archival-images', 'ai-assets', 'produced-assets'];
 
@@ -74,9 +75,10 @@ export async function updateProject(id, data) {
 	};
 	if (data.storagePath !== undefined) updates.storagePath = data.storagePath;
 	if (data.notionGroupProperty !== undefined) updates.notionGroupProperty = data.notionGroupProperty;
-	// C2PA signing material and CAWG identity (project-level settings)
-	if (data.certificatePath !== undefined) updates.certificatePath = data.certificatePath;
-	if (data.privateKeyPath !== undefined) updates.privateKeyPath = data.privateKeyPath;
+	// C2PA signing material: a path is written only when the form sends a new
+	// one (it never receives the saved ones), or cleared when asked outright.
+	Object.assign(updates, signingPathUpdates(data));
+	// CAWG identity (project-level settings)
 	if (data.cawgIdentityUrl !== undefined) updates.cawgIdentityUrl = data.cawgIdentityUrl;
 	if (data.cawgIdentityName !== undefined) updates.cawgIdentityName = data.cawgIdentityName;
 	await db.update(projects).set(updates).where(eq(projects.id, id));

@@ -7,6 +7,7 @@ import { eq, and, sql } from 'drizzle-orm';
 import { proposeOriginClass, parseJsonSafe, ORIGIN_CLASSES } from './classify.js';
 import { originClassDef } from '../../../shared/origin-vocabulary.js';
 import { tableFor, listRelationshipsFor, linkAssets } from '../relationships/relationships.js';
+import { cleanPublicTitle } from '../manifest/build.js';
 import { recomputeTimelinesForAsset } from '../timeline/timelines.js';
 
 export { ORIGIN_CLASSES };
@@ -123,6 +124,17 @@ export async function setOriginClass(type, id, { originClass, confirmed = true, 
 	await reproposeDerivedChildren(type, id);
 	// Screen-time breakdowns that count this asset change with its class.
 	await recomputeTimelinesForAsset(type, id);
+	return updated;
+}
+
+// The name the public viewer shows for this asset. It goes into the creator
+// statement when an output is signed, so set it before signing.
+export async function setPublicTitle(type, id, title) {
+	const table = tableFor(type);
+	const [updated] = await db.update(table)
+		.set({ publicTitle: cleanPublicTitle(title), updatedAt: sql`now()` })
+		.where(eq(table.id, id)).returning();
+	if (!updated) throw new Error('Asset not found');
 	return updated;
 }
 

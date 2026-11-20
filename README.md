@@ -9,20 +9,20 @@ Built by [Origen Story](https://www.origenstory.com/).
 1. **Multi-project support** — Each production gets its own project with configurable modules (AI assets, archival, produced)
 2. **Imports assets** via file upload, folder scan, file path, or URL download (archival)
 3. **Extracts metadata** automatically — EXIF, C2PA manifests, PNG chunks, AI generation parameters
-4. **Detects platforms** — ComfyUI, MidJourney, Freepik, Meta.ai workflows are parsed for prompts, models, seeds, etc.
+4. **Detects platforms** — ComfyUI, Midjourney, Freepik, Adobe Firefly, ElevenLabs and Topaz (Video AI, Gigapixel) files are recognised and parsed for what each one records (prompts, models, seeds and so on)
 5. **Tracks enrichment** — highlights assets missing required metadata so nothing falls through the cracks
 6. **Searches Wikimedia Commons** — background job queue runs grouped keyword/category searches against Wikimedia, with candidate review, bulk approval, and resumable downloads
 7. **Syncs to Notion** (optional) — archival assets can sync to a Notion database for collaborative research
 8. **Builds C2PA manifests** — Content Credentials manifests for produced assets, combining archival + AI provenance
 9. **Exports** — structured export of project assets and their provenance
 10. **Manages files** — copies imports into managed storage with SHA-256 duplicate detection and integrity monitoring
-11. **Signs assets with C2PA** — generate a dev cert with one command and sign WAV/MP3/JPEG/PNG locally, with `c2pa.actions`, `stds.schema-org.CreativeWork`, training-mining opt-out, and a CAWG-lite identity assertion
+11. **Signs assets with C2PA** — generate a dev cert with one command and sign WAV/MP3/JPEG/PNG locally, with `c2pa.actions`, `stds.schema-org.CreativeWork` and the training-mining opt-out. No CAWG identity assertion is written yet (see "CAWG identity" below)
 
 ## Quick start
 
 ### Prerequisites
 
-- Node.js 22+
+- Node.js 24+
 - PostgreSQL 16+ (Docker Compose config included; local install also works)
 
 ### Setup
@@ -61,14 +61,16 @@ On first launch you'll be prompted to create a project. Choose which modules to 
 - **Archival** — for historical/reference images from museums, archives, libraries
 - **Produced** (always on) — for original recordings, field audio, video, photos
 
-Set a storage path where imported files will be managed.
+Set a storage path where copied imports are kept. Files tracked in place (see below) stay where they are and need no storage path.
 
 ### 2. Import assets
 
 Go to **Import** and choose your asset type, then your import method:
 - **Upload** — drag and drop or browse files
-- **Scan folder** — point to a dump folder; the tool copies files into managed storage
+- **Scan folder** — point to a folder, optionally with its subfolders
 - **File path** — import a single file by path
+
+For scan and file path you choose between **keeping files where they are** (track in place, the default for produced media) and copying them into managed storage. In place suits video work: the edit project already links to the files, nothing is duplicated, and timelines match by path. The tracker never moves, renames or deletes an in-place file; Settings › Storage Integrity reports one that went missing or changed size.
 - **URL** (archival only) — download from a web source
 
 Metadata is extracted automatically. Fill in any gaps on the enrichment form, then confirm.
@@ -92,7 +94,7 @@ If you configure a Notion API key and database ID on your project, archival asse
 
 ### 6. C2PA manifest + export
 
-Under **Outputs**, each finished edit gets a composition view: the render playing above two lanes, picture and audio, coloured by origin class moment by moment, with mixed stretches (a graphic over a camera shot, a generated bed under narration) drawn as stripes. Import the sequence as Final Cut Pro XML from Premiere or Resolve, fix any clip the matcher could not place, and set origin classes from the clip list. The Statement, Credentials and Export tabs follow in later phases.
+Under **Outputs**, each finished edit gets a composition view: the render playing above two lanes, picture and audio, coloured by origin class moment by moment, with mixed stretches (a graphic over a camera shot, a generated bed under narration) drawn as stripes. Import the sequence as Final Cut Pro XML from Premiere or Resolve, fix any clip the matcher could not place, and set origin classes from the clip list. The **Statement** tab holds your creator statement beside exactly what will be signed (the numbers per lane and one row per ingredient, with its class, who set it, the file's own credentials and your note). The **Credentials** tab signs a new copy of the edit. The **Export** tab turns a signed copy into the public export: one JSON file (`<name>.provenance.json`) with the composition strip, the statement, the ingredients by public title, the signed file's SHA-256 and how its signature read back. It is built from the signed copy's record, not the live timeline, so it always matches that file; it holds file names but no paths. The format is `schemas/public-export.v1.schema.json`. The [public viewer](public-viewer/README.md) renders it on any web page, beside a YouTube embed or the video file. A copy signed before statement v2 has no strip to export; sign it again.
 
 ### 7. Signing assets with Content Credentials
 
@@ -105,40 +107,81 @@ Any produced or AI asset that arrives without an embedded C2PA manifest (most El
 npm run cert:generate
 ```
 
-Then in **Project Settings**, paste the printed paths into the C2PA signing section. Optionally fill in a CAWG identity URL + name to embed a `cawg.identity` assertion pointing at your hosted identity document (see CAWG section below).
+Then in **Project Settings**, paste the printed paths into the C2PA signing section. Once saved, the paths stay on the server: the page shows only that signing is configured, and you type a path again only to replace it. Optionally fill in an identity URL (a page that says who you are); it is written as the author's link.
 
 **Signing a single asset:**
 
-On any produced or AI asset detail page that lacks Content Credentials, click **Sign with Content Credentials**. The modal pre-fills creator/organization/CAWG fields from the project, and the tool name from the asset's platform/equipment. Confirm and the tracker:
+On any produced or AI asset detail page that lacks Content Credentials, click **Sign with Content Credentials**. Set the asset's origin class first: the manifest declares it as how the file was made. Signing runs through the bundled `c2patool` (not the native binding, which Windows Smart App Control can block). The tracker:
 
-1. Reads cert + key from the configured paths
-2. Builds a manifest with `c2pa.actions`, `stds.schema-org.CreativeWork`, `c2pa.training-mining` opt-out, and (if configured) `cawg.identity`
-3. Writes a `<basename>.signed.<ext>` copy alongside the original
-4. Updates the asset record to point at the signed copy; preserves the unsigned path on `originalFilePath`
+1. Builds a manifest with `c2pa.actions.v2` (`c2pa.created` with the class as its IPTC digital source type), `stds.schema-org.CreativeWork` and the `c2pa.training-mining` opt-out
+2. Writes it to a `.c2pa` sidecar beside the file, named like it (`take.mp4` gets `take.c2pa`), optionally with a DigiCert time stamp. C2PA readers find a sidecar by that name. Signing again keeps the previous one as `take.v1.c2pa`
+3. Reads it back and lists it under **Signatures** with its status
 
-The original is never deleted. Assets re-signed against an already-signed file write a new `.signed.signed` — handy for layering iterations during development.
+The file and the asset record are never changed, so nothing is duplicated and edit projects keep their links. A file that already carries its own Content Credentials (a camera clip, a Firefly render) is not signed at ingest; its credentials are its provenance and are carried into any output you sign.
+
+**Signing a finished edit:** on the output's **Credentials** tab. The export is the parent, every tracked asset on the timeline is a placed ingredient with its class, and the creator statement is the `org.provenancetracker.creator_statement` assertion. Ingredients that carry their own credentials, embedded or in a sidecar, keep them inside the signed file. This is the one place the tracker writes a full new file: `<name>.signed.v<N>.<ext>`, because platforms and viewers only read what is inside the file. Set **public titles** first (on each asset's page, and for the film on the Statement tab): they are the names the public viewer shows, and they are signed into the statement.
 
 **About the dev cert:**
 
-The generator produces a two-step chain (a self-issued root CA + an end-entity signing cert) because c2pa-rs rejects fully self-signed leaves. Signatures from this cert verify cryptographically but won't appear as "trusted publisher" on contentcredentials.org — the trust signal is meant to come from the CAWG identity assertion (see below), not the cert chain. For production use a CA-issued cert.
+The generator produces a two-step chain (a self-issued root CA + an end-entity signing cert) because c2pa-rs rejects fully self-signed leaves. Signatures from this cert verify cryptographically but won't appear as "trusted publisher" on contentcredentials.org — so the tracker reports them as "Valid, unrecognised issuer". For production use a CA-issued cert.
 
 ### CAWG identity (current state)
 
-The tracker embeds a `cawg.identity` assertion in CAWG-1.2's declarative shape — `signer_payload` carries the identity URL and name, with `sig_type: cawg.x509.cose.unsigned`. Full COSE-signed CAWG identity is deferred to v0.3 (see TODO in [`c2pa-sign.js`](src/server/lib/extraction/c2pa-sign.js)) and depends on either c2pa-node exposing first-class CAWG signing or a public CAWG identity-claims-aggregation provider going live.
-
-For now, the assertion functions as a structured pointer at your hosted identity document. Strict CAWG verifiers will report it as unsigned; permissive readers (including contentcredentials.org) will surface the URL + name. This is by design — the project intentionally surfaces the gap between what individual creators / SMBs can sign today vs. what verified CAWG identity will eventually look like.
+The tracker does not write a CAWG identity assertion today. Earlier versions wrote an unsigned one (`signature: null`); current C2PA readers reject that and report the whole manifest as invalid (`assertion.required.missing`), so it was removed in phase 4c. The identity URL from Project Settings is carried on the CreativeWork author instead. A signed CAWG identity assertion (X.509) is possible through c2patool's `[cawg_x509_signer]` settings and is planned; see `docs/planned-features.md`.
 
 ## Deployment notes
 
-Provenance Tracker is designed as a **local tool**. It ships with no authentication, no rate-limiting on inbound requests, and assumes a trusted single-user environment. The dev server listens on all interfaces.
+Provenance Tracker is a **local, single-user tool** with no login. What keeps it private is that only your own machine can reach it:
 
-Do **not** expose the Express server (port 3001) or the built client directly to the public internet. If you need remote access:
+- The server listens on `127.0.0.1` only, and so does the Vite dev server. Another device on the same network cannot connect.
+- The API answers only the tracker's own pages. A request whose `Host` is not this machine, whose `Origin` is another page, or that the browser labels cross-site gets a 403. This stops a web page you happen to visit from driving the local API.
+- The file preview serves image, video and audio files only.
+- The bundled Docker file publishes Postgres on `127.0.0.1` only.
 
-- Put the app behind a reverse proxy with authentication (e.g. nginx + basic auth, Cloudflare Access, Tailscale)
-- Serve over HTTPS
-- Consider isolating the Postgres instance — the connection string in `.env` is unencrypted
+What this does and does not protect is set out in [docs/threat-model.md](docs/threat-model.md). What the tracker sends off your machine (a time-stamp request when signing, and the optional Wikimedia and Notion features) is listed in [docs/network.md](docs/network.md). To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 For single-user local work, `npm run dev` (development) or `npm start` (production build served from `dist/`) is the intended usage pattern.
+
+**Reaching it from another machine.** Not the intended use, and there is still no login, so you must add one. Put the app behind a reverse proxy that authenticates (nginx with basic auth, Cloudflare Access, Tailscale Serve), serve it over HTTPS, and then:
+
+- Set `HOST` to the address to listen on (`0.0.0.0` for every interface).
+- Set `ALLOWED_HOSTS` to the host name people type, for example `tracker.example.net`. Without it every request from outside is refused. It names a host; it is not a password.
+- Have the proxy pass the `Host` header through unchanged. The API compares it with `Origin`.
+
+Never expose port 3001 directly to the internet.
+
+### Running a copy on a second machine (for a demo)
+
+To show the dashboard from a laptop, copy the code, the database and the media, and treat the copy as read-only: no imports and no signing there, so the main machine stays the record. Signing certificates are not needed on the copy.
+
+**What the copy needs.** The database stores absolute file paths. Files tracked in place (D12) must exist at the same paths on the second machine, or the integrity check reports them as missing and previews do not play. Managed copies live in `data/` (gitignored), which is copied too.
+
+1. **On the main machine**, back up the database and copy the backup, `.env` and the media to the second machine by hand (USB drive or your own cloud storage, never through git):
+   ```bash
+   pg_dump --format=custom --no-owner --no-privileges --file provenance_full_YYYY-MM-DD.dump --dbname "<DATABASE_URL from .env>"
+   ```
+2. **Make the paths match.** On macOS or Linux, a symlink at the original path is enough. On Windows the paths start with a drive letter; two ways to have the same letter after every restart:
+   - **An external drive** holding the media: in Disk Management, right-click its volume, *Change Drive Letter and Paths*, and give it the letter the main machine uses. Windows remembers the letter for that drive, and the laptop's own disk stays free.
+   - **A folder shown as a drive**, persistent across restarts (unlike `subst`). In an administrator PowerShell, then restart once:
+     ```powershell
+     New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\DOS Devices' -Name 'P:' -PropertyType String -Value '\??\C:\Demo\P'
+     # to undo: Remove-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\DOS Devices' -Name 'P:'
+     ```
+3. **On the second machine**, install Node 24, Git and PostgreSQL 16 or later (a native install is lighter than Docker Desktop), then:
+   ```bash
+   git clone https://github.com/Origen-Story/provenance-tracker.git   # into the same path as on the main machine
+   cd provenance-tracker
+   git checkout <branch the main machine runs>
+   npm install
+   # put the copied .env in the repo root, and the copied data/ folder beside it
+   # the user, password and database name come from DATABASE_URL (postgres://user:password@host:port/database)
+   psql -U postgres -c "CREATE ROLE <user> LOGIN PASSWORD '<password>'"
+   createdb -U postgres -O <user> <database>
+   pg_restore --no-owner --no-privileges --dbname "<DATABASE_URL from .env>" provenance_full_YYYY-MM-DD.dump
+   npm run db:migrate   # should find nothing to apply
+   npm run dev
+   ```
+4. **Before the demo**, open a few assets and the timeline view to check that previews play and nothing is reported missing.
 
 ## What gets extracted automatically
 
@@ -146,9 +189,10 @@ For single-user local work, `npm run dev` (development) or `npm start` (producti
 |----------|-----------------|------------------------|
 | **ComfyUI** | Full prompt, negative prompt, model, seed, steps, CFG, sampler, scheduler, dimensions, LoRAs | Description, generation date |
 | **MidJourney** | Full prompt, model version, seed, stylize, aspect ratio, C2PA timestamp | Description |
-| **Meta.ai** | Digital source type (XMP), partial prompt from filename | Full prompt, model, generation date |
 | **Freepik** | C2PA manifest, digital source type (XMP) | Prompt, model, generation date |
 | **Other** | EXIF data, file hash, dimensions | Most fields |
+
+Adobe Firefly, ElevenLabs, Topaz Video AI and Topaz Gigapixel files are recognised too; each parser is one module under `src/server/lib/extraction/parsers/`. There is no Meta.ai parser: those files fall under "Other", and a digital source type in their XMP is still read by the classifier.
 
 ## Tech stack
 
@@ -183,6 +227,8 @@ src/
       produced/              # Produced asset CRUD
     routes/                  # Express route handlers
     index.js                 # Express entry point
+public-viewer/               # Static public page section for a signed film (no build step); see its README
+schemas/                     # JSON Schema of the public export
 ```
 
 ## Database tables
@@ -207,27 +253,27 @@ src/
 npm run dev              # Start Express + Vite dev servers
 npm run build            # Production client build
 npm start                # Production server (serves dist/ + API)
-npm run db:push          # Push schema to DB (dev shortcut — see Database section)
-npm run db:generate      # Generate migrations from schema
+npm run db:generate      # Generate a migration from schema.js
 npm run db:migrate       # Run pending migrations
+npm test                 # Unit tests, inside the repo guard
 ```
 
 ## Database
 
 The schema lives in [`src/server/db/schema.js`](src/server/db/schema.js); migrations live in [`src/server/db/migrations/`](src/server/db/migrations/).
 
-**For development** (your own local DB), `npm run db:push` is the fast path — it diffs your `schema.js` against the DB and applies changes immediately. Handy while iterating on schema, but it bypasses migration tracking and can silently drop columns.
-
-**For deployed installs and any shared environment**, use generated migrations:
+Every schema change goes through a generated migration:
 
 ```bash
 # After changing schema.js
 npm run db:generate     # produces src/server/db/migrations/NNNN_*.sql
-# ...review the generated SQL, commit it...
+# ...review the generated SQL, add IF NOT EXISTS to each CREATE TABLE and ADD COLUMN, commit it...
 npm run db:migrate      # applies any unapplied migrations to the DB
 ```
 
-A fresh clone should run `npm run db:migrate` (not `db:push`) against a new Postgres to build the schema from the committed migration history. The baseline migrations through v0.1.0 are already in the repo.
+A fresh clone runs `npm run db:migrate` against a new Postgres to build the schema from the committed migration history.
+
+Do not use `drizzle-kit push` (the `db:push` script): it bypasses migration tracking and can silently drop columns. Why the SQL is made idempotent is in [docs/decisions.md](docs/decisions.md), D6.
 
 ## Environment
 
@@ -237,6 +283,8 @@ Copy `.env.example` to `.env`:
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `PORT` | No | Express port (default: 3001) |
+| `HOST` | No | Address the server listens on (default: `127.0.0.1`, this machine only). Change it only behind a proxy that adds a login; see Deployment notes |
+| `ALLOWED_HOSTS` | No | Comma-separated host names the API answers to beside `localhost`, for use with `HOST` |
 | `NOTION_API_KEY` | No | Notion integration token (for archival sync) |
 | `APP_CONTACT` | Recommended (archival) | Email or URL sent in the User-Agent on outbound HTTP. Wikimedia's policy requires identification — unidentified clients are throttled or blocked, which makes Archive Search unreliable. |
 | `STORAGE_PATH` | No | Root folder for downloaded archival images (default: `./data`) |

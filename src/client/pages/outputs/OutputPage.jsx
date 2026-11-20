@@ -7,6 +7,9 @@ import OriginBadge from '../../components/origin/OriginBadge.jsx';
 import InlineClassSetter from '../../components/origin/InlineClassSetter.jsx';
 import AssetPicker from '../../components/origin/AssetPicker.jsx';
 import { DETAIL_PATHS } from '../../components/origin/originClasses.js';
+import StatementPanel from './StatementPanel.jsx';
+import CredentialsPanel from './CredentialsPanel.jsx';
+import ExportPanel from './ExportPanel.jsx';
 
 async function jsonOrThrow(r) {
 	const j = await r.json();
@@ -16,9 +19,9 @@ async function jsonOrThrow(r) {
 
 const TABS = [
 	{ id: 'composition', label: 'Composition' },
-	{ id: 'statement', label: 'Statement', soon: 'Creator statement (phase 4c)' },
-	{ id: 'credentials', label: 'Credentials', soon: 'Sign and verify (phase 4c)' },
-	{ id: 'export', label: 'Export', soon: 'Public export (phase 4d)' }
+	{ id: 'statement', label: 'Statement' },
+	{ id: 'credentials', label: 'Credentials' },
+	{ id: 'export', label: 'Export' }
 ];
 
 function ImportForm({ producedId, replace, onDone }) {
@@ -208,6 +211,10 @@ export default function OutputPage() {
 					</div>
 				</div>
 			)}
+
+			{t && tab === 'statement' && <StatementPanel producedId={id} segments={t.segments} />}
+			{t && tab === 'credentials' && <CredentialsPanel producedId={id} />}
+			{t && tab === 'export' && <ExportPanel producedId={id} />}
 		</div>
 	);
 }

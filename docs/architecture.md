@@ -9,7 +9,7 @@ Explanations that used to live in `CLAUDE.md`. `CLAUDE.md` is rules only; this f
 - **Database:** PostgreSQL via Drizzle ORM + `pg`
 - **Build:** Vite with `@vitejs/plugin-react`
 - **Dev:** `concurrently` runs Express (port 3001) and the Vite dev server (port 5173, proxies `/api` to Express)
-- **Extraction:** `exiftool-vendored` (EXIF and container tags, including video duration, frame rate and codec), `c2pa-node` (C2PA read and sign) with `c2patool` as a fallback reader (see `tools/README.md` once it lands), `png-chunks-extract`
+- **Extraction:** `exiftool-vendored` (EXIF and container tags, including video duration, frame rate and codec), `c2pa-node` (C2PA read, optional) with the bundled `c2patool` as the fallback reader and the only signer, `png-chunks-extract`
 
 ## Project structure
 
@@ -56,7 +56,12 @@ Why idempotent: a private downstream fork of this repo carries its own migration
 - `archival_assets`: archival images (museums, archives, historical sources)
 - `produced_assets`: original recordings (audio, video, photos)
 - `asset_relationships`: links between any two assets as `(type, id)` pairs across the three asset tables (D4), with `relationship_type` (`ingredient`, `derived_from`, `output_of`), `match_method` and `confidence`. No foreign keys; each table's delete function removes its rows.
-- `manifests`: C2PA Content Credentials manifests
+- `manifests`: legacy, unused (empty); superseded by `signatures`
+- `creator_statements`: the creator statement for an output (words and author; the numbers are built at sign time)
+- `in_place` on `assets`, `archival_assets`, `produced_assets` (D12): the row's `file_path` is the file where it already lived, not a managed copy
+- Public export (phase 4d): `src/server/lib/manifest/public-export.js` (pure) builds it from one `signatures` row of kind `output`; schema `schemas/public-export.v1.schema.json`; `GET /api/outputs/:id/public-export?signature=<id>&download=1`. c2patool does not keep our ingredient labels in its read-back (it renames them `c2pa.ingredient.v3`, `__1`, ... in the order given), so read-back entries are paired with statement ingredients by position and file name
+- `public_title` on the same three tables: the name the public viewer shows, empty for the file name. Signed into the creator statement (v2) as `publicTitle` on the output and each ingredient; the C2PA ingredient `title` stays the file name. Statement v3 adds `originClass` and `position` to each `unresolved` clip (a nested sequence or unmatched clip classed by hand), so the public viewer can list it under its kind; the export still leaves clip names out
+- `signatures`: every signed copy of an asset or output: the new file, its hash, the manifest definition without key paths, the c2patool read-back and its status
 - `search_groups`, `search_jobs`, `search_candidates`: Wikimedia archive search
 - `project_config`: legacy single-project config (kept for migration)
 
@@ -103,14 +108,26 @@ Copy `.env.example` to `.env`:
 
 - `DATABASE_URL`: PostgreSQL connection string
 - `PORT`: Express port (default 3001)
+- `HOST`: address the server listens on (default `127.0.0.1`). `ALLOWED_HOSTS`: comma-separated host names the API answers to beside the loopback ones.
 - `NOTION_API_KEY`: optional, for Notion sync (archival module)
 - `APP_CONTACT`: email or URL sent in the User-Agent on outbound HTTP. Wikimedia's policy requires identification; unidentified clients are throttled. Centralised in `src/server/lib/user-agent.js`.
+
+## Local-only API
+
+There is no login, so reach is the access control. Two layers, both in `src/server/lib/core/local-only.js` (pure, unit-tested) and wired in `src/server/index.js`:
+
+- **Bind.** `app.listen(PORT, HOST)` with `HOST` defaulting to `127.0.0.1`. Other devices get a refused connection.
+- **Request check.** `localOnly` is the first middleware on `/api`, before any body is parsed. It refuses a `Host` header that is not a loopback name (DNS rebinding), an `Origin` that is not the same host and port as `Host` (another site's form post, which needs no CORS preflight), and anything the browser marks `Sec-Fetch-Site: cross-site`.
+
+The Vite proxy must forward the browser's `Host` unchanged for the second rule to pass in development, which is why `vite.config.js` uses the long proxy form with `changeOrigin: false` (the short string form sets it to `true`).
+
+Three smaller rules live beside it: `/api/preview` serves image, video and audio only (`isPreviewable`); a project leaves the API through `toProjectResponse`, which drops the signing paths; and update and import routes take request fields from named lists (`archival/fields.js`, `core/import-rules.js`). The reasoning and the limits are in `docs/threat-model.md`; what leaves the machine is in `docs/network.md`.
 
 ## External integrations
 
 - **Notion** (optional): syncs archival assets to a Notion database, configured per project. API key is global in `.env`.
 - **ExifTool**: vendored via `exiftool-vendored`.
-- **C2PA**: `c2pa-node` for reading and signing; `c2patool` fallback for manifests newer than the bindings.
+- **C2PA**: reading tries `c2pa-node` and falls back to `c2patool`. Signing (phase 4c) is c2patool only: `src/server/lib/manifest/build.js` builds the manifest definition (pure), `c2patool.js` signs an output into a new `<name>.signed.v<N>.<ext>` (embedded) and a source asset into a `<name>.c2pa` sidecar (D13), then reads it back, `verify.js` turns the report into a status (`unrecognised_issuer` is the expected status for the dev certificate). Ingredients go in through `c2patool -i` records, with a sidecar attached as the record's manifest store when the file has one (`-i` reads embedded credentials only), so an ingredient with its own credentials keeps them inside the signed file. The asset row is never repointed at a signed copy; signed copies are rows in `signatures`.
 
 ## Testing
 

@@ -23,6 +23,13 @@
 // - Still images get a huge source duration and in/out offsets around
 //   107892; only start/end on the sequence matter for screen time.
 // - pathurl is file://localhost/P%3a/... with a percent-encoded drive colon.
+// - A clip edge inside a transition is written as -1. The clip plays through
+//   the transition, so a -1 start is the start of the transition before it
+//   and a -1 end is the end of the transition after it. Without a transition
+//   on the track, the edge comes from the clip's length (out - in).
+// - The sequence <duration> can be shorter than the clips on it (seen in a
+//   Premiere 2026 export whose rendered file ran to the last clip); the
+//   duration is the later of the two.
 import { XMLParser } from 'fast-xml-parser';
 
 export const id = 'xmeml';
@@ -134,6 +141,37 @@ function parseClip(item, fileDefs, notes) {
 	return clip;
 }
 
+/**
+ * Replace -1 clip edges (an edge inside a transition) with sequence frames.
+ * Pure; exported for tests. `transitions` are [{ start, end }] on the same track.
+ */
+export function resolveTransitionEdges(clips, transitions, notes = []) {
+	const ts = transitions.filter(t => t.start >= 0 && t.end >= t.start);
+	const length = (c) => (c.outFrame > c.inFrame ? c.outFrame - c.inFrame : null);
+	const fromStartTransition = (end) => ts.filter(t => t.start < end && t.end <= end).sort((a, b) => b.end - a.end)[0]?.start;
+	const fromEndTransition = (start) => ts.filter(t => t.start >= start && t.end > start).sort((a, b) => a.start - b.start)[0]?.end;
+	for (const c of clips) {
+		const startOpen = c.startFrame < 0;
+		const endOpen = c.endFrame < 0;
+		if (!startOpen && !endOpen) continue;
+		if (startOpen && !endOpen) c.startFrame = fromStartTransition(c.endFrame) ?? (length(c) != null ? c.endFrame - length(c) : -1);
+		else if (endOpen && !startOpen) c.endFrame = fromEndTransition(c.startFrame) ?? (length(c) != null ? c.startFrame + length(c) : -1);
+		else {
+			// Both edges in transitions: find the pair whose gap matches the clip's length.
+			const len = length(c);
+			const pair = len == null ? null : ts.flatMap(a => ts.filter(b => b.start > a.start).map(b => [a, b])).find(([a, b]) => Math.abs((b.end - a.start) - len) <= 1);
+			if (pair) { c.startFrame = pair[0].start; c.endFrame = pair[1].end; }
+		}
+		if (c.startFrame < 0 || c.endFrame < 0) {
+			notes.push(`clip ${c.id} (${c.name}) has an edge inside a transition that could not be placed; it is left out of screen time`);
+			c.startFrame = Math.max(c.startFrame, 0);
+			c.endFrame = Math.max(c.endFrame, 0);
+			if (c.endFrame <= c.startFrame) c.endFrame = c.startFrame;
+		}
+	}
+	return clips;
+}
+
 function parseTracks(mediaNode, kind, fileDefs, notes) {
 	const tracks = [];
 	const list = mediaNode?.track || [];
@@ -143,6 +181,8 @@ function parseTracks(mediaNode, kind, fileDefs, notes) {
 		for (const g of t.generatoritem || []) {
 			clips.push({ ...parseClip(g, fileDefs, notes), sourceKind: 'generator' });
 		}
+		const transitions = (t.transitionitem || []).map(x => ({ start: num(x.start, -1), end: num(x.end, -1) }));
+		resolveTransitionEdges(clips, transitions, notes);
 		clips.sort((a, b) => a.startFrame - b.startFrame);
 		tracks.push({
 			kind,
@@ -195,6 +235,9 @@ export function parse(xmlText) {
 		...parseTracks(video, 'video', fileDefs, notes),
 		...parseTracks(audio, 'audio', fileDefs, notes)
 	];
+	const declared = num(seq.duration, 0);
+	const lastEnd = Math.max(0, ...tracks.flatMap(t => t.clips.filter(c => c.enabled).map(c => c.endFrame)));
+	if (lastEnd > declared) notes.push(`the sequence declares ${declared} frames but its clips run to frame ${lastEnd}; using ${lastEnd}`);
 
 	return {
 		format: id,
@@ -204,7 +247,7 @@ export function parse(xmlText) {
 			timebase: rate.timebase,
 			ntsc: rate.ntsc,
 			fps: rate.fps,
-			durationFrames: num(seq.duration, 0),
+			durationFrames: Math.max(declared, lastEnd),
 			width: num(vformat?.width, 0),
 			height: num(vformat?.height, 0),
 			startTimecode: text(tc?.string) || ''

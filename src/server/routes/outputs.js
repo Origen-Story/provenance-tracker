@@ -6,6 +6,8 @@ import { Router } from 'express';
 import { getActiveProject } from '../lib/projects.js';
 import { getProducedAsset, markOutput } from '../lib/produced/produced.js';
 import { listOutputs } from '../lib/timeline/timelines.js';
+import { previewStatement, saveStatement, signOutput, listSignatures, publicExportFor } from '../lib/manifest/signing.js';
+import { DEFAULT_TIMESTAMP_URL } from '../lib/manifest/generator.js';
 
 const router = Router();
 
@@ -26,6 +28,71 @@ router.patch('/:id', async (req, res) => {
 		res.json(await markOutput(id, 'user', req.body.isOutput));
 	} catch (err) {
 		res.status(400).json({ error: err.message });
+	}
+});
+
+// Phase 4c: the creator statement and the signed copies of an output.
+async function outputInProject(req, res) {
+	const id = parseInt(req.params.id);
+	const project = await getActiveProject();
+	const asset = Number.isInteger(id) ? await getProducedAsset(id) : null;
+	if (!asset || !project || asset.projectId !== project.id) {
+		res.status(404).json({ error: 'Produced asset not found in the active project' });
+		return null;
+	}
+	return { id, project, asset };
+}
+
+// GET: the saved words plus the statement exactly as it would be signed now.
+router.get('/:id/statement', async (req, res) => {
+	const ctx = await outputInProject(req, res);
+	if (!ctx) return;
+	try {
+		res.json(await previewStatement(ctx.project, ctx.id));
+	} catch (err) {
+		res.status(500).json({ error: err.message });
+	}
+});
+
+router.put('/:id/statement', async (req, res) => {
+	const ctx = await outputInProject(req, res);
+	if (!ctx) return;
+	const { text, authorName, organization, softwareAgent } = req.body || {};
+	await saveStatement(ctx.project.id, ctx.id, { text, authorName, organization, softwareAgent });
+	res.json(await previewStatement(ctx.project, ctx.id));
+});
+
+router.get('/:id/signatures', async (req, res) => {
+	const ctx = await outputInProject(req, res);
+	if (!ctx) return;
+	res.json({ signatures: await listSignatures('produced', ctx.id), certificateConfigured: !!(ctx.project.certificatePath && ctx.project.privateKeyPath) });
+});
+
+// POST { timestamp: true|false } — sign a new versioned copy.
+router.post('/:id/sign', async (req, res) => {
+	const ctx = await outputInProject(req, res);
+	if (!ctx) return;
+	try {
+		const timestampUrl = req.body?.timestamp === false ? '' : DEFAULT_TIMESTAMP_URL;
+		res.json(await signOutput(ctx.project, ctx.id, { timestampUrl }));
+	} catch (err) {
+		res.status(err.status || 500).json({ error: err.message });
+	}
+});
+
+// The public export of a signed copy, as JSON. ?signature=<id> picks a copy
+// (default: the latest); ?download=1 sends it as a file.
+router.get('/:id/public-export', async (req, res) => {
+	const ctx = await outputInProject(req, res);
+	if (!ctx) return;
+	const signatureId = req.query.signature != null ? parseInt(req.query.signature) : undefined;
+	if (signatureId !== undefined && !Number.isInteger(signatureId)) return res.status(400).json({ error: 'signature must be an integer id' });
+	try {
+		const { data, fileName } = await publicExportFor(ctx.project, ctx.id, { signatureId });
+		if (req.query.download) res.attachment(fileName);
+		res.type('application/json').send(JSON.stringify(data, null, 2));
+	} catch (err) {
+		res.status(err.status || 500).json({ error: err.message });
 	}
 });
 

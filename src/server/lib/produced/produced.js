@@ -63,6 +63,7 @@ export async function createProducedAsset(projectId, data) {
 		name: data.name || '',
 		filename: data.filename || '',
 		filePath: data.filePath,
+		inPlace: !!data.inPlace,
 		fileHash: data.fileHash || '',
 		fileSize: data.fileSize || 0,
 		mimeType: data.mimeType || '',
@@ -109,20 +110,4 @@ export async function updateProducedAsset(id, updates) {
 export async function deleteProducedAsset(id) {
 	await removeRelationshipsFor('produced', id);
 	await db.delete(producedAssets).where(eq(producedAssets.id, id));
-}
-
-// Called after a successful c2pa-sign run. Repoints filePath at the signed
-// copy, refreshes hash/size/mime, stores the manifest summary, and stashes
-// the unsigned original's path on originalFilePath.
-export async function applySignature(id, { signedPath, fileHash, fileSize, mimeType, c2paJson, originalFilePath }) {
-	await db.update(producedAssets).set({
-		filePath: signedPath,
-		fileHash,
-		fileSize,
-		mimeType,
-		c2paJson,
-		originalFilePath,
-		updatedAt: sql`now()`
-	}).where(eq(producedAssets.id, id));
-	return getProducedAsset(id);
 }

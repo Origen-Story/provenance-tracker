@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import SignAssetModal from '../../components/SignAssetModal.jsx';
+import SignedCopies from '../../components/SignedCopies.jsx';
 import OriginClassControl from '../../components/origin/OriginClassControl.jsx';
+import PublicTitleField from '../../components/origin/PublicTitleField.jsx';
 import RelationshipsPanel from '../../components/origin/RelationshipsPanel.jsx';
 
 const PLATFORM_LABELS = { freepik: 'Freepik', comfyui: 'ComfyUI', midjourney: 'Midjourney', firefly: 'Adobe Firefly', elevenlabs: 'ElevenLabs', 'topaz-video-ai': 'Topaz Video AI', 'topaz-gigapixel': 'Topaz Gigapixel', unknown: 'Unknown' };
@@ -164,6 +166,7 @@ export default function AIAssetDetail() {
 					</div>
 
 					<OriginClassControl type="ai" id={id} asset={asset} queryKeys={[['asset', id], ['assets']]} />
+					<PublicTitleField type="ai" id={id} asset={asset} fileName={asset.filename || asset.filePath?.split(/[\\/]/).pop()} queryKeys={[['asset', id], ['assets']]} />
 					<RelationshipsPanel type="ai" id={id} queryKeys={[['asset', id], ['assets']]} />
 
 					{/* Novelty + re-extract controls. Re-extract replays current parsers against stored
@@ -216,6 +219,7 @@ export default function AIAssetDetail() {
 							</button>
 						</div>
 					)}
+					<SignedCopies type="ai" id={id} />
 
 					{/* EXIF accordion */}
 					{exifData && Object.keys(exifData).length > 0 && (

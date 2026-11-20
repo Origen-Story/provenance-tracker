@@ -23,6 +23,7 @@ export default function ProjectSettings() {
 	const [notionGroupProperty, setNotionGroupProperty] = useState('');
 	const [certificatePath, setCertificatePath] = useState('');
 	const [privateKeyPath, setPrivateKeyPath] = useState('');
+	const [clearSigning, setClearSigning] = useState(false);
 	const [cawgIdentityUrl, setCawgIdentityUrl] = useState('');
 	const [cawgIdentityName, setCawgIdentityName] = useState('');
 	const [saved, setSaved] = useState(false);
@@ -37,8 +38,11 @@ export default function ProjectSettings() {
 			setNotionEnabled(project.notionEnabled || false);
 			setNotionDbId(project.notionArchivalDbId || '');
 			setNotionGroupProperty(project.notionGroupProperty || '');
-			setCertificatePath(project.certificatePath || '');
-			setPrivateKeyPath(project.privateKeyPath || '');
+			// The saved signing paths are never sent to the browser; the project
+			// carries `signingConfigured` only. These two start empty on every load.
+			setCertificatePath('');
+			setPrivateKeyPath('');
+			setClearSigning(false);
 			setCawgIdentityUrl(project.cawgIdentityUrl || '');
 			setCawgIdentityName(project.cawgIdentityName || '');
 		}
@@ -82,8 +86,11 @@ export default function ProjectSettings() {
 			notionEnabled,
 			notionArchivalDbId: notionDbId,
 			notionGroupProperty,
-			certificatePath,
-			privateKeyPath,
+			// A signing path is sent only when a new one was typed.
+			...(clearSigning ? { clearSigning: true } : {
+				...(certificatePath.trim() ? { certificatePath: certificatePath.trim() } : {}),
+				...(privateKeyPath.trim() ? { privateKeyPath: privateKeyPath.trim() } : {})
+			}),
 			cawgIdentityUrl,
 			cawgIdentityName
 		});
@@ -173,23 +180,34 @@ export default function ProjectSettings() {
 					<div className="space-y-3 border border-border rounded-lg p-4">
 						<p className="text-sm font-medium text-text-primary">C2PA signing</p>
 						<p className="text-xs text-text-secondary">Paths to a PEM certificate chain and matching private key. Run <code className="bg-border/40 px-1 rounded">npm run cert:generate</code> to create a self-signed dev cert. Required for the "Sign with Content Credentials" feature on asset detail pages.</p>
+						<p className={`text-xs rounded-lg px-3 py-2 border ${project?.signingConfigured ? 'bg-success/10 border-success/30 text-success' : 'bg-border/20 border-border text-text-secondary'}`}>
+							{project?.signingConfigured
+								? 'A certificate and key are saved for this project. The saved paths stay on the server and are not shown here; type a new path to replace one.'
+								: 'No certificate and key saved yet. Signing needs both.'}
+						</p>
 						<div>
 							<label className="block text-sm font-medium text-text-primary mb-1.5">Certificate path</label>
-							<input type="text" value={certificatePath} onChange={e => setCertificatePath(e.target.value)}
-								placeholder="certs/c2pa-dev-cert.pem"
-								className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm" />
+							<input type="text" value={certificatePath} onChange={e => setCertificatePath(e.target.value)} disabled={clearSigning}
+								placeholder={project?.signingConfigured ? 'Leave blank to keep the saved path' : 'certs/c2pa-dev-cert.pem'}
+								className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm disabled:opacity-40" />
 						</div>
 						<div>
 							<label className="block text-sm font-medium text-text-primary mb-1.5">Private key path</label>
-							<input type="text" value={privateKeyPath} onChange={e => setPrivateKeyPath(e.target.value)}
-								placeholder="certs/c2pa-dev-key.pem"
-								className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm" />
+							<input type="text" value={privateKeyPath} onChange={e => setPrivateKeyPath(e.target.value)} disabled={clearSigning}
+								placeholder={project?.signingConfigured ? 'Leave blank to keep the saved path' : 'certs/c2pa-dev-key.pem'}
+								className="w-full bg-card-bg border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-secondary focus:outline-none focus:border-accent font-mono text-sm disabled:opacity-40" />
 						</div>
+						{project?.signingConfigured && (
+							<label className="flex items-center gap-3 cursor-pointer">
+								<input type="checkbox" checked={clearSigning} onChange={e => setClearSigning(e.target.checked)} className="w-4 h-4 accent-accent" />
+								<span className="text-sm text-text-primary">Remove the saved certificate and key paths <span className="text-xs text-text-secondary">(the files themselves are not touched)</span></span>
+							</label>
+						)}
 					</div>
 
 					<div className="space-y-3 border border-border rounded-lg p-4">
-						<p className="text-sm font-medium text-text-primary">CAWG identity assertion</p>
-						<p className="text-xs text-text-secondary">Optional. URL to a hosted JSON identity document and a human-readable signer name. Embedded in every signed manifest as a <code className="bg-border/40 px-1 rounded">cawg.identity</code> assertion.</p>
+						<p className="text-sm font-medium text-text-primary">Creator identity</p>
+						<p className="text-xs text-text-secondary">Optional. A page that says who you are, and the name to sign as. The URL is written into signed files as the author's link. A signed CAWG identity assertion is not written yet.</p>
 						<div>
 							<label className="block text-sm font-medium text-text-primary mb-1.5">Identity URL</label>
 							<input type="text" value={cawgIdentityUrl} onChange={e => setCawgIdentityUrl(e.target.value)}

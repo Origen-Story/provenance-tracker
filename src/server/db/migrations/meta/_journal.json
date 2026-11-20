@@ -71,6 +71,27 @@
       "when": 1794420731138,
       "tag": "0009_origin_vocabulary",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794553925133,
+      "tag": "0010_daily_pete_wisdom",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794558563004,
+      "tag": "0011_mixed_kingpin",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794592568141,
+      "tag": "0012_fixed_shape",
+      "breakpoints": true
     }
   ]
 }

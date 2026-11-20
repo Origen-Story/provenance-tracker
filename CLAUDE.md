@@ -13,6 +13,7 @@ Local web app that records where multimedia assets came from (camera, archive, A
 - Schema changes: edit src/server/db/schema.js, `npm run db:generate`, make the SQL idempotent (IF NOT EXISTS) with a shell edit in the same commit, `npm run db:migrate`. Never `npm run db:push`. The guard hook blocks the file tools on migrations/ so that one edit is a deliberate step, not a habit.
 - Originals are never modified in place. Signing, re-encoding and exporting write a new file; the row keeps the original path.
 - Secrets live in .env and certs/ (both gitignored). Never read them into output, logs or commits. Deny rules and the guard hook block Claude's file tools there; shell commands are not blocked, so never write those paths from a shell either.
+- The API is local-only and has no login: `localOnly` stays the first middleware on `/api`, the server binds `HOST` (default 127.0.0.1), and the Vite proxy keeps `changeOrigin: false`. A project leaves the API through `toProjectResponse`, never as a raw row. Routes take request fields from a named list, never `req.body` whole.
 - Pure logic lives in src/server/lib/<area>/ as functions with unit tests. IO (database, filesystem, child processes, HTTP) lives in routes and thin wrappers.
 - Platform parsers and timeline formats are registry modules (see src/server/lib/extraction/parsers/index.js): add a module, register it, commit a fixture and a test.
 - This repo is public. No client, tour or production names in code, fixtures, example data or docs. Production-specific work lives in the private downstream repo (docs/decisions.md D1).
@@ -23,6 +24,7 @@ Local web app that records where multimedia assets came from (camera, archive, A
 
 ## Pointers
 - Architecture, queue behaviour, environment: docs/architecture.md
+- What the tool defends against, and what leaves the machine: docs/threat-model.md, docs/network.md
 - Decisions D1 to D8: docs/decisions.md
-- Session handoffs: docs/handoffs/NN_session_handoff_YYYY-MM-DD.md
+- Session handoffs: handoffs/NN_session_handoff_YYYY-MM-DD.md at the repo root. Gitignored and never committed; nothing goes in docs/handoffs/.
 - Planned work: docs/planned-features.md

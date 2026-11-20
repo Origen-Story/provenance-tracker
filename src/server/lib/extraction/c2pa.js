@@ -47,7 +47,7 @@ async function getC2pa() {
 //   3. `c2patool` on PATH — attempted lazily; if not present, fallback is
 //      simply unavailable.
 let c2patoolPath = null;
-function resolveC2patoolPath() {
+export function resolveC2patoolPath() {
 	if (c2patoolPath !== null) return c2patoolPath;
 
 	if (process.env.C2PATOOL_PATH) {

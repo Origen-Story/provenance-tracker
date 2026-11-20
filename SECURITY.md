@@ -18,7 +18,7 @@ Please do not include real private keys, credentials or other people's media in 
 
 ## What to expect
 
-This project has one maintainer. You should hear back within seven days. A confirmed problem is fixed on `main` first, and the fix and the reporter (if you want the credit) are named in the release notes. Please allow reasonable time for a fix before publishing details.
+This project has one maintainer. Replies are best effort, usually within two weeks. A confirmed problem is fixed on `main` first, and the fix and the reporter (if you want the credit) are named in the release notes. Please allow reasonable time for a fix before publishing details.
 
 ## Supported versions
 

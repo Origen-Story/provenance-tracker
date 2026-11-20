@@ -51,7 +51,8 @@ export default function SignAssetModal({ assetType, assetId, onClose, defaultIsA
 		}
 	});
 
-	const certConfigured = !!(project?.certificatePath && project?.privateKeyPath);
+	// The project response says only whether signing is set up, never the paths.
+	const certConfigured = !!project?.signingConfigured;
 
 	return (
 		<div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>

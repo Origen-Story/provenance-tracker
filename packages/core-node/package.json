@@ -1,0 +1,17 @@
+{
+	"name": "@provenancetracker/core-node",
+	"version": "0.2.0",
+	"private": true,
+	"description": "The parts of Provenance Tracker that touch this machine: opening catalogs, this machine's settings, media roots, the cloud-sync check and the command line. The logic stays in @provenancetracker/core.",
+	"license": "Apache-2.0",
+	"type": "module",
+	"exports": {
+		"./*": "./src/*"
+	},
+	"dependencies": {
+		"@provenancetracker/core": "0.2.0"
+	},
+	"engines": {
+		"node": ">=24"
+	}
+}

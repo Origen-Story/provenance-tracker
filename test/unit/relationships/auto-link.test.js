@@ -23,6 +23,19 @@ describe("topazSourceBasename", () => {
 			),
 		).toBe("freepik__wide-shot__86475");
 	});
+	it("matches the Gigapixel tail in any case, and cuts at the first one", () => {
+		expect(topazSourceBasename("Harbour-GIGAPIXEL-standard-4x.png")).toBe(
+			"Harbour",
+		);
+		expect(topazSourceBasename("a-gigapixel-x-gigapixel-y.png")).toBe("a");
+	});
+	it("stays fast on a hostile name (the old regex took ~500 ms here, growing with the square of the length)", () => {
+		// Many tails then a line break: /-gigapixel-.*$/ retried from every one.
+		const hostile = "a" + "-gigapixel-".repeat(8000) + "\nb.png";
+		const t0 = performance.now();
+		expect(topazSourceBasename(hostile)).toBe("a");
+		expect(performance.now() - t0).toBeLessThan(50);
+	});
 	it("returns null for ordinary names", () => {
 		expect(topazSourceBasename("PXL_20261102_180109038.mp4")).toBeNull();
 		expect(topazSourceBasename("interview_take3.wav")).toBeNull();

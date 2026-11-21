@@ -12,8 +12,10 @@
 		"skipLibCheck": true,
 		"erasableSyntaxOnly": true,
 		"verbatimModuleSyntax": true,
+		// Imports name the .ts file, as Node needs. rewriteRelativeImportExtensions
+		// is left out: it only matters when emitting, and it refuses package
+		// imports of .ts files (@provenancetracker/core/...), which Node runs (D28).
 		"allowImportingTsExtensions": true,
-		"rewriteRelativeImportExtensions": true,
 		"isolatedModules": true,
 		"forceConsistentCasingInFileNames": true,
 		// Existing JavaScript is read but not checked; a file is checked once it

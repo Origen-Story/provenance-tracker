@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
@@ -10,6 +12,17 @@ export default defineConfig({
 		],
 		// Server-only tests today; the React tree would need a DOM env if/when we add it.
 		globals: false,
+		// A safety net under core-node's rule that tests pass a machine of their
+		// own: anything that reaches for this machine's settings file gets a
+		// throwaway one instead. The repo guard cannot see the real file, which
+		// lives outside the checkout.
+		env: {
+			PROVENANCETRACKER_SETTINGS: path.join(
+				tmpdir(),
+				"provenancetracker-tests",
+				"settings.json",
+			),
+		},
 		// vitest 4's default worker pool crashes on Windows at worker bootstrap with
 		// "Cannot read properties of undefined (reading 'config')" before any test
 		// runs. 'forks' (child processes) and 'threads' both work; forks is the

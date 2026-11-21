@@ -262,7 +262,23 @@ npm start                # Production server (serves dist/ + API)
 npm run db:generate      # Generate a migration from schema.js
 npm run db:migrate       # Run pending migrations
 npm test                 # Unit tests, inside the repo guard
+npm run cli -- help      # The command line (below)
 ```
+
+## Command line (early)
+
+The rebuild's first piece you can run: projects as folders, each with its own catalog (`<project>/.provenancetracker/catalog.sqlite`), and media roots that can be on any drive. It does not yet scan; the app still uses Postgres. See [D26](docs/decisions.md) and [D28](docs/decisions.md).
+
+```bash
+npm run cli -- settings person "Your Name"              # once per machine: the name your edits are recorded under
+npm run cli -- init "D:\Projects\Film" --name "Film"     # a new project
+npm run cli -- roots add footage "E:\Footage" --project "D:\Projects\Film"
+npm run cli -- roots --project "D:\Projects\Film"        # the roots, and where each is on this machine
+```
+
+Moving a project to another computer: copy the project folder, then on that computer point each root at its folder there with `roots locate <name> <folder>`. Which folder each root is in is kept per machine (in `%LOCALAPPDATA%\provenancetracker\settings.json` on Windows), never in the project.
+
+A project folder inside OneDrive, Dropbox, Google Drive, iCloud or Syncthing is refused: a sync client can corrupt the catalog while it is being written. Media roots there are allowed, with a warning.
 
 ## Database
 

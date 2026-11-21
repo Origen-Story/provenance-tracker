@@ -1,12 +1,12 @@
-import { db } from '../db/index.js';
-import { projects, assets } from '../db/schema.js';
-import { eq, count, sql } from 'drizzle-orm';
-import { existsSync } from 'fs';
-import { mkdir } from 'fs/promises';
-import path from 'path';
-import { signingPathUpdates } from './core/project-response.js';
+import { db } from "../db/index.js";
+import { projects, assets } from "../db/schema.js";
+import { eq, count, sql } from "drizzle-orm";
+import { existsSync } from "fs";
+import { mkdir } from "fs/promises";
+import path from "path";
+import { signingPathUpdates } from "./core/project-response.js";
 
-const MANAGED_FOLDERS = ['archival-images', 'ai-assets', 'produced-assets'];
+const MANAGED_FOLDERS = ["archival-images", "ai-assets", "produced-assets"];
 
 /**
  * Create managed storage directories for a project.
@@ -27,35 +27,47 @@ export async function listProjects() {
 }
 
 export async function getActiveProject() {
-	const [row] = await db.select().from(projects).where(eq(projects.isActive, true)).limit(1);
+	const [row] = await db
+		.select()
+		.from(projects)
+		.where(eq(projects.isActive, true))
+		.limit(1);
 	return row || null;
 }
 
 export async function getProject(id) {
-	const [row] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
+	const [row] = await db
+		.select()
+		.from(projects)
+		.where(eq(projects.id, id))
+		.limit(1);
 	return row || null;
 }
 
 export async function createProject(data) {
 	await db.update(projects).set({ isActive: false });
-	const [row] = await db.insert(projects).values({
-		name: data.name || 'Untitled Project',
-		description: data.description || '',
-		assetIdPrefix: data.assetIdPrefix || 'PROJ',
-		modules: data.modules || '["archival"]',
-		storagePath: data.storagePath || '',
-		notionEnabled: !!data.notionEnabled,
-		notionArchivalDbId: data.notionArchivalDbId || '',
-		notionGroupProperty: data.notionGroupProperty || '',
-		isActive: true
-	}).returning();
+	const [row] = await db
+		.insert(projects)
+		.values({
+			name: data.name || "Untitled Project",
+			description: data.description || "",
+			assetIdPrefix: data.assetIdPrefix || "PROJ",
+			modules: data.modules || '["archival"]',
+			storagePath: data.storagePath || "",
+			notionEnabled: !!data.notionEnabled,
+			notionArchivalDbId: data.notionArchivalDbId || "",
+			notionGroupProperty: data.notionGroupProperty || "",
+			isActive: true,
+		})
+		.returning();
 	await ensureStorageFolders(row);
 	return row;
 }
 
 export async function setActiveProject(id) {
 	await db.update(projects).set({ isActive: false });
-	await db.update(projects)
+	await db
+		.update(projects)
 		.set({ isActive: true, updatedAt: sql`now()` })
 		.where(eq(projects.id, id));
 	const project = await getProject(id);
@@ -71,16 +83,19 @@ export async function updateProject(id, data) {
 		modules: data.modules,
 		notionEnabled: !!data.notionEnabled,
 		notionArchivalDbId: data.notionArchivalDbId,
-		updatedAt: sql`now()`
+		updatedAt: sql`now()`,
 	};
 	if (data.storagePath !== undefined) updates.storagePath = data.storagePath;
-	if (data.notionGroupProperty !== undefined) updates.notionGroupProperty = data.notionGroupProperty;
+	if (data.notionGroupProperty !== undefined)
+		updates.notionGroupProperty = data.notionGroupProperty;
 	// C2PA signing material: a path is written only when the form sends a new
 	// one (it never receives the saved ones), or cleared when asked outright.
 	Object.assign(updates, signingPathUpdates(data));
 	// CAWG identity (project-level settings)
-	if (data.cawgIdentityUrl !== undefined) updates.cawgIdentityUrl = data.cawgIdentityUrl;
-	if (data.cawgIdentityName !== undefined) updates.cawgIdentityName = data.cawgIdentityName;
+	if (data.cawgIdentityUrl !== undefined)
+		updates.cawgIdentityUrl = data.cawgIdentityUrl;
+	if (data.cawgIdentityName !== undefined)
+		updates.cawgIdentityName = data.cawgIdentityName;
 	await db.update(projects).set(updates).where(eq(projects.id, id));
 	const project = await getProject(id);
 	await ensureStorageFolders(project);
@@ -88,18 +103,21 @@ export async function updateProject(id, data) {
 }
 
 export async function deleteProject(id) {
-	const [{ total }] = await db.select({ total: count() })
+	const [{ total }] = await db
+		.select({ total: count() })
 		.from(assets)
 		.where(eq(assets.projectId, id));
 	if (total > 0) {
-		throw new Error(`Cannot delete project with ${total} asset(s). Delete assets first.`);
+		throw new Error(
+			`Cannot delete project with ${total} asset(s). Delete assets first.`,
+		);
 	}
 	await db.delete(projects).where(eq(projects.id, id));
 }
 
 export function projectHasModule(project, moduleName) {
 	try {
-		return JSON.parse(project?.modules || '[]').includes(moduleName);
+		return JSON.parse(project?.modules || "[]").includes(moduleName);
 	} catch {
 		return false;
 	}

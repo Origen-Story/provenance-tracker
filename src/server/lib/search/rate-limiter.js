@@ -8,7 +8,7 @@ const MIN_GAP_MS = 200;
 let lastRequestTime = 0;
 
 function delay(ms) {
-	return new Promise(resolve => setTimeout(resolve, ms));
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**

@@ -13,13 +13,17 @@
 // duplicated and the edit project's links are untouched. Only deliverables
 // (signed outputs) get the manifest embedded in a new file.
 
-import { existsSync } from 'node:fs';
-import path from 'node:path';
-import { computeFileHash, getFileSize } from '../core/file-utils.js';
-import { buildAssetManifest, sidecarPathFor } from '../manifest/build.js';
-import { interpretReport } from '../manifest/verify.js';
-import { signWithC2patool, readReport, storableDefinition } from '../manifest/c2patool.js';
-import { GENERATOR } from '../manifest/generator.js';
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { computeFileHash, getFileSize } from "../core/file-utils.js";
+import { buildAssetManifest, sidecarPathFor } from "../manifest/build.js";
+import { interpretReport } from "../manifest/verify.js";
+import {
+	signWithC2patool,
+	readReport,
+	storableDefinition,
+} from "../manifest/c2patool.js";
+import { GENERATOR } from "../manifest/generator.js";
 
 /**
  * @param {object} args
@@ -37,15 +41,31 @@ import { GENERATOR } from '../manifest/generator.js';
  * @param {string} [args.timestampUrl]
  */
 export async function signAsset(args) {
-	const { inputPath, originClass = 'unknown', creatorName = '', organization = '', toolUsed = '', isAiGenerated = false, identityUrl = '', trainingMiningOptOut = true, certificatePath, privateKeyPath, timestampUrl = '' } = args;
-	if (!inputPath || !existsSync(inputPath)) throw new Error(`Input file does not exist: ${inputPath ? path.basename(inputPath) : '(none)'}`);
+	const {
+		inputPath,
+		originClass = "unknown",
+		creatorName = "",
+		organization = "",
+		toolUsed = "",
+		isAiGenerated = false,
+		identityUrl = "",
+		trainingMiningOptOut = true,
+		certificatePath,
+		privateKeyPath,
+		timestampUrl = "",
+	} = args;
+	if (!inputPath || !existsSync(inputPath))
+		throw new Error(
+			`Input file does not exist: ${inputPath ? path.basename(inputPath) : "(none)"}`,
+		);
 	const sidecarPath = args.sidecarPath || sidecarPathFor(inputPath);
 
 	// Any sidecar already beside the file must have been archived by the caller,
 	// both so nothing is overwritten and so the read below sees only what the
 	// file carries itself (readers pick up <name>.c2pa automatically).
 	for (const p of new Set([sidecarPath, sidecarPathFor(inputPath)])) {
-		if (existsSync(p)) throw new Error(`Refusing to overwrite ${path.basename(p)}`);
+		if (existsSync(p))
+			throw new Error(`Refusing to overwrite ${path.basename(p)}`);
 	}
 	// A file with its own embedded credentials is not signed at ingest. c2patool
 	// can only sidecar-sign it by binding to a copy with those credentials
@@ -53,9 +73,15 @@ export async function signAsset(args) {
 	// credentials already are its provenance, and an output keeps them.
 	const embedded = await readReport(inputPath).catch(() => null);
 	if (embedded) {
-		const signer = embedded.manifests?.[embedded.active_manifest]?.signature_info;
+		const signer =
+			embedded.manifests?.[embedded.active_manifest]?.signature_info;
 		const by = signer?.common_name || signer?.issuer;
-		throw Object.assign(new Error(`This file already carries its own Content Credentials${by ? ` (signed by ${by})` : ''}. It does not need signing at ingest, and a sidecar could not match it without stripping them. They are carried into any output you sign.`), { status: 409 });
+		throw Object.assign(
+			new Error(
+				`This file already carries its own Content Credentials${by ? ` (signed by ${by})` : ""}. It does not need signing at ingest, and a sidecar could not match it without stripping them. They are carried into any output you sign.`,
+			),
+			{ status: 409 },
+		);
 	}
 	const { definition, ingredients } = buildAssetManifest({
 		title: path.basename(inputPath),
@@ -66,17 +92,29 @@ export async function signAsset(args) {
 		organization,
 		identityUrl,
 		trainingMiningOptOut,
-		generator: GENERATOR
+		generator: GENERATOR,
 	});
-	const { report } = await signWithC2patool({ inputPath, outputPath: sidecarPath, definition, ingredients, certificatePath, privateKeyPath, timestampUrl, sidecar: true });
+	const { report } = await signWithC2patool({
+		inputPath,
+		outputPath: sidecarPath,
+		definition,
+		ingredients,
+		certificatePath,
+		privateKeyPath,
+		timestampUrl,
+		sidecar: true,
+	});
 
-	const [sidecarHash, sidecarSize] = await Promise.all([computeFileHash(sidecarPath), getFileSize(sidecarPath)]);
+	const [sidecarHash, sidecarSize] = await Promise.all([
+		computeFileHash(sidecarPath),
+		getFileSize(sidecarPath),
+	]);
 	return {
 		sidecarPath,
 		sidecarHash,
 		sidecarSize,
 		report,
 		verification: interpretReport(report),
-		definition: storableDefinition(definition)
+		definition: storableDefinition(definition),
 	};
 }

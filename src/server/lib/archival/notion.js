@@ -1,10 +1,10 @@
-import { readFile } from 'fs/promises';
-import { existsSync } from 'fs';
-import path from 'path';
-import mime from 'mime-types';
-import { createLogger } from '../logger.js';
+import { readFile } from "fs/promises";
+import { existsSync } from "fs";
+import path from "path";
+import mime from "mime-types";
+import { createLogger } from "../logger.js";
 
-const log = createLogger('notion');
+const log = createLogger("notion");
 
 function truncName(str, max = 100) {
 	return str && str.length > max ? str.slice(0, max) : str;
@@ -14,20 +14,27 @@ function truncName(str, max = 100) {
 // an ellipsis so oversize captions sync instead of failing validation.
 function truncRichText(str, max = 2000) {
 	if (!str || str.length <= max) return str;
-	return str.slice(0, max - 1) + '…';
+	return str.slice(0, max - 1) + "…";
 }
 
 export function isNotionConfigured(project) {
-	return !!(project?.notionEnabled && project?.notionArchivalDbId && process.env.NOTION_API_KEY);
+	return !!(
+		project?.notionEnabled &&
+		project?.notionArchivalDbId &&
+		process.env.NOTION_API_KEY
+	);
 }
 
 let _Client;
 async function getNotionClient() {
 	if (!_Client) {
-		const mod = await import('@notionhq/client');
+		const mod = await import("@notionhq/client");
 		_Client = mod.Client;
 	}
-	return new _Client({ auth: process.env.NOTION_API_KEY, notionVersion: '2026-03-11' });
+	return new _Client({
+		auth: process.env.NOTION_API_KEY,
+		notionVersion: "2026-03-11",
+	});
 }
 
 // Cache of notion property types per database. Avoids repeated schema lookups
@@ -49,28 +56,39 @@ async function getGroupPropertyType(notion, databaseId, propertyName) {
 		const dataSourceId = db?.data_sources?.[0]?.id;
 		let type = null;
 		if (dataSourceId) {
-			const ds = await notion.dataSources.retrieve({ data_source_id: dataSourceId });
+			const ds = await notion.dataSources.retrieve({
+				data_source_id: dataSourceId,
+			});
 			type = ds?.properties?.[propertyName]?.type || null;
 		} else if (db?.properties) {
 			// Fallback for older API versions where schema still lives on the database.
 			type = db.properties[propertyName]?.type || null;
 		}
 		_dbPropTypes.set(cacheKey, type);
-		if (!type) log.warn(`Notion property "${propertyName}" not found on database ${databaseId} — group sync will be skipped.`);
+		if (!type)
+			log.warn(
+				`Notion property "${propertyName}" not found on database ${databaseId} — group sync will be skipped.`,
+			);
 		return type;
 	} catch (err) {
-		log.warn(`Could not retrieve Notion database schema to detect "${propertyName}" type: ${err.message}`);
+		log.warn(
+			`Could not retrieve Notion database schema to detect "${propertyName}" type: ${err.message}`,
+		);
 		return null;
 	}
 }
 
 export async function syncAssetToNotion(asset, project) {
 	if (!isNotionConfigured(project)) {
-		throw new Error('Notion integration is not configured for this project.');
+		throw new Error("Notion integration is not configured for this project.");
 	}
 
 	const notion = await getNotionClient();
-	const groupPropType = await getGroupPropertyType(notion, project.notionArchivalDbId, project.notionGroupProperty);
+	const groupPropType = await getGroupPropertyType(
+		notion,
+		project.notionArchivalDbId,
+		project.notionGroupProperty,
+	);
 	const properties = buildProperties(asset, project, groupPropType);
 
 	// Upload local file to Notion for reliable gallery thumbnails.
@@ -82,18 +100,22 @@ export async function syncAssetToNotion(asset, project) {
 		fileUploadId = await uploadImage(notion, asset);
 	} catch (err) {
 		if (isFileTooLargeError(err)) {
-			log.warn(`Skipping Notion image upload for "${asset.name || asset.id}" — file too large for workspace (${asset.fileSize} bytes). Syncing metadata only.`);
+			log.warn(
+				`Skipping Notion image upload for "${asset.name || asset.id}" — file too large for workspace (${asset.fileSize} bytes). Syncing metadata only.`,
+			);
 		} else {
 			throw err;
 		}
 	}
 	if (fileUploadId) {
-		properties['Image'] = {
-			files: [{
-				type: 'file_upload',
-				file_upload: { id: fileUploadId },
-				name: truncName(asset.filename || asset.name || 'image')
-			}]
+		properties["Image"] = {
+			files: [
+				{
+					type: "file_upload",
+					file_upload: { id: fileUploadId },
+					name: truncName(asset.filename || asset.name || "image"),
+				},
+			],
 		};
 	}
 
@@ -103,8 +125,10 @@ export async function syncAssetToNotion(asset, project) {
 			return { notionPageId: asset.notionPageId };
 		} catch (err) {
 			// Page may have been moved/deleted — create a fresh one instead
-			if (err.code === 'validation_error' || err.code === 'object_not_found') {
-				log.info(`Page ${asset.notionPageId} is stale (${err.code}), creating new page`);
+			if (err.code === "validation_error" || err.code === "object_not_found") {
+				log.info(
+					`Page ${asset.notionPageId} is stale (${err.code}), creating new page`,
+				);
 			} else {
 				throw err;
 			}
@@ -113,7 +137,7 @@ export async function syncAssetToNotion(asset, project) {
 
 	const page = await notion.pages.create({
 		parent: { database_id: project.notionArchivalDbId },
-		properties
+		properties,
 	});
 	return { notionPageId: page.id };
 }
@@ -125,9 +149,14 @@ const SINGLE_PART_MAX_BYTES = 20 * 1024 * 1024;
 const MULTI_PART_CHUNK_BYTES = 10 * 1024 * 1024;
 
 function isFileTooLargeError(err) {
-	const msg = (err?.message || '').toLowerCase();
-	const body = (err?.body || '').toLowerCase();
-	return msg.includes('too large') || body.includes('too large') || msg.includes('file size') || err?.status === 413;
+	const msg = (err?.message || "").toLowerCase();
+	const body = (err?.body || "").toLowerCase();
+	return (
+		msg.includes("too large") ||
+		body.includes("too large") ||
+		msg.includes("file size") ||
+		err?.status === 413
+	);
 }
 
 /**
@@ -140,27 +169,27 @@ async function uploadImage(notion, asset) {
 	}
 
 	const filename = asset.filename || path.basename(asset.filePath);
-	const contentType = mime.lookup(asset.filePath) || 'application/octet-stream';
+	const contentType = mime.lookup(asset.filePath) || "application/octet-stream";
 	const fileData = await readFile(asset.filePath);
 
 	if (fileData.length <= SINGLE_PART_MAX_BYTES) {
-		const upload = await notion.fileUploads.create({ mode: 'single_part' });
+		const upload = await notion.fileUploads.create({ mode: "single_part" });
 		await notion.fileUploads.send({
 			file_upload_id: upload.id,
 			file: {
 				filename,
-				data: new Blob([fileData], { type: contentType })
-			}
+				data: new Blob([fileData], { type: contentType }),
+			},
 		});
 		return upload.id;
 	}
 
 	const numberOfParts = Math.ceil(fileData.length / MULTI_PART_CHUNK_BYTES);
 	const upload = await notion.fileUploads.create({
-		mode: 'multi_part',
+		mode: "multi_part",
 		number_of_parts: numberOfParts,
 		filename,
-		content_type: contentType
+		content_type: contentType,
 	});
 
 	for (let i = 0; i < numberOfParts; i++) {
@@ -175,8 +204,8 @@ async function uploadImage(notion, asset) {
 			part_number: String(i + 1),
 			file: {
 				filename,
-				data: new Blob([chunk], { type: contentType })
-			}
+				data: new Blob([chunk], { type: contentType }),
+			},
 		});
 	}
 
@@ -186,20 +215,29 @@ async function uploadImage(notion, asset) {
 
 function buildProperties(asset, project, groupPropType) {
 	const props = {
-		Name: { title: [{ text: { content: asset.name || 'Untitled' } }] }
+		Name: { title: [{ text: { content: asset.name || "Untitled" } }] },
 	};
 
-	if (asset.caption) props['Caption'] = { rich_text: [{ text: { content: truncRichText(asset.caption) } }] };
-	if (asset.sourceUrl) props['Source URL'] = { url: asset.sourceUrl };
+	if (asset.caption)
+		props["Caption"] = {
+			rich_text: [{ text: { content: truncRichText(asset.caption) } }],
+		};
+	if (asset.sourceUrl) props["Source URL"] = { url: asset.sourceUrl };
 
-	const creatorArchive = [asset.creator, asset.institution].filter(Boolean).join(' / ');
-	if (creatorArchive) props['Creator / Archive'] = { rich_text: [{ text: { content: truncRichText(creatorArchive) } }] };
+	const creatorArchive = [asset.creator, asset.institution]
+		.filter(Boolean)
+		.join(" / ");
+	if (creatorArchive)
+		props["Creator / Archive"] = {
+			rich_text: [{ text: { content: truncRichText(creatorArchive) } }],
+		};
 
-	if (asset.license) props['License'] = { select: { name: asset.license } };
-	if (asset.accessDate) props['Access Date'] = { date: { start: asset.accessDate } };
+	if (asset.license) props["License"] = { select: { name: asset.license } };
+	if (asset.accessDate)
+		props["Access Date"] = { date: { start: asset.accessDate } };
 	if (asset.medium) {
 		const label = asset.medium.charAt(0).toUpperCase() + asset.medium.slice(1);
-		props['Medium'] = { select: { name: label } };
+		props["Medium"] = { select: { name: label } };
 	}
 
 	// The notionGroupProperty records where the search originally found this asset —
@@ -212,10 +250,16 @@ function buildProperties(asset, project, groupPropType) {
 	//   - rich_text   → write { rich_text: [{ text: { content } }] }
 	//   - multi_select, title, anything else → skipped (log once)
 	if (project?.notionGroupProperty && asset.searchGroupName) {
-		if (groupPropType === 'select') {
-			props[project.notionGroupProperty] = { select: { name: asset.searchGroupName } };
-		} else if (groupPropType === 'rich_text') {
-			props[project.notionGroupProperty] = { rich_text: [{ text: { content: truncRichText(asset.searchGroupName) } }] };
+		if (groupPropType === "select") {
+			props[project.notionGroupProperty] = {
+				select: { name: asset.searchGroupName },
+			};
+		} else if (groupPropType === "rich_text") {
+			props[project.notionGroupProperty] = {
+				rich_text: [
+					{ text: { content: truncRichText(asset.searchGroupName) } },
+				],
+			};
 		}
 		// Other types: deliberately skip to avoid clobbering user-managed fields.
 	}

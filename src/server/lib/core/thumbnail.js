@@ -4,7 +4,7 @@
 // but not ProRes (motion graphics with alpha) and only sometimes HEVC (phone
 // footage), so those cards stayed blank. ffmpeg reads all of them. The IO
 // (running ffmpeg, the cache folder) lives in routes/preview.js.
-import { createHash } from 'node:crypto';
+import { createHash } from "node:crypto";
 
 export const THUMB_WIDTH = 480;
 
@@ -13,8 +13,13 @@ export const THUMB_WIDTH = 480;
  * part of the key, so a re-rendered file gets a fresh frame.
  */
 export function thumbnailKey(filePath, { size, mtimeMs }, width = THUMB_WIDTH) {
-	const id = [String(filePath).replace(/\\/g, '/').toLowerCase(), size, Math.round(mtimeMs), width].join('|');
-	return `${createHash('sha256').update(id).digest('hex').slice(0, 32)}.webp`;
+	const id = [
+		String(filePath).replace(/\\/g, "/").toLowerCase(),
+		size,
+		Math.round(mtimeMs),
+		width,
+	].join("|");
+	return `${createHash("sha256").update(id).digest("hex").slice(0, 32)}.webp`;
 }
 
 /**
@@ -30,17 +35,33 @@ export function frameTime(durationSeconds) {
 /** ffmpeg arguments for one WebP frame. WebP keeps an alpha channel. */
 export function frameArgs({ input, output, at = 0, width = THUMB_WIDTH }) {
 	return [
-		'-v', 'error', '-y',
-		...(at > 0 ? ['-ss', String(at)] : []),
-		'-i', input,
-		'-frames:v', '1',
-		'-vf', `scale=${width}:-2`,
-		'-c:v', 'libwebp', '-quality', '75',
+		"-v",
+		"error",
+		"-y",
+		...(at > 0 ? ["-ss", String(at)] : []),
+		"-i",
+		input,
+		"-frames:v",
+		"1",
+		"-vf",
+		`scale=${width}:-2`,
+		"-c:v",
+		"libwebp",
+		"-quality",
+		"75",
 		output,
 	];
 }
 
 /** ffprobe arguments that print the container duration in seconds. */
 export function durationArgs(input) {
-	return ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', input];
+	return [
+		"-v",
+		"error",
+		"-show_entries",
+		"format=duration",
+		"-of",
+		"csv=p=0",
+		input,
+	];
 }

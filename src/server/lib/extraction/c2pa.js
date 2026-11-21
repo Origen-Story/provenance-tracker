@@ -17,15 +17,15 @@
 //     bytes but no reader could parse it. Persisted so we don't silently
 //     lose the signal that provenance exists.
 
-import { loadC2paNode } from './c2pa-node-loader.js';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
-import path from 'node:path';
-import { createLogger } from '../logger.js';
+import { loadC2paNode } from "./c2pa-node-loader.js";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { createLogger } from "../logger.js";
 
-const log = createLogger('c2pa');
+const log = createLogger("c2pa");
 const execFileP = promisify(execFile);
 
 // The native binding is loaded on first read and may be unavailable (see
@@ -58,16 +58,16 @@ export function resolveC2patoolPath() {
 	// From this file (src/server/lib/extraction/c2pa.js) go up 4 levels to the
 	// repo root, then into tools/c2patool/.
 	const here = fileURLToPath(import.meta.url);
-	const repoRoot = path.resolve(path.dirname(here), '..', '..', '..', '..');
-	const exeName = process.platform === 'win32' ? 'c2patool.exe' : 'c2patool';
-	const bundled = path.join(repoRoot, 'tools', 'c2patool', exeName);
+	const repoRoot = path.resolve(path.dirname(here), "..", "..", "..", "..");
+	const exeName = process.platform === "win32" ? "c2patool.exe" : "c2patool";
+	const bundled = path.join(repoRoot, "tools", "c2patool", exeName);
 	if (existsSync(bundled)) {
 		c2patoolPath = bundled;
 		return c2patoolPath;
 	}
 
 	// Last resort: hope it's on PATH. execFile will surface ENOENT if not.
-	c2patoolPath = 'c2patool';
+	c2patoolPath = "c2patool";
 	return c2patoolPath;
 }
 
@@ -77,13 +77,19 @@ function buildSummary(active) {
 	const summary = {
 		title: active.title || null,
 		format: active.format || null,
-		claimGenerator: active.claim_generator || (active.claim_generator_info && active.claim_generator_info[0] && active.claim_generator_info[0].name) || null,
+		claimGenerator:
+			active.claim_generator ||
+			(active.claim_generator_info &&
+				active.claim_generator_info[0] &&
+				active.claim_generator_info[0].name) ||
+			null,
 		assertions: [],
 		ingredients: [],
 		signatureInfo: null,
 	};
 	if (active.assertions) {
-		for (const a of active.assertions) summary.assertions.push({ label: a.label, data: a.data });
+		for (const a of active.assertions)
+			summary.assertions.push({ label: a.label, data: a.data });
 	}
 	if (active.ingredients) {
 		for (const ing of active.ingredients) {
@@ -117,10 +123,14 @@ async function readWithC2paNode(filePath) {
 	let result;
 	try {
 		const c2pa = await getC2pa();
-		if (!c2pa) return { kind: 'unavailable', reason: 'c2pa-node native binding could not be loaded' };
+		if (!c2pa)
+			return {
+				kind: "unavailable",
+				reason: "c2pa-node native binding could not be loaded",
+			};
 		result = await c2pa.read({ path: filePath });
 	} catch (err) {
-		return { kind: 'unparseable', reason: err.message, validationStatus: [] };
+		return { kind: "unparseable", reason: err.message, validationStatus: [] };
 	}
 	return interpretC2paNodeResult(result);
 }
@@ -133,12 +143,18 @@ async function readWithC2paNode(filePath) {
 // absent; the unit test in test/unit/extraction/c2pa-read.test.js pins this.
 export function interpretC2paNodeResult(result) {
 	// Truly no manifest: null.
-	if (!result) return { kind: 'absent' };
+	if (!result) return { kind: "absent" };
 
 	let active = result.active_manifest || null;
 	// Defensive: tolerate a future bindings change that returns the label.
-	if (typeof active === 'string' && result.manifests) active = result.manifests[active] || null;
-	if (active) return { kind: 'ok', summary: buildSummary(active), validationStatus: result.validation_status || [] };
+	if (typeof active === "string" && result.manifests)
+		active = result.manifests[active] || null;
+	if (active)
+		return {
+			kind: "ok",
+			summary: buildSummary(active),
+			validationStatus: result.validation_status || [],
+		};
 
 	// c2pa-node's own signal for "manifest present but rejected": empty
 	// `manifests` object plus non-empty `validation_status`. If there is a
@@ -146,12 +162,12 @@ export function interpretC2paNodeResult(result) {
 	const vs = result.validation_status || [];
 	if (vs.length > 0) {
 		return {
-			kind: 'unparseable',
-			reason: vs.map(v => v.explanation || v.code).join('; '),
+			kind: "unparseable",
+			reason: vs.map((v) => v.explanation || v.code).join("; "),
 			validationStatus: vs,
 		};
 	}
-	return { kind: 'absent' };
+	return { kind: "absent" };
 }
 
 // Same return shape as readWithC2paNode. c2patool's output is JSON on stdout;
@@ -161,36 +177,50 @@ async function readWithC2patool(filePath) {
 	const bin = resolveC2patoolPath();
 	let stdout;
 	try {
-		const res = await execFileP(bin, [filePath], { maxBuffer: 8 * 1024 * 1024, timeout: 15000 });
+		const res = await execFileP(bin, [filePath], {
+			maxBuffer: 8 * 1024 * 1024,
+			timeout: 15000,
+		});
 		stdout = res.stdout;
 	} catch (err) {
 		// ENOENT → tool not installed. Log once (loudly) so ops notices, but
 		// treat as fallback unavailable rather than crashing extraction.
-		if (err.code === 'ENOENT') {
-			log.warn('c2patool binary not found; fallback disabled. Set C2PATOOL_PATH or install to tools/c2patool/.');
-			return { kind: 'absent' };
+		if (err.code === "ENOENT") {
+			log.warn(
+				"c2patool binary not found; fallback disabled. Set C2PATOOL_PATH or install to tools/c2patool/.",
+			);
+			return { kind: "absent" };
 		}
 		// Non-zero exit usually means "no manifest" for c2patool. It writes an
 		// error string to stderr. Distinguish "no manifest" from "actual error"
 		// by looking for the sentinel phrases.
-		const stderr = (err.stderr || '').trim();
+		const stderr = (err.stderr || "").trim();
 		if (/no.*manifest|no.*claim|jumbf.*not.*found/i.test(stderr)) {
-			return { kind: 'absent' };
+			return { kind: "absent" };
 		}
-		return { kind: 'unparseable', reason: `c2patool: ${stderr || err.message}`, validationStatus: [] };
+		return {
+			kind: "unparseable",
+			reason: `c2patool: ${stderr || err.message}`,
+			validationStatus: [],
+		};
 	}
 
 	let parsed;
 	try {
 		parsed = JSON.parse(stdout);
 	} catch (err) {
-		return { kind: 'unparseable', reason: `c2patool JSON parse: ${err.message}`, validationStatus: [] };
+		return {
+			kind: "unparseable",
+			reason: `c2patool JSON parse: ${err.message}`,
+			validationStatus: [],
+		};
 	}
-	const active = parsed.active_manifest && parsed.manifests
-		? parsed.manifests[parsed.active_manifest]
-		: null;
-	if (!active) return { kind: 'absent' };
-	return { kind: 'ok', summary: buildSummary(active) };
+	const active =
+		parsed.active_manifest && parsed.manifests
+			? parsed.manifests[parsed.active_manifest]
+			: null;
+	if (!active) return { kind: "absent" };
+	return { kind: "ok", summary: buildSummary(active) };
 }
 
 // ---------- public API ----------
@@ -203,38 +233,55 @@ async function readWithC2patool(filePath) {
  * Never throws — a failed read is reported in the returned object so the
  * caller can persist the signal. `readers` is injectable for tests.
  */
-export async function extractC2pa(filePath, readers = { node: readWithC2paNode, tool: readWithC2patool }) {
+export async function extractC2pa(
+	filePath,
+	readers = { node: readWithC2paNode, tool: readWithC2patool },
+) {
 	const node = await readers.node(filePath);
-	if (node.kind === 'ok') return node.summary;
-	if (node.kind === 'absent') return null;
+	if (node.kind === "ok") return node.summary;
+	if (node.kind === "absent") return null;
 
 	// The binding is not loadable here: c2patool is the only reader, so its
 	// word on presence is final.
-	if (node.kind === 'unavailable') {
+	if (node.kind === "unavailable") {
 		const only = await readers.tool(filePath);
-		if (only.kind === 'ok') return { ...only.summary, _readerFallback: 'c2patool' };
-		if (only.kind === 'absent') return null;
-		log.error(`c2patool failed on ${filePath} and c2pa-node is unavailable: ${only.reason}`);
-		return { _readError: true, _reason: node.reason, _fallbackReason: only.reason, validationStatus: [] };
+		if (only.kind === "ok")
+			return { ...only.summary, _readerFallback: "c2patool" };
+		if (only.kind === "absent") return null;
+		log.error(
+			`c2patool failed on ${filePath} and c2pa-node is unavailable: ${only.reason}`,
+		);
+		return {
+			_readError: true,
+			_reason: node.reason,
+			_fallbackReason: only.reason,
+			validationStatus: [],
+		};
 	}
 
 	// unparseable → try the reference tool
-	log.warn(`c2pa-node could not decode manifest in ${filePath}: ${node.reason}. Falling back to c2patool.`);
+	log.warn(
+		`c2pa-node could not decode manifest in ${filePath}: ${node.reason}. Falling back to c2patool.`,
+	);
 	const tool = await readers.tool(filePath);
-	if (tool.kind === 'ok') {
-		return { ...tool.summary, _readerFallback: 'c2patool' };
+	if (tool.kind === "ok") {
+		return { ...tool.summary, _readerFallback: "c2patool" };
 	}
-	if (tool.kind === 'absent') {
+	if (tool.kind === "absent") {
 		// c2pa-node found bytes; c2patool disagrees. Treat as the manifest
 		// being unparseable — we still know provenance data was present.
-		log.error(`c2pa-node saw a manifest at ${filePath} but c2patool sees none; likely a c2patool binary or trust-list issue.`);
+		log.error(
+			`c2pa-node saw a manifest at ${filePath} but c2patool sees none; likely a c2patool binary or trust-list issue.`,
+		);
 	} else {
-		log.error(`Both c2pa-node and c2patool failed on ${filePath}: ${tool.reason}`);
+		log.error(
+			`Both c2pa-node and c2patool failed on ${filePath}: ${tool.reason}`,
+		);
 	}
 	return {
 		_readError: true,
 		_reason: node.reason,
-		_fallbackReason: tool.kind === 'unparseable' ? tool.reason : null,
+		_fallbackReason: tool.kind === "unparseable" ? tool.reason : null,
 		validationStatus: node.validationStatus,
 	};
 }

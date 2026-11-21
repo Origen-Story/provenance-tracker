@@ -18,31 +18,33 @@
  * upscaling) are deferred — see docs/planned-features.md.
  */
 
-export const id = 'topaz-video-ai';
+export const id = "topaz-video-ai";
 
-export const coreFields = ['platform', 'modelName'];
+export const coreFields = ["platform", "modelName"];
 
 export function detect(exifTags, _chunks) {
 	const tag = exifTags?.Videoai;
-	return typeof tag === 'string' && tag.toLowerCase().includes('enhanced using');
+	return (
+		typeof tag === "string" && tag.toLowerCase().includes("enhanced using")
+	);
 }
 
 export function parse(exifTags, _chunks) {
-	const tag = exifTags?.Videoai || '';
+	const tag = exifTags?.Videoai || "";
 
 	const result = {
-		platform: 'topaz-video-ai',
-		prompt: '',
-		negativePrompt: '',
-		modelName: 'Topaz Video AI',
-		modelVersion: '',
-		seed: '',
+		platform: "topaz-video-ai",
+		prompt: "",
+		negativePrompt: "",
+		modelName: "Topaz Video AI",
+		modelVersion: "",
+		seed: "",
 		width: 0,
 		height: 0,
 		otherParams: {
-			assetClass: 'modifier',
-			videoaiRaw: tag
-		}
+			assetClass: "modifier",
+			videoaiRaw: tag,
+		},
 	};
 
 	const modelMatch = tag.match(/Enhanced using ([\w.-]+)/i);
@@ -66,10 +68,14 @@ export function parse(exifTags, _chunks) {
 	for (const raw of tag.split(/[;.]/)) {
 		let segment = raw.trim();
 		if (!segment) continue;
-		if (segment.toLowerCase().startsWith('and ')) segment = segment.slice(4);
+		if (segment.toLowerCase().startsWith("and ")) segment = segment.slice(4);
 		const m = segment.match(/^([a-z][a-z /-]*?)\s+at\s+(-?\d+(?:\.\d+)?)$/i);
 		if (m) {
-			const key = m[1].trim().toLowerCase().replace(/\s+/g, '_').replace(/[^\w]/g, '_');
+			const key = m[1]
+				.trim()
+				.toLowerCase()
+				.replace(/\s+/g, "_")
+				.replace(/[^\w]/g, "_");
 			settings[key] = Number(m[2]);
 		}
 	}

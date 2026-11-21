@@ -1,7 +1,14 @@
-import { Router } from 'express';
-import { ORIGIN_CLASSES, setOriginClass, setPublicTitle, applyProposal, proposeForAsset, reproposeProject } from '../lib/origin/origin.js';
-import { ASSET_TYPES } from '../lib/relationships/relationships.js';
-import { getActiveProject } from '../lib/projects.js';
+import { Router } from "express";
+import {
+	ORIGIN_CLASSES,
+	setOriginClass,
+	setPublicTitle,
+	applyProposal,
+	proposeForAsset,
+	reproposeProject,
+} from "../lib/origin/origin.js";
+import { ASSET_TYPES } from "../lib/relationships/relationships.js";
+import { getActiveProject } from "../lib/projects.js";
 
 const router = Router();
 
@@ -9,18 +16,20 @@ function parseRef(req, res) {
 	const { type } = req.params;
 	const id = parseInt(req.params.id);
 	if (!ASSET_TYPES.includes(type) || !Number.isInteger(id)) {
-		res.status(400).json({ error: `type must be one of ${ASSET_TYPES.join(', ')} and id an integer` });
+		res.status(400).json({
+			error: `type must be one of ${ASSET_TYPES.join(", ")} and id an integer`,
+		});
 		return null;
 	}
 	return { type, id };
 }
 
-router.get('/classes', (_req, res) => {
+router.get("/classes", (_req, res) => {
 	res.json({ classes: ORIGIN_CLASSES });
 });
 
 // What the classifier would say now, without writing it.
-router.get('/:type/:id/proposal', async (req, res) => {
+router.get("/:type/:id/proposal", async (req, res) => {
 	const ref = parseRef(req, res);
 	if (!ref) return;
 	try {
@@ -32,11 +41,13 @@ router.get('/:type/:id/proposal', async (req, res) => {
 });
 
 // Re-run the classifier and write the result (overrides a confirmed class).
-router.post('/:type/:id/propose', async (req, res) => {
+router.post("/:type/:id/propose", async (req, res) => {
 	const ref = parseRef(req, res);
 	if (!ref) return;
 	try {
-		const { row, proposal } = await applyProposal(ref.type, ref.id, { force: true });
+		const { row, proposal } = await applyProposal(ref.type, ref.id, {
+			force: true,
+		});
 		res.json({ asset: row, proposal });
 	} catch (err) {
 		res.status(404).json({ error: err.message });
@@ -44,12 +55,24 @@ router.post('/:type/:id/propose', async (req, res) => {
 });
 
 // User sets or confirms the class.
-router.patch('/:type/:id', async (req, res) => {
+router.patch("/:type/:id", async (req, res) => {
 	const ref = parseRef(req, res);
 	if (!ref) return;
-	const { originClass, confirmed = true, ingredientClasses, note, aiAssisted } = req.body;
+	const {
+		originClass,
+		confirmed = true,
+		ingredientClasses,
+		note,
+		aiAssisted,
+	} = req.body;
 	try {
-		const row = await setOriginClass(ref.type, ref.id, { originClass, confirmed, ingredientClasses, note, aiAssisted });
+		const row = await setOriginClass(ref.type, ref.id, {
+			originClass,
+			confirmed,
+			ingredientClasses,
+			note,
+			aiAssisted,
+		});
 		res.json(row);
 	} catch (err) {
 		res.status(400).json({ error: err.message });
@@ -57,20 +80,22 @@ router.patch('/:type/:id', async (req, res) => {
 });
 
 // The name the public viewer shows; empty clears it (the file name is used).
-router.patch('/:type/:id/public-title', async (req, res) => {
+router.patch("/:type/:id/public-title", async (req, res) => {
 	const ref = parseRef(req, res);
 	if (!ref) return;
 	try {
 		res.json(await setPublicTitle(ref.type, ref.id, req.body?.publicTitle));
 	} catch (err) {
-		res.status(err.message === 'Asset not found' ? 404 : 400).json({ error: err.message });
+		res
+			.status(err.message === "Asset not found" ? 404 : 400)
+			.json({ error: err.message });
 	}
 });
 
 // Propose for every unconfirmed row in the active project.
-router.post('/repropose', async (_req, res) => {
+router.post("/repropose", async (_req, res) => {
 	const project = await getActiveProject();
-	if (!project) return res.status(400).json({ error: 'No active project' });
+	if (!project) return res.status(400).json({ error: "No active project" });
 	res.json(await reproposeProject(project.id));
 });
 

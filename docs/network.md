@@ -6,21 +6,21 @@ The short version: **nothing leaves the machine unless you use one of the five f
 
 ## What listens
 
-| Port | Program | Reachable from |
-| --- | --- | --- |
+| Port | Program                                         | Reachable from                                         |
+| ---- | ----------------------------------------------- | ------------------------------------------------------ |
 | 3001 | The API (and the built app, in production mode) | This machine only (`127.0.0.1`), unless you set `HOST` |
-| 5173 | The Vite dev server, in development | This machine only |
-| 5432 | Postgres, when you use the bundled Docker file | This machine only |
+| 5173 | The Vite dev server, in development             | This machine only                                      |
+| 5432 | Postgres, when you use the bundled Docker file  | This machine only                                      |
 
 ## What goes out
 
-| When | Where | What is sent | Code |
-| --- | --- | --- | --- |
-| You sign a file with "Trusted time stamp" ticked (the default) | `http://timestamp.digicert.com`, a public time-stamp authority | A hash of the signature, so the authority can attest when it existed. Not the file, its name or your statement. The request is made by `c2patool`, over plain HTTP as the time-stamp protocol (RFC 3161) allows; the reply is itself signed. Untick the box to sign with no network use | `src/server/lib/manifest/generator.js`, `c2patool.js` |
-| You run an Archive Search | `commons.wikimedia.org` | Your search keywords and category names, with a User-Agent header naming the tracker and the contact in `APP_CONTACT` | `src/server/lib/search/wikimedia.js`, `src/server/lib/user-agent.js` |
-| You approve search results for download | The image addresses Wikimedia returned (normally `upload.wikimedia.org`) | A download request with the same User-Agent | `src/server/lib/search/queue.js`, `src/server/lib/archival/extraction.js` |
-| You import an archival image by URL | The address you typed | A download request with the same User-Agent | `src/server/lib/archival/extraction.js` |
-| You sync an archival asset to Notion (off unless you enable it for a project and set `NOTION_API_KEY`) | `api.notion.com` | That asset's descriptive fields and the image file itself | `src/server/lib/archival/notion.js` |
+| When                                                                                                   | Where                                                                    | What is sent                                                                                                                                                                                                                                                                            | Code                                                                      |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| You sign a file with "Trusted time stamp" ticked (the default)                                         | `http://timestamp.digicert.com`, a public time-stamp authority           | A hash of the signature, so the authority can attest when it existed. Not the file, its name or your statement. The request is made by `c2patool`, over plain HTTP as the time-stamp protocol (RFC 3161) allows; the reply is itself signed. Untick the box to sign with no network use | `src/server/lib/manifest/generator.js`, `c2patool.js`                     |
+| You run an Archive Search                                                                              | `commons.wikimedia.org`                                                  | Your search keywords and category names, with a User-Agent header naming the tracker and the contact in `APP_CONTACT`                                                                                                                                                                   | `src/server/lib/search/wikimedia.js`, `src/server/lib/user-agent.js`      |
+| You approve search results for download                                                                | The image addresses Wikimedia returned (normally `upload.wikimedia.org`) | A download request with the same User-Agent                                                                                                                                                                                                                                             | `src/server/lib/search/queue.js`, `src/server/lib/archival/extraction.js` |
+| You import an archival image by URL                                                                    | The address you typed                                                    | A download request with the same User-Agent                                                                                                                                                                                                                                             | `src/server/lib/archival/extraction.js`                                   |
+| You sync an archival asset to Notion (off unless you enable it for a project and set `NOTION_API_KEY`) | `api.notion.com`                                                         | That asset's descriptive fields and the image file itself                                                                                                                                                                                                                               | `src/server/lib/archival/notion.js`                                       |
 
 Two background workers start with the server and poll the local database every few seconds. They contact Wikimedia only when a search or a download is waiting; with none queued they make no network requests.
 

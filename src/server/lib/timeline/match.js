@@ -10,11 +10,18 @@
 //   unmatched      0
 
 export function normalizePath(p) {
-	return String(p || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+	return String(p || "")
+		.replace(/\\/g, "/")
+		.replace(/\/+$/, "")
+		.toLowerCase();
 }
 
 export function basename(p) {
-	return String(p || '').split(/[\\/]/).pop() || '';
+	return (
+		String(p || "")
+			.split(/[\\/]/)
+			.pop() || ""
+	);
 }
 
 /**
@@ -56,36 +63,48 @@ export async function matchClips(clips, index, io = {}) {
 	const sizeCache = new Map();
 	const sizeOf = async (p) => {
 		if (!io.statSize || !p) return null;
-		if (!sizeCache.has(p)) sizeCache.set(p, await io.statSize(p).catch(() => null));
+		if (!sizeCache.has(p))
+			sizeCache.set(p, await io.statSize(p).catch(() => null));
 		return sizeCache.get(p);
 	};
 	const hashOf = async (p) => {
 		if (!io.hashFile || !p) return null;
-		if (!hashCache.has(p)) hashCache.set(p, await io.hashFile(p).catch(() => null));
+		if (!hashCache.has(p))
+			hashCache.set(p, await io.hashFile(p).catch(() => null));
 		return hashCache.get(p);
 	};
 
 	for (const clip of clips) {
-		const path = clip.path || '';
+		const path = clip.path || "";
 		const name = (clip.name || basename(path)).toLowerCase();
 
 		const byPath = index.byPath.get(normalizePath(path));
-		if (byPath) { out.set(clip.key, result(byPath, 'path', 1)); continue; }
+		if (byPath) {
+			out.set(clip.key, result(byPath, "path", 1));
+			continue;
+		}
 
 		const hash = await hashOf(path);
 		const byHash = hash ? index.byHash.get(hash) : null;
-		if (byHash) { out.set(clip.key, result(byHash, 'hash', 1)); continue; }
+		if (byHash) {
+			out.set(clip.key, result(byHash, "hash", 1));
+			continue;
+		}
 
 		const named = index.byName.get(name) || [];
 		if (named.length) {
 			const size = await sizeOf(path);
-			const sized = size != null ? named.find(a => a.fileSize === size) : null;
-			if (sized) { out.set(clip.key, result(sized, 'filename_size', 0.9, named)); continue; }
-			out.set(clip.key, result(named[0], 'filename', 0.4, named));
+			const sized =
+				size != null ? named.find((a) => a.fileSize === size) : null;
+			if (sized) {
+				out.set(clip.key, result(sized, "filename_size", 0.9, named));
+				continue;
+			}
+			out.set(clip.key, result(named[0], "filename", 0.4, named));
 			continue;
 		}
 
-		out.set(clip.key, result(null, 'unmatched', 0));
+		out.set(clip.key, result(null, "unmatched", 0));
 	}
 	return out;
 }
@@ -96,9 +115,10 @@ export function sourcesFromTimeline(timeline) {
 	const seen = new Map();
 	for (const track of timeline.tracks) {
 		for (const c of track.clips) {
-			if (c.sourceKind !== 'file' || !c.file) continue;
+			if (c.sourceKind !== "file" || !c.file) continue;
 			const key = c.file.id || c.file.path;
-			if (!seen.has(key)) seen.set(key, { key, path: c.file.path, name: c.file.name });
+			if (!seen.has(key))
+				seen.set(key, { key, path: c.file.path, name: c.file.name });
 		}
 	}
 	return [...seen.values()];
@@ -109,7 +129,7 @@ export function matchesByClip(timeline, matchesBySource) {
 	const map = new Map();
 	for (const track of timeline.tracks) {
 		for (const c of track.clips) {
-			if (c.sourceKind !== 'file' || !c.file) continue;
+			if (c.sourceKind !== "file" || !c.file) continue;
 			const key = c.file.id || c.file.path;
 			const m = matchesBySource.get(key);
 			if (m) map.set(c.id, m);
@@ -125,9 +145,14 @@ export function matchesByClip(timeline, matchesBySource) {
  * is at `path` with content hash `hash` (either may be null).
  */
 export function reconcileManualMatch({ path, hash }, asset) {
-	if (!asset) return { method: 'unmatched', confidence: 0 };
+	if (!asset) return { method: "unmatched", confidence: 0 };
 	const p = normalizePath(path);
-	if (p && [asset.filePath, asset.originalFilePath].some(x => normalizePath(x) === p)) return { method: 'path', confidence: 1 };
-	if (hash && asset.fileHash && hash === asset.fileHash) return { method: 'hash', confidence: 1 };
-	return { method: 'manual', confidence: 1 };
+	if (
+		p &&
+		[asset.filePath, asset.originalFilePath].some((x) => normalizePath(x) === p)
+	)
+		return { method: "path", confidence: 1 };
+	if (hash && asset.fileHash && hash === asset.fileHash)
+		return { method: "hash", confidence: 1 };
+	return { method: "manual", confidence: 1 };
 }

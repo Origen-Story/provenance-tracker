@@ -7,36 +7,45 @@
 //   npm test                                   all tests
 //   npm test -- test/unit/parsers/freepik.test.js   one file
 //   npm run test:watch                         vitest in watch mode (no guard)
-import { spawnSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { changedPaths, snapshot } from './lib/repo-snapshot.mjs';
+import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { resolve } from "node:path";
+import { changedPaths, snapshot } from "./lib/repo-snapshot.mjs";
 
 // The path as the filesystem spells it. On Windows a shell that reached the
 // repo as `p:\...` hands Node a lowercase drive letter; vitest then loads
 // itself twice (once per spelling) and every file fails at its first
 // describe() with "Cannot read properties of undefined (reading 'config')".
-const ROOT = realpathSync.native(resolve(import.meta.dirname, '..'));
+const ROOT = realpathSync.native(resolve(import.meta.dirname, ".."));
 const BUDGET_SECONDS = 60;
-const vitest = resolve(ROOT, 'node_modules', 'vitest', 'vitest.mjs');
+const vitest = resolve(ROOT, "node_modules", "vitest", "vitest.mjs");
 
 const args = process.argv.slice(2);
 const before = snapshot(ROOT);
 const started = performance.now();
-const run = spawnSync(process.execPath, [vitest, 'run', ...args], { cwd: ROOT, stdio: 'inherit' });
+const run = spawnSync(process.execPath, [vitest, "run", ...args], {
+	cwd: ROOT,
+	stdio: "inherit",
+});
 const seconds = ((performance.now() - started) / 1000).toFixed(1);
 const after = snapshot(ROOT);
 
 const changed = changedPaths(before, after);
 console.log(`\nrepo guard: tests took ${seconds}s (budget ${BUDGET_SECONDS}s)`);
 if (changed.length) {
-	console.error(`repo guard: FAIL, the test run changed the repo:\n  ${changed.join('\n  ')}`);
-	console.error('Tests must write to temp directories only. Restore these files and fix the test.');
+	console.error(
+		`repo guard: FAIL, the test run changed the repo:\n  ${changed.join("\n  ")}`,
+	);
+	console.error(
+		"Tests must write to temp directories only. Restore these files and fix the test.",
+	);
 	process.exit(1);
 }
-console.log('repo guard: OK, working tree unchanged');
+console.log("repo guard: OK, working tree unchanged");
 if (Number(seconds) > BUDGET_SECONDS) {
-	console.error(`repo guard: FAIL, the suite took ${seconds}s, over the ${BUDGET_SECONDS}s budget`);
+	console.error(
+		`repo guard: FAIL, the suite took ${seconds}s, over the ${BUDGET_SECONDS}s budget`,
+	);
 	process.exit(1);
 }
 process.exit(run.status ?? 1);

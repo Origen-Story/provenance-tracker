@@ -1,24 +1,32 @@
-import { Router } from 'express';
-import { createReadStream, existsSync, statSync } from 'fs';
-import { mkdir, rename, rm } from 'fs/promises';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-import { fileURLToPath } from 'url';
-import path from 'path';
-import { getMimeType, isPreviewable } from '../lib/core/file-utils.js';
-import { thumbnailKey, frameTime, frameArgs, durationArgs } from '../lib/core/thumbnail.js';
-import { createLogger } from '../lib/logger.js';
+import { Router } from "express";
+import { createReadStream, existsSync, statSync } from "fs";
+import { mkdir, rename, rm } from "fs/promises";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import { fileURLToPath } from "url";
+import path from "path";
+import { getMimeType, isPreviewable } from "../lib/core/file-utils.js";
+import {
+	thumbnailKey,
+	frameTime,
+	frameArgs,
+	durationArgs,
+} from "../lib/core/thumbnail.js";
+import { createLogger } from "../lib/logger.js";
 
 const router = Router();
-const log = createLogger('preview');
+const log = createLogger("preview");
 const execFileP = promisify(execFile);
 
 // ---------- video frames for the asset grids ----------
 // ffmpeg is optional: without it the route answers 501 and the card keeps
 // its icon. FFMPEG_PATH / FFPROBE_PATH override the copies on PATH.
-const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
-const FFPROBE = process.env.FFPROBE_PATH || 'ffprobe';
-const THUMB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../data/thumbnails');
+const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
+const FFPROBE = process.env.FFPROBE_PATH || "ffprobe";
+const THUMB_DIR = path.resolve(
+	path.dirname(fileURLToPath(import.meta.url)),
+	"../../../data/thumbnails",
+);
 const MAX_RUNNING = 3;
 const inFlight = new Map();
 let running = 0;
@@ -26,57 +34,88 @@ const waiting = [];
 let ffmpegMissing = false;
 
 async function limited(fn) {
-	if (running >= MAX_RUNNING) await new Promise(resolve => waiting.push(resolve));
+	if (running >= MAX_RUNNING)
+		await new Promise((resolve) => waiting.push(resolve));
 	running++;
-	try { return await fn(); } finally { running--; waiting.shift()?.(); }
+	try {
+		return await fn();
+	} finally {
+		running--;
+		waiting.shift()?.();
+	}
 }
 
 async function makeFrame(input, output) {
 	let duration = 0;
 	try {
-		duration = (await execFileP(FFPROBE, durationArgs(input), { timeout: 20000, windowsHide: true })).stdout.trim();
+		duration = (
+			await execFileP(FFPROBE, durationArgs(input), {
+				timeout: 20000,
+				windowsHide: true,
+			})
+		).stdout.trim();
 	} catch (err) {
-		if (err.code === 'ENOENT') throw err;
+		if (err.code === "ENOENT") throw err;
 	}
 	await mkdir(THUMB_DIR, { recursive: true });
 	const tmp = `${output}.${process.pid}.tmp.webp`;
 	try {
-		await execFileP(FFMPEG, frameArgs({ input, output: tmp, at: frameTime(duration) }), { timeout: 60000, windowsHide: true });
+		await execFileP(
+			FFMPEG,
+			frameArgs({ input, output: tmp, at: frameTime(duration) }),
+			{ timeout: 60000, windowsHide: true },
+		);
 		await rename(tmp, output);
 	} finally {
 		await rm(tmp, { force: true });
 	}
 }
 
-router.get('/frame', async (req, res) => {
+router.get("/frame", async (req, res) => {
 	const filePath = req.query.path;
-	if (!filePath) return res.status(400).json({ error: 'path required' });
-	if (typeof filePath !== 'string') return res.status(400).json({ error: 'path must be one value' });
+	if (!filePath) return res.status(400).json({ error: "path required" });
+	if (typeof filePath !== "string")
+		return res.status(400).json({ error: "path must be one value" });
 	const resolved = path.resolve(filePath);
 	// Type before existence, so the answer never says whether some other file is there.
-	if (!getMimeType(resolved).startsWith('video/')) return res.status(415).json({ error: 'Not a video' });
-	if (!existsSync(resolved)) return res.status(404).json({ error: 'File not found' });
-	if (ffmpegMissing) return res.status(501).json({ error: 'ffmpeg is not installed' });
+	if (!getMimeType(resolved).startsWith("video/"))
+		return res.status(415).json({ error: "Not a video" });
+	if (!existsSync(resolved))
+		return res.status(404).json({ error: "File not found" });
+	if (ffmpegMissing)
+		return res.status(501).json({ error: "ffmpeg is not installed" });
 
-	const output = path.join(THUMB_DIR, thumbnailKey(resolved, statSync(resolved)));
+	const output = path.join(
+		THUMB_DIR,
+		thumbnailKey(resolved, statSync(resolved)),
+	);
 	try {
 		if (!existsSync(output)) {
 			if (!inFlight.has(output)) {
-				inFlight.set(output, limited(() => makeFrame(resolved, output)).finally(() => inFlight.delete(output)));
+				inFlight.set(
+					output,
+					limited(() => makeFrame(resolved, output)).finally(() =>
+						inFlight.delete(output),
+					),
+				);
 			}
 			await inFlight.get(output);
 		}
 	} catch (err) {
-		if (err.code === 'ENOENT') {
+		if (err.code === "ENOENT") {
 			ffmpegMissing = true;
-			log.warn('ffmpeg or ffprobe was not found; video cards keep their icon. Install ffmpeg or set FFMPEG_PATH and FFPROBE_PATH.');
-			return res.status(501).json({ error: 'ffmpeg is not installed' });
+			log.warn(
+				"ffmpeg or ffprobe was not found; video cards keep their icon. Install ffmpeg or set FFMPEG_PATH and FFPROBE_PATH.",
+			);
+			return res.status(501).json({ error: "ffmpeg is not installed" });
 		}
-		log.warn(`No frame for ${path.basename(resolved)}: ${(err.stderr || err.message || '').trim().split('\n').at(-1)}`);
-		return res.status(422).json({ error: 'Could not read a frame' });
+		log.warn(
+			`No frame for ${path.basename(resolved)}: ${(err.stderr || err.message || "").trim().split("\n").at(-1)}`,
+		);
+		return res.status(422).json({ error: "Could not read a frame" });
 	}
-	res.setHeader('Cache-Control', 'public, max-age=3600');
-	res.type('image/webp').sendFile(output);
+	res.setHeader("Cache-Control", "public, max-age=3600");
+	res.type("image/webp").sendFile(output);
 });
 
 // Streams a local file for the UI. Honours HTTP Range requests so <video>
@@ -86,41 +125,52 @@ router.get('/frame', async (req, res) => {
 // Only image, video and audio files are served (by extension). The path can
 // be any file on disk, because import previews a file before it is tracked,
 // so the type check is what keeps keys, .env files and documents out.
-router.get('/', (req, res) => {
+router.get("/", (req, res) => {
 	const filePath = req.query.path;
-	if (!filePath) return res.status(400).json({ error: 'path required' });
-	if (typeof filePath !== 'string') return res.status(400).json({ error: 'path must be one value' });
+	if (!filePath) return res.status(400).json({ error: "path required" });
+	if (typeof filePath !== "string")
+		return res.status(400).json({ error: "path must be one value" });
 
 	const resolved = path.resolve(filePath);
 	// Type before existence, so the answer never says whether some other file is there.
-	if (!isPreviewable(resolved)) return res.status(415).json({ error: 'Only image, video and audio files can be previewed' });
-	if (!existsSync(resolved)) return res.status(404).json({ error: 'File not found' });
+	if (!isPreviewable(resolved))
+		return res
+			.status(415)
+			.json({ error: "Only image, video and audio files can be previewed" });
+	if (!existsSync(resolved))
+		return res.status(404).json({ error: "File not found" });
 
 	const { size } = statSync(resolved);
 	const mimeType = getMimeType(resolved);
-	res.setHeader('Content-Type', mimeType);
+	res.setHeader("Content-Type", mimeType);
 	// A file opened directly in a tab (an SVG can carry script) runs sandboxed,
 	// with no access to the tracker's own origin. <img>, <video> and <audio>
 	// ignore this header.
-	res.setHeader('Content-Security-Policy', 'sandbox');
-	res.setHeader('Cache-Control', 'public, max-age=3600');
-	res.setHeader('Accept-Ranges', 'bytes');
+	res.setHeader("Content-Security-Policy", "sandbox");
+	res.setHeader("Cache-Control", "public, max-age=3600");
+	res.setHeader("Accept-Ranges", "bytes");
 
-	const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+	const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || "");
 	if (range && size > 0) {
-		let start = range[1] === '' ? Math.max(0, size - parseInt(range[2])) : parseInt(range[1]);
-		let end = range[2] === '' || range[1] === '' ? size - 1 : Math.min(parseInt(range[2]), size - 1);
+		let start =
+			range[1] === ""
+				? Math.max(0, size - parseInt(range[2]))
+				: parseInt(range[1]);
+		let end =
+			range[2] === "" || range[1] === ""
+				? size - 1
+				: Math.min(parseInt(range[2]), size - 1);
 		if (Number.isNaN(start) || start >= size || start > end) {
-			res.setHeader('Content-Range', `bytes */${size}`);
+			res.setHeader("Content-Range", `bytes */${size}`);
 			return res.status(416).end();
 		}
 		res.status(206);
-		res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`);
-		res.setHeader('Content-Length', end - start + 1);
+		res.setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
+		res.setHeader("Content-Length", end - start + 1);
 		return createReadStream(resolved, { start, end }).pipe(res);
 	}
 
-	res.setHeader('Content-Length', size);
+	res.setHeader("Content-Length", size);
 	createReadStream(resolved).pipe(res);
 });
 

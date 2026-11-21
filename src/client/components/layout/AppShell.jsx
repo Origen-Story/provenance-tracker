@@ -1,11 +1,11 @@
-import { Outlet } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
-import Sidebar from './Sidebar.jsx';
+import { Outlet } from "react-router";
+import { useQuery } from "@tanstack/react-query";
+import Sidebar from "./Sidebar.jsx";
 
 export default function AppShell() {
 	const { data: project } = useQuery({
-		queryKey: ['activeProject'],
-		queryFn: () => fetch('/api/projects/active').then(r => r.json())
+		queryKey: ["activeProject"],
+		queryFn: () => fetch("/api/projects/active").then((r) => r.json()),
 	});
 
 	return (

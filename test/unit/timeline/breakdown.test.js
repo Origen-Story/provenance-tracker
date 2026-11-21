@@ -197,7 +197,12 @@ describe("segmentsFromTimeline", () => {
 			[
 				"clipitem-21",
 				{
-					asset: { type: "produced", id: 1, originClass: "captured_signed" },
+					asset: {
+						ref: "produced:1",
+						type: "produced",
+						id: 1,
+						originClass: "captured_signed",
+					},
 					method: "path",
 					confidence: 1,
 				},
@@ -205,7 +210,12 @@ describe("segmentsFromTimeline", () => {
 			[
 				"clipitem-31",
 				{
-					asset: { type: "produced", id: 1, originClass: "captured_signed" },
+					asset: {
+						ref: "produced:1",
+						type: "produced",
+						id: 1,
+						originClass: "captured_signed",
+					},
 					method: "path",
 					confidence: 1,
 				},
@@ -213,7 +223,12 @@ describe("segmentsFromTimeline", () => {
 			[
 				"clipitem-32",
 				{
-					asset: { type: "produced", id: 1, originClass: "captured_signed" },
+					asset: {
+						ref: "produced:1",
+						type: "produced",
+						id: 1,
+						originClass: "captured_signed",
+					},
 					method: "path",
 					confidence: 1,
 				},
@@ -221,7 +236,7 @@ describe("segmentsFromTimeline", () => {
 			[
 				"clipitem-22",
 				{
-					asset: { type: "ai", id: 2, originClass: "generated" },
+					asset: { ref: "ai:2", type: "ai", id: 2, originClass: "generated" },
 					method: "hash",
 					confidence: 1,
 				},
@@ -235,8 +250,7 @@ describe("segmentsFromTimeline", () => {
 			trackIndex: 1,
 			matched: true,
 			matchMethod: "path",
-			matchedAssetType: "produced",
-			matchedAssetId: 1,
+			matchedAssetRef: "produced:1",
 			originClass: "captured_signed",
 			sourceKey: "file-1",
 		});

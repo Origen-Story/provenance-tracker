@@ -23,11 +23,11 @@ import {
 	buildOutputManifest,
 	buildCreatorStatement,
 	versionedSignedPath,
-	assetKey,
-	placedAssetKeys,
+	placedAssetRefs,
 	sidecarPathFor,
 	planSidecar,
 } from "./build.js";
+import { legacyAssetRef, parseLegacyAssetRef } from "../core/asset-ref.ts";
 import { interpretReport } from "./verify.js";
 import { signWithC2patool, storableDefinition } from "./c2patool.js";
 import { GENERATOR } from "./generator.js";
@@ -91,20 +91,23 @@ export async function loadOutputContext(producedAssetId) {
 	const timeline = latest ? await getTimeline(latest.id) : null;
 	const segments = timeline?.segments || [];
 	const assets = new Map();
-	for (const k of placedAssetKeys(segments, assetKey("produced", output.id))) {
-		const [type, id] = k.split(":");
+	const outputRef = legacyAssetRef("produced", output.id);
+	for (const k of placedAssetRefs(segments, outputRef)) {
+		const parsed = parseLegacyAssetRef(k);
+		if (!parsed) continue;
+		const { type, id } = parsed;
 		const table = tableFor(type);
 		const [row] = await db
 			.select()
 			.from(table)
-			.where(eq(table.id, Number(id)))
+			.where(eq(table.id, id))
 			.limit(1);
 		if (!row) continue;
 		const { c2paSummary } = await collectSignals(type, row);
 		assets.set(k, { ...row, type, c2paSummary });
 	}
 	return {
-		output: { ...output, type: "produced" },
+		output: { ...output, type: "produced", ref: outputRef },
 		timeline,
 		composition: timeline?.breakdown?.composition || null,
 		segments,

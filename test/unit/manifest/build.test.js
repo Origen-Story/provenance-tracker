@@ -5,7 +5,7 @@ import {
 	buildCreatorStatement,
 	buildAssetManifest,
 	versionedSignedPath,
-	placedAssetKeys,
+	placedAssetRefs,
 	outputClassOf,
 	STATEMENT_LABEL,
 	PARENT_LABEL,
@@ -85,15 +85,13 @@ const segments = [
 	seg({
 		startFrame: 0,
 		endFrame: 180,
-		matchedAssetType: "produced",
-		matchedAssetId: 11,
+		matchedAssetRef: "produced:11",
 		clipName: "take-01",
 	}),
 	seg({
 		startFrame: 180,
 		endFrame: 300,
-		matchedAssetType: "ai",
-		matchedAssetId: 21,
+		matchedAssetRef: "ai:21",
 		clipName: "gen-01",
 	}),
 	seg({
@@ -107,8 +105,7 @@ const segments = [
 		trackKind: "audio",
 		startFrame: 0,
 		endFrame: 300,
-		matchedAssetType: "produced",
-		matchedAssetId: 12,
+		matchedAssetRef: "produced:12",
 		clipName: "voice",
 	}),
 	seg({
@@ -123,12 +120,11 @@ const segments = [
 		startFrame: 0,
 		endFrame: 300,
 		enabled: false,
-		matchedAssetType: "produced",
-		matchedAssetId: 99,
+		matchedAssetRef: "produced:99",
 		clipName: "disabled",
 	}),
 ];
-const L = (type, id) => ({ matchedAssetType: type, matchedAssetId: id });
+const L = (type, id) => ({ matchedAssetRef: `${type}:${id}` });
 const composition = {
 	durationSeconds: 10,
 	fps: 30,
@@ -179,6 +175,7 @@ const composition = {
 	},
 };
 const output = {
+	ref: "produced:1",
 	type: "produced",
 	id: 1,
 	filePath: path.join(dir, "final.mp4"),
@@ -195,17 +192,16 @@ const statement = {
 	identityUrl: "https://example.org/id",
 };
 
-describe("placedAssetKeys", () => {
+describe("placedAssetRefs", () => {
 	it("lists enabled matched assets in order of first use, once each, without the output", () => {
 		expect(
-			placedAssetKeys(
+			placedAssetRefs(
 				[
 					...segments,
 					seg({
 						startFrame: 0,
 						endFrame: 1,
-						matchedAssetType: "produced",
-						matchedAssetId: 1,
+						matchedAssetRef: "produced:1",
 					}),
 				],
 				"produced:1",

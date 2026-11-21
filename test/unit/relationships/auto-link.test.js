@@ -45,23 +45,33 @@ describe("topazSourceBasename", () => {
 
 describe("findSourceCandidates", () => {
 	const index = [
-		{ type: "archival", id: 1, filename: "photo_1920s_street.jpg" },
-		{ type: "ai", id: 7, filename: "photo_1920s_street_thm2_2x.mov" },
-		{ type: "produced", id: 3, filename: "Clip.MP4" },
-		{ type: "ai", id: 9, filename: "clip_prob4.mov" },
+		{
+			ref: "archival:1",
+			type: "archival",
+			id: 1,
+			filename: "photo_1920s_street.jpg",
+		},
+		{
+			ref: "ai:7",
+			type: "ai",
+			id: 7,
+			filename: "photo_1920s_street_thm2_2x.mov",
+		},
+		{ ref: "produced:3", type: "produced", id: 3, filename: "Clip.MP4" },
+		{ ref: "ai:9", type: "ai", id: 9, filename: "clip_prob4.mov" },
 	];
 	it("matches on the stem, case-insensitively, across extensions", () => {
 		expect(findSourceCandidates("photo_1920s_street", index)).toEqual([
 			index[0],
 		]);
-		expect(findSourceCandidates("clip", index, { type: "ai", id: 9 })).toEqual([
+		expect(findSourceCandidates("clip", index, { ref: "ai:9" })).toEqual([
 			index[2],
 		]);
 	});
 	it("excludes the asset itself and returns empty for no match", () => {
-		expect(
-			findSourceCandidates("clip", [index[3]], { type: "ai", id: 9 }),
-		).toEqual([]);
+		expect(findSourceCandidates("clip", [index[3]], { ref: "ai:9" })).toEqual(
+			[],
+		);
 		expect(findSourceCandidates(null, index)).toEqual([]);
 	});
 	it("stripExtension leaves dotted stems alone", () => {

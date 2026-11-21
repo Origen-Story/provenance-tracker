@@ -32,14 +32,14 @@ export function topazSourceBasename(filename) {
 
 /**
  * @param {string} sourceStem    from topazSourceBasename
- * @param {Array<{type:string,id:number,filename:string}>} index  the project's assets
- * @param {{type:string,id:number}} [self]  the asset being linked, excluded
+ * @param {Array<{ref:string,filename:string}>} index  the project's assets
+ * @param {{ref:string}} [self]  the asset being linked, excluded
  */
 export function findSourceCandidates(sourceStem, index, self = null) {
 	if (!sourceStem) return [];
 	const want = sourceStem.toLowerCase();
 	return (index || []).filter((entry) => {
-		if (self && entry.type === self.type && entry.id === self.id) return false;
+		if (self && entry.ref === self.ref) return false;
 		return stripExtension(entry.filename).toLowerCase() === want;
 	});
 }

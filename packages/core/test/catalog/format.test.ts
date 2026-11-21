@@ -1,13 +1,6 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { DatabaseSync } from "node:sqlite";
-import {
-	copyFileSync,
-	mkdtempSync,
-	readFileSync,
-	readdirSync,
-	rmSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { copyFileSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -20,38 +13,24 @@ import {
 } from "../../src/catalog/format.ts";
 import { createCatalog, CURRENT_SCHEMA_SQL } from "../../src/catalog/create.ts";
 import { upgradeCatalog, UPGRADES } from "../../src/catalog/upgrade.ts";
+import { editRow, removeRow } from "../../src/catalog/edit.ts";
 import {
+	PERSON,
 	PROJECT_ID,
 	TEST_TOOL,
 	dataTables,
-	fillSample,
 	memoryCatalog,
 	schemaOf,
 	sha,
 } from "../helpers/catalog.ts";
+import { catalogsForTests } from "../helpers/catalog-tests.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..", "..", "..", "..");
 const SAMPLES = path.join(HERE, "..", "fixtures", "catalog");
 const AT = "2026-11-21T12:00:00.000Z";
 
-const open: DatabaseSync[] = [];
-const temps: string[] = [];
-afterEach(() => {
-	for (const db of open.splice(0)) if (db.isOpen) db.close();
-	for (const dir of temps.splice(0))
-		rmSync(dir, { recursive: true, force: true });
-});
-
-function track(db: DatabaseSync) {
-	open.push(db);
-	return db;
-}
-function sample() {
-	const db = track(memoryCatalog());
-	fillSample(db);
-	return db;
-}
+const { track, sample, tempDir } = catalogsForTests();
 const one = (db: DatabaseSync, sql: string, ...p: Array<string | number>) =>
 	db.prepare(sql).get(...p) as Record<string, unknown>;
 
@@ -135,7 +114,9 @@ describe("the published SQL", () => {
 	});
 
 	it("makes a working catalog when run on its own, as the sqlite3 shell would", () => {
-		const db = track(new DatabaseSync(":memory:"));
+		// Tables only: the project settings are createCatalog's job, so this
+		// one is not held to verifyCatalog.
+		const db = track(new DatabaseSync(":memory:"), { verify: false });
 		db.exec(CURRENT_SCHEMA_SQL);
 		expect(inspectCatalog(db)).toEqual({
 			state: "current",
@@ -185,7 +166,8 @@ describe("records that never change", () => {
 		});
 
 	it("lets a content move to another asset (an edit), but not change its bytes", () => {
-		const db = sample();
+		// Writes around edit.ts on purpose: this is about what SQLite allows.
+		const db = sample({ verify: false });
 		db.prepare("UPDATE contents SET asset_id = 1 WHERE sha256 = ?").run(
 			sha("b"),
 		);
@@ -301,7 +283,10 @@ describe("what the columns accept", () => {
 describe("search", () => {
 	it("finds titles, names and statements whatever their accents or case", () => {
 		const db = sample();
-		db.exec("UPDATE assets SET title = 'Plaza de la PEÑA' WHERE id = 2");
+		editRow(db, "assets", 2, { title: "Plaza de la PEÑA" }, PERSON);
+		expect(
+			one(db, "SELECT title_folded FROM assets WHERE id = 2").title_folded,
+		).toBe("plaza de la pena");
 		const ids = (table: string, q: string) =>
 			(
 				db
@@ -311,7 +296,7 @@ describe("search", () => {
 		expect(ids("assets_text", "pena")).toEqual([2]);
 		expect(ids("assets_text", "town")).toEqual([]);
 		expect(ids("credits_text", "archive")).toEqual([2]);
-		db.exec("DELETE FROM credits WHERE id = 2");
+		removeRow(db, "credits", 2, PERSON);
 		expect(ids("credits_text", "archive")).toEqual([]);
 		expect(ids("statements_text", "camera")).toEqual([1]);
 	});
@@ -460,9 +445,7 @@ describe("the sample catalog of every format", () => {
 
 	for (const file of files)
 		it(`${file} opens and upgrades to exactly the schema a new catalog gets`, () => {
-			const dir = mkdtempSync(path.join(tmpdir(), "pt-catalog-"));
-			temps.push(dir);
-			const copy = path.join(dir, file);
+			const copy = path.join(tempDir(), file);
 			copyFileSync(path.join(SAMPLES, file), copy);
 			const db = track(new DatabaseSync(copy));
 			prepareConnection(db);

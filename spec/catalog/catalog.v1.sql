@@ -14,7 +14,10 @@
 -- deletes. Current values (meta, roots, assets, credits, generation,
 -- locations, relationships, timelines) are ordinary rows; a human edit to one
 -- of their fields is made together with a history row, in one transaction.
--- Assets are never deleted; removed_at marks one as removed.
+-- Assets are never deleted; removed_at marks one as removed. Tables whose
+-- rows can be removed use AUTOINCREMENT, so an id is never reused and a
+-- history entry's row key always means the same row. Which fields count as
+-- human-editable is listed in packages/core/src/catalog/fields.ts.
 
 -- Project settings: project_id (a UUID, the key for this machine's settings),
 -- name, description, author, organization, and the like.
@@ -111,7 +114,7 @@ END;
 -- CAWG has proposed a standard record for acting on someone's behalf
 -- (delegation); these columns hold it until one is adopted.
 CREATE TABLE credits (
-	id INTEGER PRIMARY KEY,
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	asset_id INTEGER NOT NULL REFERENCES assets (id),
 	role TEXT NOT NULL,
 	name TEXT NOT NULL,
@@ -262,7 +265,7 @@ END;
 -- derived_from (an enhanced or upscaled copy), output_of (an edit that used it).
 -- match_method says how it was made: manual, filename_pattern, c2pa_ingredient, timeline.
 CREATE TABLE relationships (
-	id INTEGER PRIMARY KEY,
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	parent_id INTEGER NOT NULL REFERENCES assets (id),
 	child_id INTEGER NOT NULL REFERENCES assets (id),
 	type TEXT NOT NULL,
@@ -280,7 +283,7 @@ CREATE INDEX relationships_child ON relationships (child_id);
 -- timeline file itself is kept as .provenancetracker/timelines/<file_sha256>.
 -- breakdown is a cache recomputed from the clips, never evidence.
 CREATE TABLE timelines (
-	id INTEGER PRIMARY KEY,
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	content_sha256 TEXT NOT NULL REFERENCES contents (sha256),
 	format TEXT NOT NULL,
 	format_version TEXT NOT NULL DEFAULT '',
@@ -307,7 +310,7 @@ CREATE INDEX timelines_content ON timelines (content_sha256);
 -- the editor named it, and the asset it was matched to. Matching is per
 -- source, so every clip of one file follows one match.
 CREATE TABLE timeline_sources (
-	id INTEGER PRIMARY KEY,
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	timeline_id INTEGER NOT NULL REFERENCES timelines (id) ON DELETE CASCADE,
 	source_key TEXT NOT NULL,
 	kind TEXT NOT NULL DEFAULT 'file',
@@ -322,7 +325,7 @@ CREATE TABLE timeline_sources (
 -- Each clip on a track. origin_class overrides the class for this clip; null
 -- means the class of the source's asset.
 CREATE TABLE timeline_clips (
-	id INTEGER PRIMARY KEY,
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	timeline_id INTEGER NOT NULL REFERENCES timelines (id) ON DELETE CASCADE,
 	source_id INTEGER REFERENCES timeline_sources (id) ON DELETE CASCADE,
 	track_kind TEXT NOT NULL CHECK (track_kind IN ('video', 'audio')),

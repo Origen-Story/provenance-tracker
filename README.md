@@ -43,6 +43,9 @@ docker compose up -d
 # Apply database schema (uses committed migrations)
 npm run db:migrate
 
+# Download c2patool at its pinned version, checksum-verified (needed to sign)
+npm run tools:fetch
+
 # Optional: generate a dev signing cert (only needed if you'll sign assets locally)
 npm run cert:generate
 
@@ -204,7 +207,7 @@ Adobe Firefly, ElevenLabs, Topaz Video AI and Topaz Gigapixel files are recognis
 - **Backend:** Express (Node.js)
 - **Database:** PostgreSQL via Drizzle ORM
 - **Build:** Vite
-- **Extraction:** exiftool-vendored, c2pa-node, png-chunks-extract
+- **Extraction:** exiftool-vendored, c2pa-node, c2patool
 - **Integrations:** @notionhq/client (optional)
 
 ## Project structure

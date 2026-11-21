@@ -78,7 +78,9 @@ export function verifySha256(bytes, expected, label = "download") {
 
 /** True when `--version` output names the pinned version, e.g. "c2patool 0.27.1". */
 export function reportsVersion(versionOutput, version) {
-	return new RegExp(`(^|\\s)v?${version.replace(/\./g, "\\.")}(\\s|$)`).test(
-		String(versionOutput).trim(),
-	);
+	// Compare whole words, so 0.27.1 never matches 0.27.10; no pattern is built
+	// from the version string.
+	return String(versionOutput)
+		.split(/\s+/)
+		.some((word) => word.replace(/^v/, "") === version);
 }

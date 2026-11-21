@@ -9,7 +9,10 @@
 
 const TOPAZ_VIDEO_TAIL =
 	/_(?:prob|iris|amq|ghq|thm|nyx|thd|thf|ahq|alq|aaa|apo|apf|dione|gaia|artemis|proteus|rhea|rxl|hyperion|chronos|chf)[a-z]*-?\d*(?:_\d+x)?$/i;
-const GIGAPIXEL_TAIL = /-gigapixel-.*$/i;
+// Found with indexOf, not a regex: /-gigapixel-.*$/ takes time that grows
+// with the square of the name's length on a name repeating "-gigapixel"
+// (CodeQL js/polynomial-redos).
+const GIGAPIXEL_MARK = "-gigapixel-";
 
 export function stripExtension(filename) {
 	return String(filename || "").replace(/\.[^./\\]+$/, "");
@@ -21,7 +24,8 @@ export function stripExtension(filename) {
  */
 export function topazSourceBasename(filename) {
 	const stem = stripExtension(filename);
-	if (GIGAPIXEL_TAIL.test(stem)) return stem.replace(GIGAPIXEL_TAIL, "").trim();
+	const gigapixel = stem.toLowerCase().indexOf(GIGAPIXEL_MARK);
+	if (gigapixel !== -1) return stem.slice(0, gigapixel).trim();
 	if (TOPAZ_VIDEO_TAIL.test(stem)) return stem.replace(TOPAZ_VIDEO_TAIL, "");
 	return null;
 }

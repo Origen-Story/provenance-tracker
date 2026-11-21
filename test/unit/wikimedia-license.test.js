@@ -1,5 +1,25 @@
 import { describe, it, expect } from "vitest";
-import { classifyLicense } from "../../src/server/lib/search/wikimedia.js";
+import {
+	classifyLicense,
+	extractText,
+} from "../../src/server/lib/search/wikimedia.js";
+
+describe("extractText", () => {
+	it("turns a Commons HTML field into plain text", () => {
+		expect(
+			extractText({ value: '<a href="/wiki/User:X">Jane Doe</a> (photo)' }),
+		).toBe("Jane Doe (photo)");
+		expect(extractText(null)).toBe("");
+	});
+
+	it("leaves no tag behind when tags are nested to survive one pass", () => {
+		expect(extractText({ value: "<scr<b>ipt>alert(1)</scr</b>ipt>" })).toBe(
+			"alert(1)",
+		);
+		expect(extractText({ value: "a < b > c" })).toBe("a  c");
+		expect(extractText({ value: "1 < 2" })).toBe("1  2");
+	});
+});
 
 describe("classifyLicense", () => {
 	describe("green (safe to use)", () => {

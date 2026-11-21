@@ -211,9 +211,18 @@ export async function getImageInfo(titles, onBatch) {
 // 4. Normalization + license classification
 // ---------------------------------------------------------------------------
 
-function extractText(extField) {
+// Plain text from a Commons metadata field, which arrives as HTML. One pass
+// of tag removal can leave a tag behind ("<scr<b>ipt>" becomes "<script>"),
+// so tags are removed until none are left, then any stray angle bracket goes.
+// The result is shown as text, never as HTML.
+export function extractText(extField) {
 	if (!extField) return "";
-	return (extField.value || "").replace(/<[^>]*>/g, "").trim();
+	let text = String(extField.value || "");
+	for (let previous = null; previous !== text;) {
+		previous = text;
+		text = text.replace(/<[^<>]*>/g, "");
+	}
+	return text.replace(/[<>]/g, "").trim();
 }
 
 function normalizeCandidate(page, info, ext) {

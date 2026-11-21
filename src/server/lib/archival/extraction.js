@@ -11,6 +11,8 @@ import {
 	getFileSize,
 } from "../core/file-utils.js";
 import { USER_AGENT } from "../user-agent.js";
+import { fetchPublic } from "../core/public-url.ts";
+import { lookup } from "node:dns/promises";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function getArchivalImagesDir(projectStoragePath) {
@@ -47,10 +49,15 @@ function uniqueFilePath(dir, filename) {
 	return candidate;
 }
 
+const lookupAll = (hostname) => lookup(hostname, { all: true });
+
 export async function downloadAndExtract(sourceUrl, projectStoragePath = null) {
-	const response = await fetch(sourceUrl, {
-		headers: { "User-Agent": USER_AGENT },
-	});
+	// Only public addresses, re-checked on every redirect (public-url.ts).
+	const response = await fetchPublic(
+		sourceUrl,
+		{ headers: { "User-Agent": USER_AGENT } },
+		{ lookup: lookupAll },
+	);
 	if (!response.ok) {
 		// On 429, surface Retry-After (seconds) so the queue can honor the server's ask
 		const retryAfter =

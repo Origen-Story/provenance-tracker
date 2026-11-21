@@ -5,8 +5,8 @@ import {
 	PRODUCED_ENRICHMENT_CONDITION,
 	getProducedMissingFields,
 } from "../dashboard.js";
-import { probeVideoTags } from "../extraction/video-probe.js";
-import { parseJsonSafe } from "../origin/classify.js";
+import { probeVideoTags } from "@provenancetracker/core/extraction/video-probe.js";
+import { parseJsonSafe } from "@provenancetracker/core/origin/classify.js";
 import { applyProposal } from "../origin/origin.js";
 import { removeRelationshipsFor } from "../relationships/relationships.js";
 

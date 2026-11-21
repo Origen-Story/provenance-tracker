@@ -16,8 +16,11 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { computeFileHash, getFileSize } from "../core/file-utils.js";
-import { buildAssetManifest, sidecarPathFor } from "../manifest/build.js";
-import { interpretReport } from "../manifest/verify.js";
+import {
+	buildAssetManifest,
+	sidecarPathFor,
+} from "@provenancetracker/core/manifest/build.js";
+import { interpretReport } from "@provenancetracker/core/manifest/verify.js";
 import {
 	signWithC2patool,
 	readReport,

@@ -8,14 +8,14 @@ import {
 	proposeOriginClass,
 	parseJsonSafe,
 	ORIGIN_CLASSES,
-} from "./classify.js";
-import { originClassDef } from "../../../shared/origin-vocabulary.js";
+} from "@provenancetracker/core/origin/classify.js";
+import { originClassDef } from "@provenancetracker/core/origin-vocabulary.js";
 import {
 	tableFor,
 	listRelationshipsFor,
 	linkAssets,
 } from "../relationships/relationships.js";
-import { cleanPublicTitle } from "../manifest/build.js";
+import { cleanPublicTitle } from "@provenancetracker/core/manifest/build.js";
 import { recomputeTimelinesForAsset } from "../timeline/timelines.js";
 
 export { ORIGIN_CLASSES };

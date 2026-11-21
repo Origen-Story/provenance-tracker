@@ -13,7 +13,7 @@ export default tseslint.config(
 			"dist/**",
 			"coverage/**",
 			"src/server/db/migrations/**",
-			"test/fixtures/**",
+			"packages/*/test/fixtures/**",
 			"test-fixtures/**",
 			"tools/**",
 		],
@@ -43,12 +43,43 @@ export default tseslint.config(
 		},
 	},
 	{
-		files: ["src/server/**", "scripts/**", "test/**", "*.config.js"],
+		files: [
+			"src/server/**",
+			"packages/**",
+			"scripts/**",
+			"test/**",
+			"*.config.js",
+		],
 		languageOptions: { globals: globals.node },
 	},
 	{
 		files: ["src/client/**", "public-viewer/**"],
 		languageOptions: { globals: globals.browser },
+	},
+	{
+		// The core package is pure: it never reaches into the app (CLAUDE.md, D24).
+		files: ["packages/core/**"],
+		rules: {
+			"no-restricted-imports": [
+				"error",
+				{
+					patterns: [
+						{
+							group: [
+								"**/src/server/**",
+								"**/src/client/**",
+								"**/db/**",
+								"drizzle-orm",
+								"pg",
+								"express",
+							],
+							message:
+								"packages/core is pure logic and must not import the app, the database or HTTP.",
+						},
+					],
+				},
+			],
+		},
 	},
 	prettier,
 );

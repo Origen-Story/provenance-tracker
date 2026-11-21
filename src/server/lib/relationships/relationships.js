@@ -9,12 +9,12 @@ import {
 	assetRelationships,
 } from "../../db/schema.js";
 import { eq, and, or, sql, desc } from "drizzle-orm";
-import { legacyAssetRef } from "../core/asset-ref.ts";
+import { legacyAssetRef } from "@provenancetracker/core/asset-ref.ts";
 import {
 	topazSourceBasename,
 	findSourceCandidates,
 	searchTerms,
-} from "./auto-link.js";
+} from "@provenancetracker/core/relationships/auto-link.js";
 
 export const ASSET_TYPES = ["ai", "archival", "produced"];
 export const RELATIONSHIP_TYPES = ["ingredient", "derived_from", "output_of"];

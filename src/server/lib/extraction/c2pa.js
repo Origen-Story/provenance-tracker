@@ -28,7 +28,10 @@ import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { createLogger } from "../logger.js";
-import { makeObservation, c2paValidation } from "./observation.ts";
+import {
+	makeObservation,
+	c2paValidation,
+} from "@provenancetracker/core/extraction/observation.ts";
 
 const log = createLogger("c2pa");
 const execFileP = promisify(execFile);
@@ -299,7 +302,7 @@ async function readWithC2patool(filePath) {
  * Every C2PA read attempted on a file, in order. c2pa-node first; c2patool
  * only when c2pa-node could not run or could not decode what it found.
  * Never throws. `readers` is injectable for tests.
- * @returns {Promise<import('./observation.ts').Observation[]>}
+ * @returns {Promise<import('@provenancetracker/core/extraction/observation.ts').Observation[]>}
  */
 export async function observeC2pa(
 	filePath,

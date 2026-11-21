@@ -5,9 +5,9 @@
 import { writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { buildCreatorStatement } from "../../src/server/lib/manifest/build.js";
-import { buildPublicExport } from "../../src/server/lib/manifest/public-export.js";
-import { sourceTypeUri } from "../../src/shared/origin-vocabulary.js";
+import { buildCreatorStatement } from "@provenancetracker/core/manifest/build.js";
+import { buildPublicExport } from "@provenancetracker/core/manifest/public-export.js";
+import { sourceTypeUri } from "@provenancetracker/core/origin-vocabulary.js";
 
 const FPS = 30;
 const DURATION = 96;

@@ -8,7 +8,7 @@ Edit freely. If something in here gets done, delete it.
 
 ## Platform parsers
 
-New platforms to extract metadata from. The current parsers live in [`src/server/lib/extraction/parsers/`](../src/server/lib/extraction/parsers/) — each is a pure function `(exifTags, chunks) → normalized object`. Adding one means: write the parser, register it in the dispatcher, add a detection rule, commit test fixtures.
+New platforms to extract metadata from. The current parsers live in [`packages/core/src/extraction/parsers/`](../packages/core/src/extraction/parsers/) — each is a pure function `(exifTags, chunks) → normalized object`. Adding one means: write the parser, register it in the dispatcher, add a detection rule, commit test fixtures.
 
 ### High-priority generators (projects actively use)
 
@@ -20,7 +20,7 @@ New platforms to extract metadata from. The current parsers live in [`src/server
 Modifiers transform existing content rather than generating it. Conceptually distinct from generators — a modified asset has both an origin and a modification event. See "Modification chain tracking" below for the schema implications.
 
 - **Topaz Gigapixel** — done (2026-11-03): keys off `Software`/`CreatorTool` and reads model and scale from the `-gigapixel-<model>-<N>x` filename tail. **Topaz Photo AI** still needs a real sample.
-- **Topaz source-chain detection** — done (2026-11-03) as `src/server/lib/relationships/auto-link.js`: Topaz Video AI and Gigapixel outputs look for a same-stem asset in the project and link `derived_from` at confidence 0.7. Remaining gap: the Topaz output's stem must match the source's stem exactly; renamed sources need the manual picker.
+- **Topaz source-chain detection** — done (2026-11-03) as `packages/core/src/relationships/auto-link.js`: Topaz Video AI and Gigapixel outputs look for a same-stem asset in the project and link `derived_from` at confidence 0.7. Remaining gap: the Topaz output's stem must match the source's stem exactly; renamed sources need the manual picker.
 - **Google Veo via Freepik** — the two Freepik MP4s in the test project carry only `Encoder: Google` and no C2PA, so they classify as `unknown`. A parser keyed on that encoder string plus the `freepik__` filename prefix would be weak evidence; wait for a sample with a manifest (Freepik states newer downloads are signed).
 - **ElevenLabs WAV with C2PA** — the ElevenLabs parser detects via XMP `Actions`/`Author` tags, which the WAV export does not carry; the classifier still reaches `generated` from the manifest, but `platform` stays `unknown`. Extend `detect()` to accept the stored C2PA summary (claim generator or signer "Eleven Labs Inc.").
 

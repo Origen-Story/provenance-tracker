@@ -12,7 +12,7 @@ The code in this repository is under the Apache License 2.0. The definitions quo
 - The codes, labels and definitions in "IPTC digital source type" are from the IPTC NewsCodes, copyright IPTC, International Press Telecommunications Council (<https://iptc.org>), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). They are reproduced unchanged; the grouping and the notes around them are ours.
 - The action names and meanings, the ingredient relationships and the two C2PA source types are from the C2PA Technical Specification 2.2, copyright the Coalition for Content Provenance and Authenticity (<https://c2pa.org>), licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). They are reproduced unchanged; the selection and ordering are ours.
 
-The same codes appear in `src/shared/origin-vocabulary.js` as identifiers; the labels and descriptions there are the tracker's own wording.
+The same codes appear in `packages/core/src/origin-vocabulary.js` as identifiers; the labels and descriptions there are the tracker's own wording.
 
 ## IPTC digital source type
 

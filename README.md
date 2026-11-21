@@ -198,7 +198,7 @@ To show the dashboard from a laptop, copy the code, the database and the media, 
 | **Freepik**    | C2PA manifest, digital source type (XMP)                                                     | Prompt, model, generation date |
 | **Other**      | EXIF data, file hash, dimensions                                                             | Most fields                    |
 
-Adobe Firefly, ElevenLabs, Topaz Video AI and Topaz Gigapixel files are recognised too; each parser is one module under `src/server/lib/extraction/parsers/`. There is no Meta.ai parser: those files fall under "Other", and a digital source type in their XMP is still read by the classifier.
+Adobe Firefly, ElevenLabs, Topaz Video AI and Topaz Gigapixel files are recognised too; each parser is one module under `packages/core/src/extraction/parsers/`. There is no Meta.ai parser: those files fall under "Other", and a digital source type in their XMP is still read by the classifier.
 
 ## Tech stack
 

@@ -26,10 +26,10 @@ import {
 	buildOutputManifest,
 	buildAssetManifest,
 	STATEMENT_LABEL,
-} from "../../src/server/lib/manifest/build.js";
-import { interpretReport } from "../../src/server/lib/manifest/verify.js";
-import { buildPublicExport } from "../../src/server/lib/manifest/public-export.js";
-import { validate } from "../helpers/json-schema-lite.js";
+} from "@provenancetracker/core/manifest/build.js";
+import { interpretReport } from "@provenancetracker/core/manifest/verify.js";
+import { buildPublicExport } from "@provenancetracker/core/manifest/public-export.js";
+import { validate } from "../../packages/core/test/helpers/json-schema-lite.js";
 
 const haveOpenssl =
 	spawnSync("openssl", ["version"], { encoding: "utf8" }).status === 0;

@@ -2,7 +2,7 @@ import path from "path";
 import { extractExif } from "./exif.js";
 import { extractC2pa } from "./c2pa.js";
 import { extractPngChunks } from "./png-chunks.js";
-import { detectAndParse } from "./detect.js";
+import { detectAndParse } from "@provenancetracker/core/extraction/detect.js";
 import {
 	computeFileHash,
 	getMimeType,

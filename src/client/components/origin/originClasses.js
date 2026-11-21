@@ -14,7 +14,7 @@ import {
 	spectrumPosition,
 	describeOrigin,
 	SIGNED_BY_LABELS,
-} from "../../../shared/origin-vocabulary.js";
+} from "@provenancetracker/core/origin-vocabulary.js";
 
 export {
 	ORIGIN_CLASS_DEFS,

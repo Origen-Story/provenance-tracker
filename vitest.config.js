@@ -5,6 +5,7 @@ export default defineConfig({
 		environment: "node",
 		include: [
 			"test/unit/**/*.test.{js,ts}",
+			"packages/*/test/**/*.test.{js,ts}",
 			"test/integration/**/*.test.{js,ts}",
 		],
 		// Server-only tests today; the React tree would need a DOM env if/when we add it.

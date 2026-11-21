@@ -3,6 +3,9 @@
 	"private": true,
 	"version": "0.2.0",
 	"type": "module",
+	"workspaces": [
+		"packages/*"
+	],
 	"license": "Apache-2.0",
 	"homepage": "https://provenancetracker.org",
 	"scripts": {
@@ -28,12 +31,12 @@
 	},
 	"dependencies": {
 		"@notionhq/client": "5.18.0",
+		"@provenancetracker/core": "0.2.0",
 		"@tanstack/react-query": "5.95.2",
 		"c2pa-node": "0.5.26",
 		"drizzle-orm": "0.45.4",
 		"exiftool-vendored": "39.1.0",
 		"express": "5.3.0",
-		"fast-xml-parser": "5.12.0",
 		"multer": "2.5.0",
 		"pg": "8.20.0",
 		"react": "19.3.1",

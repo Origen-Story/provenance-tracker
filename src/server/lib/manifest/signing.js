@@ -26,12 +26,18 @@ import {
 	placedAssetRefs,
 	sidecarPathFor,
 	planSidecar,
-} from "./build.js";
-import { legacyAssetRef, parseLegacyAssetRef } from "../core/asset-ref.ts";
-import { interpretReport } from "./verify.js";
+} from "@provenancetracker/core/manifest/build.js";
+import {
+	legacyAssetRef,
+	parseLegacyAssetRef,
+} from "@provenancetracker/core/asset-ref.ts";
+import { interpretReport } from "@provenancetracker/core/manifest/verify.js";
 import { signWithC2patool, storableDefinition } from "./c2patool.js";
 import { GENERATOR } from "./generator.js";
-import { buildPublicExport, publicExportFileName } from "./public-export.js";
+import {
+	buildPublicExport,
+	publicExportFileName,
+} from "@provenancetracker/core/manifest/public-export.js";
 import { signAsset } from "../extraction/c2pa-sign.js";
 
 const TEXT_LIMIT = 4000;

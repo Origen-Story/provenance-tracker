@@ -29,7 +29,7 @@ import { X509Certificate } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { resolveC2patoolPath } from "../extraction/c2pa.js";
-import { sidecarPathFor } from "./build.js";
+import { sidecarPathFor } from "@provenancetracker/core/manifest/build.js";
 import { createLogger } from "../logger.js";
 
 const log = createLogger("c2patool");

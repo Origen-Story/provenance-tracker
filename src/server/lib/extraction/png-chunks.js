@@ -1,7 +1,7 @@
 import { readFile } from "fs/promises";
 import { existsSync } from "fs";
 import { inflateSync } from "node:zlib";
-import { makeObservation } from "./observation.ts";
+import { makeObservation } from "@provenancetracker/core/extraction/observation.ts";
 import { GENERATOR } from "../manifest/generator.js";
 
 /**
@@ -63,7 +63,7 @@ export function parseITxt(data) {
  * The observation of a PNG's text chunks. The reader is this program's own
  * code, so the extractor is the tracker at its version. A file that is not a
  * PNG, or a PNG with no text chunks, is `absent`.
- * @returns {Promise<import('./observation.ts').Observation>}
+ * @returns {Promise<import('@provenancetracker/core/extraction/observation.ts').Observation>}
  */
 export async function observePngText(filePath) {
 	const base = {

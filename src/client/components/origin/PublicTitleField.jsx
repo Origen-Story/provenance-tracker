@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-const MAX = 120; // PUBLIC_TITLE_MAX in src/server/lib/manifest/build.js
+const MAX = 120; // PUBLIC_TITLE_MAX in packages/core/src/manifest/build.js
 
 export default function PublicTitleField({
 	type,

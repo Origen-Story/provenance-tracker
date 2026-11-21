@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { extractExif } from "../extraction/exif.js";
 import { extractC2pa } from "../extraction/c2pa.js";
-import { probeVideoTags } from "../extraction/video-probe.js";
+import { probeVideoTags } from "@provenancetracker/core/extraction/video-probe.js";
 import {
 	computeFileHash,
 	getMimeType,

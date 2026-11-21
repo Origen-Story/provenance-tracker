@@ -1,6 +1,9 @@
 import { ExifTool } from "exiftool-vendored";
 import { createLogger } from "../logger.js";
-import { makeObservation, exifObservationFields } from "./observation.ts";
+import {
+	makeObservation,
+	exifObservationFields,
+} from "@provenancetracker/core/extraction/observation.ts";
 
 const log = createLogger("exif");
 let exiftool = null;
@@ -27,7 +30,7 @@ async function getVersion() {
 /**
  * Read a file's EXIF, XMP, IPTC, container and PNG text metadata with
  * ExifTool, once.
- * @returns {Promise<{ tags: object|null, observation: import('./observation.ts').Observation }>}
+ * @returns {Promise<{ tags: object|null, observation: import('@provenancetracker/core/extraction/observation.ts').Observation }>}
  *   `tags` is ExifTool's object as the current app uses it (null on failure);
  *   `observation` holds every tag except the location ones (observation.ts).
  */

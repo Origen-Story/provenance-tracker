@@ -9,12 +9,23 @@ Explanations that used to live in `CLAUDE.md`. `CLAUDE.md` is rules only; this f
 - **Database:** PostgreSQL via Drizzle ORM + `pg`
 - **Build:** Vite with `@vitejs/plugin-react`
 - **Dev:** `concurrently` runs Express (port 3001) and the Vite dev server (port 5173, proxies `/api` to Express)
-- **Extraction:** `exiftool-vendored` (EXIF and container tags, including video duration, frame rate and codec), `c2pa-node` (C2PA read, optional) with the bundled `c2patool` as the fallback reader and the only signer (installed by `npm run tools:fetch`), and a small PNG chunk reader of its own (`src/server/lib/extraction/png-chunks.js`) Each reader returns an observation (`src/server/lib/extraction/observation.ts`): reader and version, status, the full data made JSON-safe (binary fields reduced to size and SHA-256, location tags left out) and, for C2PA, the validation; see D21. The current app stores only the summaries it stored before, with `validation` added to `c2paJson`. The pure modules name an asset by an opaque `ref` (`src/server/lib/core/asset-ref.ts`); the old app makes refs from its table and row id at its edges (D23).
+- **Extraction:** `exiftool-vendored` (EXIF and container tags, including video duration, frame rate and codec), `c2pa-node` (C2PA read, optional) with the bundled `c2patool` as the fallback reader and the only signer (installed by `npm run tools:fetch`), and a small PNG chunk reader of its own (`src/server/lib/extraction/png-chunks.js`) Each reader returns an observation (`packages/core/src/extraction/observation.ts`): reader and version, status, the full data made JSON-safe (binary fields reduced to size and SHA-256, location tags left out) and, for C2PA, the validation; see D21. The current app stores only the summaries it stored before, with `validation` added to `c2paJson`. The pure modules name an asset by an opaque `ref` (`packages/core/src/asset-ref.ts`); the old app makes refs from its table and row id at its edges (D23).
 
 ## Project structure
 
 ```
-src/
+packages/
+  core/                    # @provenancetracker/core: pure logic, no IO (D24)
+    src/
+      origin-vocabulary.js # Origin classes (IPTC digital source types), shared with the client
+      asset-ref.ts         # The opaque asset reference (D23)
+      extraction/          # Observation shape, platform parsers + their dispatch, video tags
+      manifest/            # Manifest builder, public export, verification report
+      origin/              # Origin classifier
+      relationships/       # Enhancer-output auto-link
+      timeline/            # Timeline formats, matching, composition, breakdown
+    test/                  # Its unit tests and their fixtures
+src/                       # The app (moves to packages/app in the cutover)
   client/                  # React frontend (Vite root)
     components/layout/     # AppShell, Sidebar, PageHeader
     pages/                 # Route pages (Dashboard, ImportHub, Settings, ...)
@@ -27,7 +38,7 @@ src/
     main.jsx               # Entry point
   server/
     db/                    # Drizzle schema, migrations, connection
-    lib/                   # Business logic: pure functions per area
+    lib/                   # The app's logic per area: database, files, child processes
       archival/            # Archival CRUD, Notion sync, URL extraction
       assets/              # AI asset CRUD
       core/                # Shared constants, file utilities (hash, MIME)
@@ -59,7 +70,7 @@ Why idempotent: a private downstream fork of this repo carries its own migration
 - `manifests`: legacy, unused (empty); superseded by `signatures`
 - `creator_statements`: the creator statement for an output (words and author; the numbers are built at sign time)
 - `in_place` on `assets`, `archival_assets`, `produced_assets` (D12): the row's `file_path` is the file where it already lived, not a managed copy
-- Public export (phase 4d): `src/server/lib/manifest/public-export.js` (pure) builds it from one `signatures` row of kind `output`; schema `schemas/public-export.v1.schema.json`; `GET /api/outputs/:id/public-export?signature=<id>&download=1`. c2patool does not keep our ingredient labels in its read-back (it renames them `c2pa.ingredient.v3`, `__1`, ... in the order given), so read-back entries are paired with statement ingredients by position and file name
+- Public export (phase 4d): `packages/core/src/manifest/public-export.js` (pure) builds it from one `signatures` row of kind `output`; schema `schemas/public-export.v1.schema.json`; `GET /api/outputs/:id/public-export?signature=<id>&download=1`. c2patool does not keep our ingredient labels in its read-back (it renames them `c2pa.ingredient.v3`, `__1`, ... in the order given), so read-back entries are paired with statement ingredients by position and file name
 - `public_title` on the same three tables: the name the public viewer shows, empty for the file name. Signed into the creator statement (v2) as `publicTitle` on the output and each ingredient; the C2PA ingredient `title` stays the file name. Statement v3 adds `originClass` and `position` to each `unresolved` clip (a nested sequence or unmatched clip classed by hand), so the public viewer can list it under its kind; the export still leaves clip names out
 - `signatures`: every signed copy of an asset or output: the new file, its hash, the manifest definition without key paths, the c2patool read-back and its status
 - `search_groups`, `search_jobs`, `search_candidates`: Wikimedia archive search
@@ -67,21 +78,21 @@ Why idempotent: a private downstream fork of this repo carries its own migration
 
 ### Origin classes
 
-Every asset row carries `origin_class`, `origin_class_confirmed`, `origin_class_source` and `origin_class_note`. The class is an IPTC Digital Source Type code or `unknown` (D11; definitions in `docs/vocabulary.md`). The vocabulary lives in `src/shared/origin-vocabulary.js`, pure data and functions imported by both the server and the client: labels, the picker's short list, the spectrum position of each class, `normalizeSourceType` (URIs, bare codes, retired codes), `spectrumPosition`, and `compositeClassFor`.
+Every asset row carries `origin_class`, `origin_class_confirmed`, `origin_class_source` and `origin_class_note`. The class is an IPTC Digital Source Type code or `unknown` (D11; definitions in `docs/vocabulary.md`). The vocabulary lives in `packages/core/src/origin-vocabulary.js`, pure data and functions imported by both the server and the client: labels, the picker's short list, the spectrum position of each class, `normalizeSourceType` (URIs, bare codes, retired codes), `spectrumPosition`, and `compositeClassFor`.
 
 Beside the class sit three attributes: `signed_by` and `signer_name` (who vouches for the file's credentials: the capture device, the tool that made it, or the creator at ingest), `ai_assisted` (an AI wrote the instructions and an ordinary program made the pixels), and archive origin, which is simply the asset's table.
 
-The pure classifier in `src/server/lib/origin/classify.js` proposes a class at import from the stored signals, in this order: a C2PA manifest (component ingredients make a composite; otherwise the declared source type is kept, with the known tool quirks corrected), an enhancer tool following its `derived_from` parent, unsigned XMP/IPTC hints (`DigitalSourceType`, an AI credit line), then the table the row lives in. `origin_class_source` records which rule fired so the UI can explain the proposal. Only `unknown` counts as a missing enrichment field. `src/server/lib/origin/origin.js` is the IO wrapper: it gathers the signals (AI assets keep theirs in `asset_metadata`), writes proposals, never overwrites a confirmed class unless forced but always keeps the signer current, and re-proposes unconfirmed `derived_from` children when a parent changes.
+The pure classifier in `packages/core/src/origin/classify.js` proposes a class at import from the stored signals, in this order: a C2PA manifest (component ingredients make a composite; otherwise the declared source type is kept, with the known tool quirks corrected), an enhancer tool following its `derived_from` parent, unsigned XMP/IPTC hints (`DigitalSourceType`, an AI credit line), then the table the row lives in. `origin_class_source` records which rule fired so the UI can explain the proposal. Only `unknown` counts as a missing enrichment field. `src/server/lib/origin/origin.js` is the IO wrapper: it gathers the signals (AI assets keep theirs in `asset_metadata`), writes proposals, never overwrites a confirmed class unless forced but always keeps the signer current, and re-proposes unconfirmed `derived_from` children when a parent changes.
 
 Colour belongs to the spectrum position, not the class: six CSS custom properties, `--pt-origin-captured`, `-digital`, `-assisted`, `-hybrid`, `-synthetic` and `-unknown`, defined in `src/client/app.css`. Badges, the composition strip and legends read only those, so a theme or the public viewer overrides the palette in one place.
 
-Enhancer outputs (Topaz Video AI, Topaz Gigapixel) are modifiers, not generators. On import, `src/server/lib/relationships/auto-link.js` strips the Topaz suffix from the filename and looks for a same-stem asset in the project; one hit links it as `derived_from` with confidence 0.7, several are returned as suggestions. Routes: `/api/origin/*` and `/api/relationships/*`.
+Enhancer outputs (Topaz Video AI, Topaz Gigapixel) are modifiers, not generators. On import, `packages/core/src/relationships/auto-link.js` strips the Topaz suffix from the filename and looks for a same-stem asset in the project; one hit links it as `derived_from` with confidence 0.7, several are returned as suggestions. Routes: `/api/origin/*` and `/api/relationships/*`.
 
 ### Timelines and screen time
 
 `timelines` holds one imported NLE sequence per produced output (format, fps, duration, settings, cached breakdown, path of the raw file kept under `<storage>/timelines/<producedId>/`); `timeline_segments` holds one row per clip per track with its match (`matched_asset_type`/`id`, `match_method`, `match_confidence`) and an optional per-clip `origin_class` override.
 
-Pure modules under `src/server/lib/timeline/`: `formats/` is the registry (xmeml first, D2; a module exports `detect` and `parse` to one normalised shape), `match.js` matches each distinct source file to a tracked asset by path (including a signed copy's original path), SHA-256, filename plus size, then filename only, and reconciles a manual pick with that evidence (`reconcileManualMatch`); `compose.js` builds the headline view (D10): two lanes, picture and audio, each a list of intervals tiling the sequence, `single` when every playing layer sits at one spectrum position, `mixed` when positions overlap (layers listed top track first), `gap` when nothing plays, with per-position, mixed-combination and gap numbers derived from those same intervals, and the real tracks kept for the expanded view; `breakdown.js` keeps the per-track tallies (primary track, overlay sweep, audio with stereo pairs collapsed) and embeds the composition as `breakdown.composition`. `timelines.js` is the IO wrapper: it parses, stores, matches with real file stats and hashes, persists, caches the breakdown (recomputing a cached one that predates the composition on first read), flags the produced asset as an output, proposes the output's class from what is in it, and links every matched asset to the output as `output_of`. Fixing a segment's match applies to every clip of the same source; an asset's origin-class change recomputes every timeline that counts it.
+Pure modules under `packages/core/src/timeline/` (the IO, `timelines.js`, stays in `src/server/lib/timeline/`): `formats/` is the registry (xmeml first, D2; a module exports `detect` and `parse` to one normalised shape), `match.js` matches each distinct source file to a tracked asset by path (including a signed copy's original path), SHA-256, filename plus size, then filename only, and reconciles a manual pick with that evidence (`reconcileManualMatch`); `compose.js` builds the headline view (D10): two lanes, picture and audio, each a list of intervals tiling the sequence, `single` when every playing layer sits at one spectrum position, `mixed` when positions overlap (layers listed top track first), `gap` when nothing plays, with per-position, mixed-combination and gap numbers derived from those same intervals, and the real tracks kept for the expanded view; `breakdown.js` keeps the per-track tallies (primary track, overlay sweep, audio with stereo pairs collapsed) and embeds the composition as `breakdown.composition`. `timelines.js` is the IO wrapper: it parses, stores, matches with real file stats and hashes, persists, caches the breakdown (recomputing a cached one that predates the composition on first read), flags the produced asset as an output, proposes the output's class from what is in it, and links every matched asset to the output as `output_of`. Fixing a segment's match applies to every clip of the same source; an asset's origin-class change recomputes every timeline that counts it.
 
 ### Outputs
 
@@ -127,7 +138,7 @@ Three smaller rules live beside it: `/api/preview` serves image, video and audio
 
 - **Notion** (optional): syncs archival assets to a Notion database, configured per project. API key is global in `.env`.
 - **ExifTool**: vendored via `exiftool-vendored`.
-- **C2PA**: reading tries `c2pa-node` and falls back to `c2patool`. Signing (phase 4c) is c2patool only: `src/server/lib/manifest/build.js` builds the manifest definition (pure), `c2patool.js` signs an output into a new `<name>.signed.v<N>.<ext>` (embedded) and a source asset into a `<name>.c2pa` sidecar (D13), then reads it back, `verify.js` turns the report into a status (`unrecognised_issuer` is the expected status for the dev certificate). Ingredients go in through `c2patool -i` records, with a sidecar attached as the record's manifest store when the file has one (`-i` reads embedded credentials only), so an ingredient with its own credentials keeps them inside the signed file. The asset row is never repointed at a signed copy; signed copies are rows in `signatures`.
+- **C2PA**: reading tries `c2pa-node` and falls back to `c2patool`. Signing (phase 4c) is c2patool only: `packages/core/src/manifest/build.js` builds the manifest definition (pure), `c2patool.js` signs an output into a new `<name>.signed.v<N>.<ext>` (embedded) and a source asset into a `<name>.c2pa` sidecar (D13), then reads it back, `verify.js` turns the report into a status (`unrecognised_issuer` is the expected status for the dev certificate). Ingredients go in through `c2patool -i` records, with a sidecar attached as the record's manifest store when the file has one (`-i` reads embedded credentials only), so an ingredient with its own credentials keeps them inside the signed file. The asset row is never repointed at a signed copy; signed copies are rows in `signatures`.
 
 ## Testing
 

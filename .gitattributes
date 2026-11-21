@@ -22,4 +22,4 @@
 
 # Timeline fixtures keep the bytes the NLE wrote (an exported XML may carry
 # CRLF or a BOM; the parser is tested against what Premiere really writes).
-test/fixtures/timeline/** -text
+packages/core/test/fixtures/timeline/** -text

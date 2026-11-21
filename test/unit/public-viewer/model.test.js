@@ -24,7 +24,7 @@ import {
 	filmSummary,
 	untrackedItems,
 } from "../../../public-viewer/src/model.js";
-import { validate } from "../../helpers/json-schema-lite.js";
+import { validate } from "../../../packages/core/test/helpers/json-schema-lite.js";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 const read = (p) => JSON.parse(readFileSync(path.join(ROOT, p), "utf8"));

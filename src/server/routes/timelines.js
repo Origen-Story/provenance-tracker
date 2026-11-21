@@ -14,7 +14,7 @@ import {
 	recomputeTimeline,
 	deleteTimeline,
 } from "../lib/timeline/timelines.js";
-import { formats } from "../lib/timeline/formats/index.js";
+import { formats } from "@provenancetracker/core/timeline/formats/index.js";
 
 const router = Router();
 const upload = multer({

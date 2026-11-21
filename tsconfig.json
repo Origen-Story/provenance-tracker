@@ -23,9 +23,10 @@
 	},
 	"include": [
 		"src/server/**/*",
-		"src/shared/**/*",
+		"packages/*/src/**/*",
+		"packages/*/test/**/*",
 		"scripts/**/*",
 		"test/**/*"
 	],
-	"exclude": ["src/server/db/migrations/**", "test/fixtures/**"]
+	"exclude": ["src/server/db/migrations/**", "packages/*/test/fixtures/**"]
 }

@@ -15,23 +15,26 @@ import {
 	producedAssets,
 } from "../../db/schema.js";
 import { eq, and, sql, asc, desc } from "drizzle-orm";
-import { parseTimeline } from "./formats/index.js";
+import { parseTimeline } from "@provenancetracker/core/timeline/formats/index.js";
 import {
 	buildMatchIndex,
 	matchClips,
 	sourcesFromTimeline,
 	matchesByClip,
 	reconcileManualMatch,
-} from "./match.js";
-import { computeBreakdown, segmentsFromTimeline } from "./breakdown.js";
-import { positionsIn } from "./compose.js";
-import { compositeClassFor } from "../../../shared/origin-vocabulary.js";
+} from "@provenancetracker/core/timeline/match.js";
+import {
+	computeBreakdown,
+	segmentsFromTimeline,
+} from "@provenancetracker/core/timeline/breakdown.js";
+import { positionsIn } from "@provenancetracker/core/timeline/compose.js";
+import { compositeClassFor } from "@provenancetracker/core/origin-vocabulary.js";
 import { computeFileHash } from "../core/file-utils.js";
 import {
 	legacyAssetRef,
 	parseLegacyAssetRef,
 	withLegacyLayerRefs,
-} from "../core/asset-ref.ts";
+} from "@provenancetracker/core/asset-ref.ts";
 import {
 	linkAssets,
 	resolveAssetRef,

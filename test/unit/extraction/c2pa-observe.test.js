@@ -7,7 +7,7 @@ import {
 	extractC2pa,
 	parseToolVersion,
 } from "../../../src/server/lib/extraction/c2pa.js";
-import { makeObservation } from "../../../src/server/lib/extraction/observation.ts";
+import { makeObservation } from "@provenancetracker/core/extraction/observation.ts";
 
 const manifest = {
 	title: "clip.mp4",

@@ -8,7 +8,7 @@ import {
 } from "../../db/schema.js";
 import { eq, desc, asc, sql, count, and } from "drizzle-orm";
 import { getAIMissingFields } from "../dashboard.js";
-import { detectAndParse } from "../extraction/ai-extraction.js";
+import { detectAndParse } from "../extraction/detect.js";
 import { applyProposal } from "../origin/origin.js";
 import {
 	removeRelationshipsFor,

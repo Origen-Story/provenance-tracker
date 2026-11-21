@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import * as gigapixel from "../../../src/server/lib/extraction/parsers/topaz-gigapixel.js";
-import { detectAndParse } from "../../../src/server/lib/extraction/ai-extraction.js";
+import { detectAndParse } from "../../../src/server/lib/extraction/detect.js";
 
 // Tags as exiftool returns them for a Gigapixel output (real file, name shortened).
 const TAGS = {

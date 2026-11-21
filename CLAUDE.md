@@ -5,18 +5,19 @@ Local web app that records where multimedia assets came from (camera, archive, A
 ## Commands (from repo root)
 
 - Tests: `npm test`. Run them before saying anything is done. They run vitest inside the repo guard (scripts/test.mjs), which fails if a test changes the checkout or the suite takes over 60 s.
-- Tests are pure or temp-dir only: no database, no network, no signing against certs/. Small fixtures are committed beside the tests that use them (packages/core/test/fixtures/); large media stays in test-fixtures/ (gitignored).
+- Tests are pure, temp-dir or in-memory catalog only: no Postgres, no network, no signing against certs/. Small fixtures are committed beside the tests that use them (packages/core/test/fixtures/); large media stays in test-fixtures/ (gitignored).
 - Dev: `npm run dev` (Express on 3001, Vite on 5173). Build: `npm run build`.
 - Node 24 locally and in CI.
 
 ## Rules
 
 - New code is TypeScript, erasable syntax only (D16); existing JavaScript converts a file at a time; the public viewer stays JavaScript. Relative imports within a package, the package name across packages (`@provenancetracker/core/timeline/compose.js`).
-- Schema changes: edit src/server/db/schema.js, `npm run db:generate`, make the SQL idempotent (IF NOT EXISTS) with a shell edit in the same commit, `npm run db:migrate`. Never `npm run db:push`. The guard hook blocks the file tools on migrations/ so that one edit is a deliberate step, not a habit.
+- Catalog format (packages/core/src/catalog/, spec/catalog/; D26): while CATALOG_FORMAT_STATUS is "draft", edit the SQL and run `npm run catalog:write`. Once released, a change is a new format with an upgrade step and its own sample catalog, never an edit to the old SQL.
+- Postgres schema changes (the app, until the Phase 6 cutover): edit src/server/db/schema.js, `npm run db:generate`, make the SQL idempotent (IF NOT EXISTS) with a shell edit in the same commit, `npm run db:migrate`. Never `npm run db:push`. The guard hook blocks the file tools on migrations/ so that one edit is a deliberate step, not a habit.
 - Originals are never modified in place. Signing, re-encoding and exporting write a new file; the row keeps the original path.
 - Secrets live in .env and certs/ (both gitignored). Never read them into output, logs or commits. Deny rules and the guard hook block Claude's file tools there; shell commands are not blocked, so never write those paths from a shell either.
 - The API is local-only and has no login: `localOnly` stays the first middleware on `/api`, the server binds `HOST` (default 127.0.0.1), and the Vite proxy keeps `changeOrigin: false`. A project leaves the API through `toProjectResponse`, never as a raw row. Routes take request fields from a named list, never `req.body` whole.
-- Pure logic lives in packages/core/src/<area>/ with its tests in packages/core/test/; core never imports the app. IO (database, filesystem, child processes, HTTP) lives in the app (src/server/) in routes and thin wrappers.
+- Pure logic lives in packages/core/src/<area>/ with its tests in packages/core/test/; core never imports the app. Core runs SQL on a catalog it is handed and never opens a file. IO (database, filesystem, child processes, HTTP) lives in the app (src/server/) in routes and thin wrappers.
 - Platform parsers and timeline formats are registry modules (see packages/core/src/extraction/parsers/index.js): add a module, register it, commit a fixture and a test.
 - This repo is public. No client, tour or production names in code, fixtures, example data or docs. Production-specific work lives in the private downstream repo (docs/decisions.md D1).
 - Dependencies (docs/dependencies.md): exact versions; the newest release at least 14 days old; a new runtime dependency needs a reason in docs/decisions.md; helper programs come from `npm run tools:fetch`, pinned and checksummed.

@@ -34,12 +34,12 @@ function hasFilenameSignal(exifTags) {
 	return name.includes('elevenlabs');
 }
 
-export function detect(exifTags, chunks) {
+export function detect(exifTags, _chunks) {
 	if (!exifTags) return false;
 	return hasC2paSignal(exifTags) || hasFilenameSignal(exifTags);
 }
 
-export function parse(exifTags, chunks) {
+export function parse(exifTags, _chunks) {
 	const result = {
 		platform: 'elevenlabs',
 		prompt: '',

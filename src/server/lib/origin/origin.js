@@ -3,7 +3,7 @@
 // never overwritten by a proposal unless `force` is passed.
 import { db } from '../../db/index.js';
 import { assetMetadata } from '../../db/schema.js';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { proposeOriginClass, parseJsonSafe, ORIGIN_CLASSES } from './classify.js';
 import { originClassDef } from '../../../shared/origin-vocabulary.js';
 import { tableFor, listRelationshipsFor, linkAssets } from '../relationships/relationships.js';

@@ -1,0 +1,26 @@
+{
+  // Type checking only: Node runs .ts files directly (docs/decisions.md D16),
+  // and Vite builds the client. Nothing is emitted.
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["es2024"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    // Existing JavaScript is read but not checked; a file is checked once it
+    // is converted to .ts. The public viewer will opt in with JSDoc + checkJs.
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": ["src/server/**/*", "src/shared/**/*", "scripts/**/*", "test/**/*"],
+  "exclude": ["src/server/db/migrations/**", "test/fixtures/**"]
+}

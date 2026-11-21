@@ -26,11 +26,13 @@ export default function ArchivalIngest() {
 	const [creator, setCreator] = useState('');
 	const [institution, setInstitution] = useState('');
 	const [license, setLicense] = useState('');
-	const [licenseUrl, setLicenseUrl] = useState('');
+	// No input renders a license URL, so this is always sent empty. Known gap,
+	// to be fixed when the import pages are rebuilt.
+	const [licenseUrl] = useState('');
 	const [originalDate, setOriginalDate] = useState('');
 	const [medium, setMedium] = useState('photograph');
 	const [usageNotes, setUsageNotes] = useState('');
-	const [notionStrategy, setNotionStrategy] = useState('external_url');
+	const [notionStrategy] = useState('external_url'); // Notion sync is parked (roadmap)
 
 	function prefillFromData(data) {
 		setExtracted(data);

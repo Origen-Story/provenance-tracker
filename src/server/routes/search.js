@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getActiveProject } from '../lib/projects.js';
 import { createLogger } from '../lib/logger.js';
-import { listGroups, getGroupByGroupId } from '../lib/search/groups.js';
+import { getGroupByGroupId } from '../lib/search/groups.js';
 import {
 	listCandidates, getCandidate, getCandidateStats,
 	updateCandidateStatus, bulkUpdateStatus, enqueueApproval, enqueueBulk, deleteCandidate

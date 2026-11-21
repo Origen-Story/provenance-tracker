@@ -9,7 +9,7 @@ export const id = 'freepik';
 // Freepik rebranded their Software tag or moved fields into new XMP locations.
 export const coreFields = ['prompt', 'modelName', 'width', 'height'];
 
-export function detect(exifTags, chunks) {
+export function detect(exifTags, _chunks) {
 	const creator = (exifTags?.Creator || exifTags?.Artist || exifTags?.['XMP:Creator'] || '').toLowerCase();
 	const software = (exifTags?.Software || exifTags?.['XMP:Software'] || '').toLowerCase();
 	const copyright = (exifTags?.Copyright || exifTags?.['XMP:Rights'] || '').toLowerCase();

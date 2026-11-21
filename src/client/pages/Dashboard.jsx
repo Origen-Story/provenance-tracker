@@ -217,7 +217,7 @@ export default function Dashboard() {
 				<div className="bg-card-bg border border-border rounded-lg p-5">
 					<h3 className="text-sm font-semibold text-text-primary mb-3">Recent activity</h3>
 					<div className="space-y-1">
-						{stats.recent.map((item, i) => {
+						{stats.recent.map((item) => {
 							const c = TYPE_COLORS[item.type] || TYPE_COLORS.produced;
 							return (
 								<Link key={`${item.type}-${item.id}`} to={item.link}

@@ -77,7 +77,7 @@ export function checkLocalRequest({ host, origin, secFetchSite, allowedHosts = [
 		return { ok: false, reason: `Host "${target.hostname}" is not this machine` };
 	}
 	if (origin !== undefined && origin !== '') {
-		let from = null;
+		let from;
 		try { from = new URL(origin); } catch { from = null; }
 		if (!from || !/^https?:$/.test(from.protocol)) return { ok: false, reason: 'Origin is not a web address' };
 		if (from.host.toLowerCase() !== target.host) return { ok: false, reason: `Origin "${from.host}" is not the page this server serves` };

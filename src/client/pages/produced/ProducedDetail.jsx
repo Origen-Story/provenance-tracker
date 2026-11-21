@@ -90,7 +90,7 @@ export default function ProducedDetail() {
 	if (!asset || asset.error) return <p className="text-danger text-sm p-8">Asset not found.</p>;
 
 	let exif = {};
-	try { exif = JSON.parse(asset.exifJson || '{}'); } catch {}
+	try { exif = JSON.parse(asset.exifJson || '{}'); } catch { /* unreadable EXIF shows as none */ }
 
 	return (
 		<div>

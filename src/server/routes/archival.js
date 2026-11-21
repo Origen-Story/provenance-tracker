@@ -3,8 +3,8 @@ import { existsSync } from 'fs';
 import path from 'path';
 import { db } from '../db/index.js';
 import { archivalAssets } from '../db/schema.js';
-import { eq, and, sql, ne } from 'drizzle-orm';
-import { listArchivalAssets, getArchivalAsset, createArchivalAsset, updateArchivalAsset, deleteArchivalAsset, markNotionSynced } from '../lib/archival/archival.js';
+import { eq, and, ne } from 'drizzle-orm';
+import { listArchivalAssets, getArchivalAsset, createArchivalAsset, updateArchivalAsset, deleteArchivalAsset } from '../lib/archival/archival.js';
 import { getActiveProject } from '../lib/projects.js';
 
 const router = Router();

@@ -229,7 +229,7 @@ export async function getTimeline(id) {
 	const segments = await effectiveSegments(await loadSegments(id));
 	let breakdown = parseBreakdown(row.breakdownJson);
 	if (isStale(breakdown)) breakdown = await recomputeTimeline(id);
-	let notes = [];
+	let notes;
 	try { notes = JSON.parse(row.notesJson || '[]'); } catch { notes = []; }
 	return { ...row, breakdown, notes, segments };
 }

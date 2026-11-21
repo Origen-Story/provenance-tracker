@@ -28,14 +28,14 @@ function fireflyAction(actions) {
 	return null;
 }
 
-export function detect(exifTags, chunks) {
+export function detect(exifTags, _chunks) {
 	if (!exifTags) return false;
 	if (exifTags.Claim_generator === 'Adobe_Firefly') return true;
 	if (exifTags.Claim_generator_info?.name === 'Adobe_Firefly') return true;
 	return !!fireflyAction(exifTags.Actions);
 }
 
-export function parse(exifTags, chunks) {
+export function parse(exifTags, _chunks) {
 	const result = {
 		platform: 'firefly',
 		prompt: '',

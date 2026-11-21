@@ -538,7 +538,7 @@ export default function GroupsManager() {
 			else if (activeJob.status === 'failed') flash(`Search failed: ${activeJob.lastError}`);
 			else if (activeJob.status === 'cancelled') flash('Search cancelled');
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+		// Deliberately keyed on the job's id and status only, not the whole object.
 	}, [activeJob?.id, activeJob?.status]);
 
 	const cancelJobMut = useMutation({

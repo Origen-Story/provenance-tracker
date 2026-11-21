@@ -78,7 +78,7 @@ export function positionDef(id) {
  * string `empty` for C2PA's blank canvas, or null when it is not a source type.
  */
 export function normalizeSourceType(value) {
-	const tail = String(value || '').trim().split(/[\/#]/).pop();
+	const tail = String(value || '').trim().split(/[/#]/).pop();
 	if (!tail) return null;
 	const lower = tail.toLowerCase();
 	if (lower === 'empty') return 'empty';

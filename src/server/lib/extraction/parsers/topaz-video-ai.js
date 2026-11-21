@@ -22,12 +22,12 @@ export const id = 'topaz-video-ai';
 
 export const coreFields = ['platform', 'modelName'];
 
-export function detect(exifTags, chunks) {
+export function detect(exifTags, _chunks) {
 	const tag = exifTags?.Videoai;
 	return typeof tag === 'string' && tag.toLowerCase().includes('enhanced using');
 }
 
-export function parse(exifTags, chunks) {
+export function parse(exifTags, _chunks) {
 	const tag = exifTags?.Videoai || '';
 
 	const result = {

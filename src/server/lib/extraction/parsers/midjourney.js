@@ -9,7 +9,7 @@ export const id = 'midjourney';
 // the Description/UserComment format likely changed and the parser needs an update.
 export const coreFields = ['prompt', 'modelVersion', 'aspectRatio'];
 
-export function detect(exifTags, chunks) {
+export function detect(exifTags, _chunks) {
 	const desc = exifTags?.Description || exifTags?.ImageDescription || exifTags?.UserComment || '';
 	const software = exifTags?.Software || '';
 	return (
@@ -19,7 +19,7 @@ export function detect(exifTags, chunks) {
 	);
 }
 
-export function parse(exifTags, chunks) {
+export function parse(exifTags, _chunks) {
 	const result = {
 		platform: 'midjourney',
 		prompt: '',

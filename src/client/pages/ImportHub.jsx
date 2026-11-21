@@ -112,7 +112,9 @@ export default function ImportHub() {
 	const [creator, setCreator] = useState('');
 	const [institution, setInstitution] = useState('');
 	const [license, setLicense] = useState('');
-	const [licenseUrl, setLicenseUrl] = useState('');
+	// No input renders a license URL, so this is always sent empty. Known gap,
+	// to be fixed when the import pages are rebuilt.
+	const [licenseUrl] = useState('');
 	const [originalDate, setOriginalDate] = useState('');
 	const [medium, setMedium] = useState('photograph');
 	const [archUsageNotes, setArchUsageNotes] = useState('');
@@ -430,7 +432,6 @@ export default function ImportHub() {
 		navigate(dest);
 	}
 
-	const activeSave = assetCategory === 'ai-assets' ? saveAI : assetCategory === 'archival' ? saveArchival : saveProduced;
 	const typeLabel = ASSET_TYPES.find(t => t.value === assetCategory)?.label || 'Assets';
 	const modes = assetCategory === 'archival'
 		? [{ v: 'upload', l: 'Upload files' }, { v: 'scan', l: 'Scan folder' }, { v: 'url', l: 'From URL' }, { v: 'path', l: 'File path' }]
@@ -651,7 +652,7 @@ export default function ImportHub() {
 						{assetCategory === 'archival' && <ArchivalEnrichForm
 							{...{ archName, setArchName, caption, setCaption, sourceUrl, setSourceUrl,
 								accessDate, setAccessDate, creator, setCreator, institution, setInstitution,
-								license, setLicense, licenseUrl, setLicenseUrl, originalDate, setOriginalDate,
+								license, setLicense, originalDate, setOriginalDate,
 								medium, setMedium, archUsageNotes, setArchUsageNotes }}
 							onSubmit={handleSaveArchival} saving={saveArchival.isPending} error={saveArchival.error}
 						/>}
@@ -820,7 +821,7 @@ function AIEnrichForm({ description, setDescription, notes, setNotes, digitalSou
 // === Archival Enrichment Form ===
 function ArchivalEnrichForm({ archName, setArchName, caption, setCaption, sourceUrl, setSourceUrl,
 	accessDate, setAccessDate, creator, setCreator, institution, setInstitution,
-	license, setLicense, licenseUrl, setLicenseUrl, originalDate, setOriginalDate,
+	license, setLicense, originalDate, setOriginalDate,
 	medium, setMedium, archUsageNotes, setArchUsageNotes, onSubmit, saving, error }) {
 	return (
 		<form onSubmit={onSubmit} className="space-y-4">

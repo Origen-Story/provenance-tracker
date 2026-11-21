@@ -80,7 +80,7 @@ function run(cmd, args) {
 		execFileSync(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
 	} catch (err) {
 		const stderr = err.stderr?.toString() ?? '';
-		throw new Error(`${cmd} ${args.join(' ')} failed: ${stderr.trim() || `exit ${err.status}`}`);
+		throw new Error(`${cmd} ${args.join(' ')} failed: ${stderr.trim() || `exit ${err.status}`}`, { cause: err });
 	}
 }
 

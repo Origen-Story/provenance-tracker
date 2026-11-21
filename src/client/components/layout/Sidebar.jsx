@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router';
+import { NavLink } from 'react-router';
 
 function hasModule(project, mod) {
 	try { return JSON.parse(project?.modules || '[]').includes(mod); }

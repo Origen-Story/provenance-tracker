@@ -34,7 +34,7 @@ async function run(args, timeout = SIGN_TIMEOUT_MS) {
 	try {
 		return await execFileP(resolveC2patoolPath(), args, { maxBuffer: 64 * 1024 * 1024, timeout, windowsHide: true });
 	} catch (err) {
-		if (err.code === 'ENOENT') throw new Error('c2patool was not found. Put it in tools/c2patool/ or set C2PATOOL_PATH.');
+		if (err.code === 'ENOENT') throw new Error('c2patool was not found. Put it in tools/c2patool/ or set C2PATOOL_PATH.', { cause: err });
 		const e = new Error((err.stderr || err.message || '').trim().split('\n').filter(l => !/^\s*$/.test(l)).slice(-3).join(' '));
 		e.stderr = err.stderr;
 		throw e;
@@ -158,7 +158,7 @@ export async function signWithC2patool({ inputPath, outputPath, definition, ingr
 	} catch (err) {
 		// c2patool can leave a partial file behind when it fails mid-write.
 		if (existsSync(outputPath)) await rm(outputPath, { force: true }).catch(() => {});
-		throw new Error(`Signing failed: ${err.message}`);
+		throw new Error(`Signing failed: ${err.message}`, { cause: err });
 	} finally {
 		await rm(dir, { recursive: true, force: true }).catch(() => {});
 	}

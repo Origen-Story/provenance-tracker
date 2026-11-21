@@ -1,6 +1,6 @@
 import { db } from '../../db/index.js';
 import { archivalAssets } from '../../db/schema.js';
-import { eq, desc, asc, sql, count, and, ilike } from 'drizzle-orm';
+import { eq, desc, asc, sql, count, and } from 'drizzle-orm';
 import { ARCHIVAL_ENRICHMENT_CONDITION, getArchivalMissingFields } from '../dashboard.js';
 import { applyProposal } from '../origin/origin.js';
 import { removeRelationshipsFor } from '../relationships/relationships.js';

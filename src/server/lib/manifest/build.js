@@ -48,6 +48,8 @@ export function fileNameOf(p) {
 // breaks) collapsed, control characters dropped, trimmed, capped.
 export function cleanPublicTitle(value) {
 	return String(value ?? '')
+		// Control characters are what this strips, so the regex has to name them.
+		// eslint-disable-next-line no-control-regex
 		.replace(/[\u0000-\u001f\u007f]+/g, ' ')
 		.replace(/\s+/g, ' ')
 		.trim()

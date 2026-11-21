@@ -19,7 +19,11 @@
 		"test:run": "vitest run",
 		"test:watch": "vitest",
 		"test:integration": "vitest run test/integration",
-		"audit": "node scripts/audit.mjs"
+		"audit": "node scripts/audit.mjs",
+		"typecheck": "tsc -p .",
+		"lint": "eslint .",
+		"format": "prettier --write .",
+		"format:check": "prettier --check ."
 	},
 	"dependencies": {
 		"@notionhq/client": "^5.18.0",
@@ -38,11 +42,19 @@
 		"react-router": "^8.5.1"
 	},
 	"devDependencies": {
+		"@eslint/js": "10.0.1",
 		"@tailwindcss/vite": "^4.3.3",
+		"@types/node": "24.19.2",
 		"@vitejs/plugin-react": "^6.2.1",
 		"concurrently": "^10.0.6",
 		"drizzle-kit": "^0.31.9",
+		"eslint": "10.14.0",
+		"eslint-config-prettier": "10.1.8",
+		"globals": "17.14.0",
+		"prettier": "3.9.10",
 		"tailwindcss": "^4.3.3",
+		"typescript": "6.0.3",
+		"typescript-eslint": "8.72.1",
 		"vite": "^8.3.5",
 		"vitest": "^5.1.0"
 	},

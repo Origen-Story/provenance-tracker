@@ -47,6 +47,6 @@ export function findSourceCandidates(sourceStem, index, self = null) {
  * for SQL LIKE (`%`, `_` and `\` are literals) and wrapped in wildcards.
  */
 export function searchTerms(q, max = 6) {
-	return String(q || '').toLowerCase().split(/[\s_\-]+/).filter(Boolean).slice(0, max)
+	return String(q || '').toLowerCase().split(/[\s_-]+/).filter(Boolean).slice(0, max)
 		.map(t => `%${t.replace(/[\\%_]/g, '\\$&')}%`);
 }

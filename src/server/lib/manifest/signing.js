@@ -111,9 +111,9 @@ async function recordSignature({ projectId, assetType, assetId, kind, version, s
 }
 
 function withVerification(row) {
-	let report = null;
+	let report;
 	try { report = row.reportJson ? JSON.parse(row.reportJson) : null; } catch { report = null; }
-	let statement = null;
+	let statement;
 	try { statement = row.statementJson ? JSON.parse(row.statementJson) : null; } catch { statement = null; }
 	const { reportJson, definitionJson, statementJson, ...rest } = row;
 	return { ...rest, verification: interpretReport(report), statement, signedFileExists: existsSync(row.signedPath) };

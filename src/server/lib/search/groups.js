@@ -8,7 +8,7 @@
 
 import { db } from '../../db/index.js';
 import { searchGroups, searchCandidates, archivalAssets } from '../../db/schema.js';
-import { eq, and, asc, sql, count, inArray } from 'drizzle-orm';
+import { eq, and, asc, sql, count } from 'drizzle-orm';
 
 // Fields accepted from user input on create/update. Everything else is ignored
 // (e.g. `id`, `createdAt`) to keep the API shape safe against pasted JSON.

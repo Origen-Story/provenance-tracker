@@ -4,5 +4,7 @@
 // SHA-pinned actions). Repo-specific exceptions go below the extends line.
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>indieglo/renovate-config"]
+  "extends": ["github>indieglo/renovate-config"],
+  // Pull requests into main must have every commit signed off (sign-off.yml).
+  "commitBody": "Signed-off-by: {{{gitAuthor}}}"
 }

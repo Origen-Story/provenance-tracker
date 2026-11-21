@@ -1,9 +1,13 @@
 name: CI
 
 # Runs the test suite on the same Node major the app targets (package.json
-# engines). `npm test` runs vitest inside the repo guard (scripts/test.mjs):
-# it fails if any test changes the checkout or the suite takes over 60 s.
+# engines), on Linux and on Windows: the maintainer works on Windows and most
+# recurring bugs there are path and line-ending bugs Linux never shows.
+# `npm test` runs vitest inside the repo guard (scripts/test.mjs): it fails if
+# any test changes the checkout or the suite takes over 60 s.
 # Tests are pure: no Postgres, no network, no signing.
+# Branch protection on main requires both "test (ubuntu-latest)" and
+# "test (windows-latest)"; renaming the job or the matrix changes those names.
 
 on:
   push: {}
@@ -15,8 +19,13 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    strategy:
+      # One OS failing must not hide whether the other passed.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       # Pinned to commits, not tags; Renovate proposes updates (renovate.json5).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

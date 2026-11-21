@@ -9,7 +9,7 @@ Explanations that used to live in `CLAUDE.md`. `CLAUDE.md` is rules only; this f
 - **Database:** PostgreSQL via Drizzle ORM + `pg`
 - **Build:** Vite with `@vitejs/plugin-react`
 - **Dev:** `concurrently` runs Express (port 3001) and the Vite dev server (port 5173, proxies `/api` to Express)
-- **Extraction:** `exiftool-vendored` (EXIF and container tags, including video duration, frame rate and codec), `c2pa-node` (C2PA read, optional) with the bundled `c2patool` as the fallback reader and the only signer (installed by `npm run tools:fetch`), and a small PNG chunk reader of its own (`src/server/lib/extraction/png-chunks.js`)
+- **Extraction:** `exiftool-vendored` (EXIF and container tags, including video duration, frame rate and codec), `c2pa-node` (C2PA read, optional) with the bundled `c2patool` as the fallback reader and the only signer (installed by `npm run tools:fetch`), and a small PNG chunk reader of its own (`src/server/lib/extraction/png-chunks.js`) Each reader returns an observation (`src/server/lib/extraction/observation.ts`): reader and version, status, the full data made JSON-safe (binary fields reduced to size and SHA-256, location tags left out) and, for C2PA, the validation; see D21. The current app stores only the summaries it stored before, with `validation` added to `c2paJson`.
 
 ## Project structure
 

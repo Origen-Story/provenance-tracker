@@ -3,7 +3,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
 	test: {
 		environment: "node",
-		include: ["test/unit/**/*.test.js", "test/integration/**/*.test.js"],
+		include: [
+			"test/unit/**/*.test.{js,ts}",
+			"test/integration/**/*.test.{js,ts}",
+		],
 		// Server-only tests today; the React tree would need a DOM env if/when we add it.
 		globals: false,
 		// vitest 4's default worker pool crashes on Windows at worker bootstrap with

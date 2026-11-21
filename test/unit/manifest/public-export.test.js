@@ -83,21 +83,18 @@ const segments = [
 	seg({
 		startFrame: 0,
 		endFrame: 120,
-		matchedAssetType: "produced",
-		matchedAssetId: 11,
+		matchedAssetRef: "produced:11",
 	}),
 	seg({
 		startFrame: 120,
 		endFrame: 240,
-		matchedAssetType: "ai",
-		matchedAssetId: 21,
+		matchedAssetRef: "ai:21",
 	}),
 	seg({
 		trackKind: "audio",
 		startFrame: 0,
 		endFrame: 240,
-		matchedAssetType: "produced",
-		matchedAssetId: 12,
+		matchedAssetRef: "produced:12",
 	}),
 	seg({
 		trackIndex: 2,
@@ -108,7 +105,7 @@ const segments = [
 		endSeconds: 2,
 	}),
 ];
-const L = (type, id) => ({ matchedAssetType: type, matchedAssetId: id });
+const L = (type, id) => ({ matchedAssetRef: `${type}:${id}` });
 const composition = {
 	durationSeconds: 8,
 	fps: 30,
@@ -165,6 +162,7 @@ const composition = {
 	},
 };
 const output = {
+	ref: "produced:1",
 	type: "produced",
 	id: 1,
 	filePath: path.join(dir, "film.mp4"),

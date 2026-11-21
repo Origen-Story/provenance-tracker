@@ -207,8 +207,7 @@ export function segmentsFromTimeline(timeline, matchesByClipId = new Map()) {
 				matchMethod:
 					m?.method || (c.sourceKind === "file" ? "unmatched" : c.sourceKind),
 				matchConfidence: m?.confidence ?? 0,
-				matchedAssetType: m?.asset?.type || null,
-				matchedAssetId: m?.asset?.id || null,
+				matchedAssetRef: m?.asset?.ref || null,
 				originClass: m?.asset?.originClass || null,
 				aiAssisted: !!m?.asset?.aiAssisted,
 			});

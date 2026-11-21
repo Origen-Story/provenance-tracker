@@ -66,8 +66,10 @@ export function cleanPublicTitle(value) {
 	);
 }
 
-export function assetKey(type, id) {
-	return `${type}:${id}`;
+// The output names itself by ref, like every asset (core/asset-ref.ts).
+function requireRef(output) {
+	if (!output?.ref) throw new Error("The output has no asset ref");
+	return output.ref;
 }
 
 export function ingredientLabel(index) {
@@ -281,9 +283,7 @@ function presenceByAsset(composition) {
 		for (const iv of composition?.[lane]?.intervals || []) {
 			const len = (iv.endSeconds ?? 0) - (iv.startSeconds ?? 0);
 			const keys = new Set(
-				(iv.layers || [])
-					.filter((l) => l.matchedAssetType && l.matchedAssetId)
-					.map((l) => assetKey(l.matchedAssetType, l.matchedAssetId)),
+				(iv.layers || []).map((l) => l.matchedAssetRef).filter(Boolean),
 			);
 			for (const k of keys) {
 				const entry = out.get(k) || { picture: 0, audio: 0 };
@@ -306,10 +306,7 @@ export function compactIntervals(lane, refOf) {
 		const refs = [];
 		let untracked = 0;
 		for (const l of iv.layers || []) {
-			const ref =
-				l.matchedAssetType && l.matchedAssetId
-					? refOf.get(assetKey(l.matchedAssetType, l.matchedAssetId))
-					: undefined;
+			const ref = l.matchedAssetRef ? refOf.get(l.matchedAssetRef) : undefined;
 			if (ref) {
 				if (!refs.includes(ref)) refs.push(ref);
 			} else untracked++;
@@ -363,10 +360,11 @@ function trackName(seg) {
 }
 
 /**
- * The assets a timeline places, in order of first use, without the output
- * itself. `segments` are the effective segments timelines.js returns.
+ * The refs of the assets a timeline places, in order of first use, without
+ * the output itself. `segments` are the effective segments timelines.js
+ * returns; each names its asset by `matchedAssetRef` (core/asset-ref.ts).
  */
-export function placedAssetKeys(segments, outputKey) {
+export function placedAssetRefs(segments, outputRef) {
 	const keys = [];
 	const seen = new Set();
 	const ordered = [...(segments || [])].sort(
@@ -374,9 +372,9 @@ export function placedAssetKeys(segments, outputKey) {
 			a.startFrame - b.startFrame || (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
 	);
 	for (const s of ordered) {
-		if (!s.enabled || !s.matchedAssetType || !s.matchedAssetId) continue;
-		const k = assetKey(s.matchedAssetType, s.matchedAssetId);
-		if (k === outputKey || seen.has(k)) continue;
+		if (!s.enabled || !s.matchedAssetRef) continue;
+		const k = s.matchedAssetRef;
+		if (k === outputRef || seen.has(k)) continue;
 		seen.add(k);
 		keys.push(k);
 	}
@@ -388,11 +386,11 @@ export function placedAssetKeys(segments, outputKey) {
  * so the creator reads exactly what will go into the file.
  *
  * @param {object} a
- * @param {object} a.output        { type, id, filePath, originClass }
+ * @param {object} a.output        { ref, filePath, originClass }
  * @param {object} a.timeline      { sequenceName, fps, durationFrames }
  * @param {object} a.composition   breakdown.composition
  * @param {Array}  a.segments      effective segments
- * @param {Map}    a.assets        assetKey -> asset (filePath, originClass, originClassConfirmed,
+ * @param {Map}    a.assets        asset ref -> asset (filePath, originClass, originClassConfirmed,
  *                                 originClassSource, originClassNote, aiAssisted, signedBy,
  *                                 signerName, c2paSummary)
  * @param {object} a.statement     { text, authorName, organization, softwareAgent }
@@ -407,10 +405,9 @@ export function buildCreatorStatement({
 	statement = {},
 	statedAt,
 }) {
-	const outputKey = assetKey(output.type || "produced", output.id);
 	const presence = presenceByAsset(composition);
 	const outputClass = outputClassOf(output, composition);
-	const placed = placedAssetKeys(segments, outputKey);
+	const placed = placedAssetRefs(segments, requireRef(output));
 	const refOf = new Map(placed.map((k, i) => [k, ingredientLabel(i)]));
 	const ingredients = placed.map((k, i) => {
 		const a = assets.get(k) || {};
@@ -442,7 +439,7 @@ export function buildCreatorStatement({
 			generated++;
 			continue;
 		}
-		if (s.matchedAssetType && s.matchedAssetId) continue;
+		if (s.matchedAssetRef) continue;
 		unresolved.push({
 			clip: s.clipName || s.name || s.sourceName || "",
 			track: trackName(s),
@@ -526,8 +523,7 @@ export function buildOutputManifest({
 		statement,
 		statedAt,
 	});
-	const outputKey = assetKey(output.type || "produced", output.id);
-	const keys = placedAssetKeys(segments, outputKey);
+	const keys = placedAssetRefs(segments, requireRef(output));
 
 	const ingredients = [
 		{

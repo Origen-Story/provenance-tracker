@@ -28,6 +28,11 @@ import { positionsIn } from "./compose.js";
 import { compositeClassFor } from "../../../shared/origin-vocabulary.js";
 import { computeFileHash } from "../core/file-utils.js";
 import {
+	legacyAssetRef,
+	parseLegacyAssetRef,
+	withLegacyLayerRefs,
+} from "../core/asset-ref.ts";
+import {
 	linkAssets,
 	resolveAssetRef,
 	tableFor,
@@ -52,6 +57,7 @@ function safeName(name) {
 // Every asset in the project in the shape match.js expects.
 export async function buildProjectAssetIndex(projectId) {
 	const pick = (type, r) => ({
+		ref: legacyAssetRef(type, r.id),
 		type,
 		id: r.id,
 		filename: r.filename || path.basename(r.filePath || ""),
@@ -171,8 +177,8 @@ export async function importTimeline({
 				sourceKey: s.sourceKey || "",
 				sourceName: s.sourceName || "",
 				sourcePath: s.sourcePath || "",
-				matchedAssetType: s.matchedAssetType,
-				matchedAssetId: s.matchedAssetId,
+				matchedAssetType: parseLegacyAssetRef(s.matchedAssetRef)?.type ?? null,
+				matchedAssetId: parseLegacyAssetRef(s.matchedAssetRef)?.id ?? null,
 				matchMethod: s.matchMethod,
 				matchConfidence: s.matchConfidence,
 				originClass: null,
@@ -208,19 +214,15 @@ async function flagOutput(producedAssetId, source) {
 async function linkMatchedAssets(timelineRow, segments) {
 	if (!timelineRow.producedAssetId) return;
 	const seen = new Set();
+	const outputRef = legacyAssetRef("produced", timelineRow.producedAssetId);
 	for (const s of segments) {
-		if (!s.matchedAssetType || !s.matchedAssetId) continue;
-		const key = `${s.matchedAssetType}:${s.matchedAssetId}`;
-		if (seen.has(key)) continue;
+		const key = s.matchedAssetRef;
+		const parent = parseLegacyAssetRef(key);
+		if (!parent || key === outputRef || seen.has(key)) continue;
 		seen.add(key);
-		if (
-			s.matchedAssetType === "produced" &&
-			s.matchedAssetId === timelineRow.producedAssetId
-		)
-			continue;
 		await linkAssets({
-			parentType: s.matchedAssetType,
-			parentId: s.matchedAssetId,
+			parentType: parent.type,
+			parentId: parent.id,
 			childType: "produced",
 			childId: timelineRow.producedAssetId,
 			relationshipType: "output_of",
@@ -258,6 +260,7 @@ async function effectiveSegments(rows) {
 		out.push({
 			...r,
 			name: r.clipName,
+			matchedAssetRef: legacyAssetRef(r.matchedAssetType, r.matchedAssetId),
 			matched: !!asset,
 			asset,
 			originClass: r.originClass || asset?.originClass || null,
@@ -295,9 +298,10 @@ export async function recomputeTimeline(id) {
 
 // A breakdown cached before the composition lanes existed (D10) is
 // recomputed on first read rather than by a data migration.
+// A cache written before asset refs existed gets them added as it is read.
 function parseBreakdown(json) {
 	try {
-		return JSON.parse(json || "null");
+		return withLegacyLayerRefs(JSON.parse(json || "null"));
 	} catch {
 		return null;
 	}

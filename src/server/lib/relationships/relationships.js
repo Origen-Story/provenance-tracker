@@ -9,6 +9,7 @@ import {
 	assetRelationships,
 } from "../../db/schema.js";
 import { eq, and, or, sql, desc } from "drizzle-orm";
+import { legacyAssetRef } from "../core/asset-ref.ts";
 import {
 	topazSourceBasename,
 	findSourceCandidates,
@@ -195,6 +196,7 @@ export async function buildFilenameIndex(projectId) {
 			.where(eq(producedAssets.projectId, projectId)),
 	]);
 	const entry = (type, r) => ({
+		ref: legacyAssetRef(type, r.id),
 		type,
 		id: r.id,
 		filename: r.filename || path.basename(r.filePath || ""),
@@ -252,7 +254,9 @@ export async function autoLinkEnhancer({ type, id, filename, projectId }) {
 	const stem = topazSourceBasename(filename);
 	if (!stem) return { linked: null, parent: null, suggestedParents: [] };
 	const index = await buildFilenameIndex(projectId);
-	const candidates = findSourceCandidates(stem, index, { type, id });
+	const candidates = findSourceCandidates(stem, index, {
+		ref: legacyAssetRef(type, id),
+	});
 	if (candidates.length === 1) {
 		const [c] = candidates;
 		const linked = await linkAssets({

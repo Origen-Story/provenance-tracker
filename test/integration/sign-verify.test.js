@@ -257,8 +257,7 @@ describe.skipIf(!haveOpenssl || !haveC2patool)(
 				],
 			]);
 			const layer = (type, id) => ({
-				matchedAssetType: type,
-				matchedAssetId: id,
+				matchedAssetRef: `${type}:${id}`,
 			});
 			const composition = {
 				durationSeconds: 2,
@@ -298,8 +297,7 @@ describe.skipIf(!haveOpenssl || !haveC2patool)(
 					startFrame: 0,
 					endFrame: 60,
 					sourceKind: "file",
-					matchedAssetType: "produced",
-					matchedAssetId: 2,
+					matchedAssetRef: "produced:2",
 				},
 				{
 					enabled: true,
@@ -308,8 +306,7 @@ describe.skipIf(!haveOpenssl || !haveC2patool)(
 					startFrame: 0,
 					endFrame: 60,
 					sourceKind: "file",
-					matchedAssetType: "produced",
-					matchedAssetId: 3,
+					matchedAssetRef: "produced:3",
 				},
 			];
 			const {
@@ -317,7 +314,12 @@ describe.skipIf(!haveOpenssl || !haveC2patool)(
 				ingredients,
 				statement: signedStatement,
 			} = buildOutputManifest({
-				output: { type: "produced", id: 1, filePath: exportPath },
+				output: {
+					ref: "produced:1",
+					type: "produced",
+					id: 1,
+					filePath: exportPath,
+				},
 				timeline: { sequenceName: "Seq", fps: 30 },
 				composition,
 				segments,

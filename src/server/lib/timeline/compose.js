@@ -56,8 +56,7 @@ function layersOf(segments, kind, durationFrames) {
 			aiAssisted,
 			position: spectrumPosition(originClass, { aiAssisted }),
 			matched: !!seg.matched,
-			matchedAssetType: seg.matchedAssetType || null,
-			matchedAssetId: seg.matchedAssetId || null,
+			matchedAssetRef: seg.matchedAssetRef || null,
 		});
 	}
 	return out;
@@ -168,8 +167,7 @@ function composeLane(layers, durationFrames, fps) {
 				aiAssisted: l.aiAssisted,
 				position: l.position,
 				matched: l.matched,
-				matchedAssetType: l.matchedAssetType,
-				matchedAssetId: l.matchedAssetId,
+				matchedAssetRef: l.matchedAssetRef,
 			})),
 		})),
 		tracks: Object.values(tracks)

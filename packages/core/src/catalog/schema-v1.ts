@@ -242,6 +242,49 @@ BEGIN
 	SELECT RAISE(ABORT, 'observations are never deleted');
 END;
 
+-- Technical values of each content, from its newest successful ExifTool
+-- reading (D31). Not copied into columns: the observation stays the record,
+-- and a newer ExifTool's reading replaces these values by being newer.
+-- ExifTool names the same value differently by container (VideoFrameRate in
+-- MP4, SampleRate in WAV), and a duration is seconds as a number or, for some
+-- files, {Value, Scale} meaning Value × Scale seconds. Null where the file
+-- has no such value.
+CREATE VIEW technical AS
+WITH latest AS (
+	SELECT o.content_sha256, o.id AS observation_id, o.extractor_version, o.data,
+		json_extract(o.data, '$.MIMEType') AS mime
+	FROM observations o
+	WHERE o.kind = 'exif' AND o.status = 'ok'
+		AND o.id = (SELECT max(x.id) FROM observations x
+			WHERE x.content_sha256 = o.content_sha256 AND x.kind = 'exif' AND x.status = 'ok')
+),
+durations AS (
+	SELECT content_sha256,
+		coalesce(
+			CASE json_type(data, '$.Duration')
+				WHEN 'object' THEN json_extract(data, '$.Duration.Value') * json_extract(data, '$.Duration.Scale')
+				WHEN 'integer' THEN json_extract(data, '$.Duration')
+				WHEN 'real' THEN json_extract(data, '$.Duration')
+			END,
+			CASE WHEN json_type(data, '$.MediaDuration') IN ('integer', 'real') THEN json_extract(data, '$.MediaDuration') END
+		) AS seconds
+	FROM latest
+)
+SELECT l.content_sha256, l.observation_id, l.extractor_version AS exiftool_version,
+	l.mime AS mime_type,
+	d.seconds AS duration_seconds,
+	coalesce(json_extract(l.data, '$.ImageWidth'), json_extract(l.data, '$.SourceImageWidth')) AS width,
+	coalesce(json_extract(l.data, '$.ImageHeight'), json_extract(l.data, '$.SourceImageHeight')) AS height,
+	coalesce(json_extract(l.data, '$.VideoFrameRate'), json_extract(l.data, '$.FrameRate')) AS frame_rate,
+	coalesce(json_extract(l.data, '$.CompressorID'), json_extract(l.data, '$.CompressorName')) AS video_codec,
+	coalesce(json_extract(l.data, '$.AudioFormat'),
+		CASE WHEN l.mime LIKE 'audio/%' THEN json_extract(l.data, '$.Encoding') END) AS audio_codec,
+	coalesce(json_extract(l.data, '$.AudioSampleRate'), json_extract(l.data, '$.SampleRate')) AS sample_rate,
+	coalesce(json_extract(l.data, '$.AudioChannels'), json_extract(l.data, '$.NumChannels')) AS channels,
+	coalesce(json_extract(l.data, '$.AudioBitsPerSample'),
+		CASE WHEN l.mime LIKE 'audio/%' THEN json_extract(l.data, '$.BitsPerSample') END) AS bits_per_sample
+FROM latest l JOIN durations d ON d.content_sha256 = l.content_sha256;
+
 -- One change to a human-editable field: who made it (a person, a tool, or a
 -- legacy import that cannot say which), the table, the row's key, the field,
 -- the old and new values as JSON (null old: the row was created; null new: it

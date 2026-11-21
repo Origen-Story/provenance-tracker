@@ -9,7 +9,15 @@
 // Pure: no file or process access here.
 import { createHash } from "node:crypto";
 
-export type ObservationKind = "exif" | "c2pa" | "png-text";
+/**
+ * exif          ExifTool on the file: EXIF, XMP, IPTC, container and technical tags
+ * c2pa          a C2PA manifest store in the file
+ * png-text      a PNG's text chunks (prompts and settings)
+ * xmp-sidecar   ExifTool on an .xmp file beside the file
+ * c2pa-sidecar  a .c2pa manifest store beside the file, checked against it
+ */
+export type ObservationKind =
+	"exif" | "c2pa" | "png-text" | "xmp-sidecar" | "c2pa-sidecar";
 
 /**
  * ok          the reader ran and found data
@@ -77,7 +85,8 @@ export function makeObservation(fields: {
 		error: ok ? null : (fields.error ?? null),
 		warnings: fields.warnings ?? [],
 	};
-	if (fields.kind === "c2pa") obs.validation = fields.validation ?? null;
+	if (fields.kind === "c2pa" || fields.kind === "c2pa-sidecar")
+		obs.validation = fields.validation ?? null;
 	return obs;
 }
 

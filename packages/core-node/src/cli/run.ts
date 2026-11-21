@@ -1,4 +1,4 @@
-// The command line: init, roots, scan and settings so far (roadmap Phase 4).
+// The command line: init, roots, scan, extract and settings so far (roadmap Phase 4).
 // Everything it needs from outside (arguments, the folder it was started in,
 // the machine, where to print) is passed in, so tests run it in-process.
 
@@ -19,6 +19,8 @@ import {
 	renameRoot,
 	type RootView,
 } from "../roots.ts";
+import { endExifTool } from "../extract/exiftool.ts";
+import { extractProject } from "../extract.ts";
 import { scanProject, type ScanReport } from "../scan.ts";
 import { readSettings, updateSettings } from "../settings.ts";
 import { TOOL } from "../tool.ts";
@@ -43,6 +45,7 @@ Usage: npm run cli -- <command> [options]
   roots locate <name> <folder>        Say where a root is on this machine
   roots rename <name> <new name>      Rename a root
   scan [--root <name>]                Record every file in the roots on this machine
+  extract [--root <name>] [--again]   Read what each file says (ExifTool, C2PA, PNG text, sidecars)
   settings                            Show this machine's settings
   settings person <name>              Set the name your edits are recorded under
 
@@ -60,6 +63,7 @@ const OPTIONS = {
 	project: { type: "string" },
 	by: { type: "string" },
 	root: { type: "string", multiple: true },
+	again: { type: "boolean" },
 	help: { type: "boolean", short: "h" },
 } as const;
 
@@ -69,6 +73,7 @@ type Values = {
 	project?: string;
 	by?: string;
 	root?: string[];
+	again?: boolean;
 	help?: boolean;
 };
 
@@ -293,6 +298,63 @@ async function scan(io: Io, args: string[], values: Values): Promise<number> {
 	});
 }
 
+async function extract(
+	io: Io,
+	args: string[],
+	values: Values,
+): Promise<number> {
+	if (args.length)
+		throw new UsageError(
+			"Usage: npm run cli -- extract [--root <name>] [--again]",
+		);
+	return withProject(io, values, async (project) => {
+		io.out(`Reading what the files of project "${project.name}" say`);
+		let last = Date.now();
+		try {
+			const report = await extractProject(project, io.machine, {
+				roots: values.root,
+				again: values.again,
+				signal: io.signal,
+				onProgress: (p) => {
+					if (Date.now() - last < 2000) return;
+					last = Date.now();
+					io.out(`  ${p.done + 1} of ${p.total}: ${p.file}`);
+				},
+			});
+			const written = Object.entries(report.written).sort(([a], [b]) =>
+				a < b ? -1 : 1,
+			);
+			io.out(
+				written.length
+					? `${report.contents} file(s) read: ${written.map(([k, n]) => `${n} ${k}`).join(", ")}.`
+					: "Nothing new to read: every file here has been read by these versions of the readers.",
+			);
+			if (report.sidecars)
+				io.out(
+					`${report.sidecars} sidecar file(s) linked to the files they describe.`,
+				);
+			if (report.notHere)
+				io.out(
+					`${report.notHere} file(s) are in roots not on this machine; they are read when their root is here.`,
+				);
+			if (report.skipped.length) {
+				io.out(`${report.skipped.length} skipped:`);
+				for (const s of report.skipped.slice(0, LISTED))
+					io.out(`  ${s.root}/${s.path}: ${s.reason}`);
+				if (report.skipped.length > LISTED)
+					io.out(`  … and ${report.skipped.length - LISTED} more`);
+			}
+			if (report.outcome === "cancelled")
+				io.out(
+					"Stopped before the end. What was read is kept; extract again to finish.",
+				);
+			return report.outcome === "ok" ? 0 : 1;
+		} finally {
+			await endExifTool();
+		}
+	});
+}
+
 /** Run one command. @returns the exit code */
 export async function run(argv: string[], io: Io): Promise<number> {
 	let parsed;
@@ -324,6 +386,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
 				return 0;
 			case "scan":
 				return await scan(io, args, values);
+			case "extract":
+				return await extract(io, args, values);
 			case "settings":
 				settings(io, args);
 				return 0;

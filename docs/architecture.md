@@ -9,7 +9,7 @@ Explanations that used to live in `CLAUDE.md`. `CLAUDE.md` is rules only; this f
 - **Database:** PostgreSQL via Drizzle ORM + `pg`
 - **Build:** Vite with `@vitejs/plugin-react`
 - **Dev:** `concurrently` runs Express (port 3001) and the Vite dev server (port 5173, proxies `/api` to Express)
-- **Extraction:** `exiftool-vendored` (EXIF and container tags, including video duration, frame rate and codec), `c2pa-node` (C2PA read, optional) with the bundled `c2patool` as the fallback reader and the only signer, `png-chunks-extract`
+- **Extraction:** `exiftool-vendored` (EXIF and container tags, including video duration, frame rate and codec), `c2pa-node` (C2PA read, optional) with the bundled `c2patool` as the fallback reader and the only signer (installed by `npm run tools:fetch`), and a small PNG chunk reader of its own (`src/server/lib/extraction/png-chunks.js`)
 
 ## Project structure
 

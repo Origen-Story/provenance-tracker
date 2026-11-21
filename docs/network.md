@@ -41,4 +41,4 @@ Stated so nobody has to take the table above on trust further than it has been c
 
 ## Development
 
-`npm install` downloads packages from the npm registry. Tests use no network. CI and Renovate run on GitHub, not on your machine.
+`npm install` downloads packages from the npm registry. `npm run tools:fetch` downloads each pinned helper program (today c2patool) from `github.com` release pages and checks it against a recorded SHA-256; it sends nothing but the request for that file. Tests use no network. CI and Renovate run on GitHub, not on your machine.

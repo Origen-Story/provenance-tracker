@@ -19,6 +19,7 @@ Local web app that records where multimedia assets came from (camera, archive, A
 - Pure logic lives in src/server/lib/<area>/ as functions with unit tests. IO (database, filesystem, child processes, HTTP) lives in routes and thin wrappers.
 - Platform parsers and timeline formats are registry modules (see src/server/lib/extraction/parsers/index.js): add a module, register it, commit a fixture and a test.
 - This repo is public. No client, tour or production names in code, fixtures, example data or docs. Production-specific work lives in the private downstream repo (docs/decisions.md D1).
+- Dependencies (docs/dependencies.md): exact versions; the newest release at least 14 days old; a new runtime dependency needs a reason in docs/decisions.md; helper programs come from `npm run tools:fetch`, pinned and checksummed.
 - Changes reach `main` only by pull request, with CI green; `main` is protected. Every commit is signed off (`git commit -s`); the sign-off check fails a pull request otherwise.
 - Commits stage explicit paths. No `git add -A`, no force push, no history rewrite.
 

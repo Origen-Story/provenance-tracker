@@ -1,0 +1,40 @@
+name: Pinned tools
+
+# Runs `npm run tools:fetch` on each system with a pinned download, so a
+# version bump or a mistyped checksum fails here instead of on someone's
+# machine. Only when the pinned tools change; it downloads from github.com.
+
+on:
+  pull_request:
+    paths:
+      - scripts/fetch-tools.mjs
+      - scripts/lib/pinned-tools.mjs
+      - .github/workflows/tools.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+
+      # No npm install: the script uses only Node's standard library.
+      - name: Download, verify and install
+        run: node scripts/fetch-tools.mjs
+
+      - name: Second run changes nothing
+        run: node scripts/fetch-tools.mjs

@@ -360,7 +360,7 @@ describe.skipIf(!haveOpenssl || !haveC2patool)(
 			// sees both ingredients' credentials inside the signed file.
 			const schema = JSON.parse(
 				readFileSync(
-					path.join(ROOT, "schemas", "public-export.v1.schema.json"),
+					path.join(ROOT, "spec", "public-export.v1.schema.json"),
 					"utf8",
 				),
 			);

@@ -8,7 +8,7 @@
 // project carries on. No paths, no database ids: file names only, and the
 // ingredient refs (ing-1, ing-2...) that the manifest itself uses.
 //
-// Schema: schemas/public-export.v1.schema.json. Bump EXPORT_FORMAT_VERSION
+// Schema: spec/public-export.v1.schema.json. Bump EXPORT_FORMAT_VERSION
 // on any change a viewer would have to handle differently.
 
 import { interpretReport } from "./verify.js";

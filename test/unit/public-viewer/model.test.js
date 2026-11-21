@@ -33,7 +33,7 @@ const example = read("public-viewer/example/example.provenance.json");
 describe("the committed example export", () => {
 	it("matches the public export schema", () => {
 		expect(
-			validate(read("schemas/public-export.v1.schema.json"), example),
+			validate(read("spec/public-export.v1.schema.json"), example),
 		).toEqual([]);
 	});
 	it("is made up: no drive paths or real-looking folders", () => {

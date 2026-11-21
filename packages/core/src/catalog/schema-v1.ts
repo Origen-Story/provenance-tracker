@@ -71,7 +71,8 @@ CREATE TABLE roots (
 ) STRICT;
 
 -- The logical thing ("the final film"), with its current values. kind says
--- how it entered the project: generated, archival or produced. Titles empty
+-- how it entered the project: generated, archival or produced, or unsorted
+-- when a scan found it and nobody has said yet. Titles empty
 -- mean the file name. The *_folded columns hold the same text with accents
 -- removed and lower-cased (written by the edit functions), for filters.
 -- The origin class is an IPTC Digital Source Type code or 'unknown'

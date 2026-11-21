@@ -20,37 +20,37 @@ function cli(machine: Machine, cwd: string) {
 		err: (l) => err.push(l),
 	};
 	return {
-		run: (...argv: string[]) => {
+		run: async (...argv: string[]) => {
 			out.length = 0;
 			err.length = 0;
-			const code = run(argv, io);
+			const code = await run(argv, io);
 			return { code, out: out.join("\n"), err: err.join("\n") };
 		},
 	};
 }
 
 describe("the command line", () => {
-	it("prints help with no command, help, or --help", () => {
+	it("prints help with no command, help, or --help", async () => {
 		const c = cli(t.machine(), t.tempDir());
 		for (const argv of [[], ["help"], ["--help"], ["roots", "-h"]]) {
-			const r = c.run(...argv);
+			const r = await c.run(...argv);
 			expect(r.code, argv.join(" ")).toBe(0);
 			expect(r.out).toContain("init <folder> [--name <name>]");
 		}
 	});
 
-	it("makes a project, adds and lists its roots, from a folder inside it", () => {
+	it("makes a project, adds and lists its roots, from a folder inside it", async () => {
 		const m = t.machine();
 		const work = t.tempDir();
 		const c = cli(m, work);
-		expect(c.run("init", "Demo").out).toContain(
+		expect((await c.run("init", "Demo")).out).toContain(
 			`Made project "Demo" in ${path.join(work, "Demo")}`,
 		);
-		expect(c.run("settings", "person", "A. Maker").code).toBe(0);
+		expect((await c.run("settings", "person", "A. Maker")).code).toBe(0);
 
 		mkdirSync(path.join(work, "Demo", "media"));
 		const inside = cli(m, path.join(work, "Demo", "media"));
-		const added = inside.run(
+		const added = await inside.run(
 			"roots",
 			"add",
 			"media",
@@ -62,12 +62,20 @@ describe("the command line", () => {
 		expect(added.out).toContain(
 			`media  ${path.join(work, "Demo", "media")}  (ok)  Cards from day 1`,
 		);
-		expect(inside.run("roots").out).toMatch(
+		expect((await inside.run("roots")).out).toMatch(
 			/Project "Demo" .*\n {2}media {2}.*\(ok\)/,
 		);
 		expect(
-			inside.run("roots", "rename", "media", "footage", "--by", "B. Editor")
-				.code,
+			(
+				await inside.run(
+					"roots",
+					"rename",
+					"media",
+					"footage",
+					"--by",
+					"B. Editor",
+				)
+			).code,
 		).toBe(0);
 		peek(catalogPathOf(path.join(work, "Demo")), (db) => {
 			expect(verifyCatalog(db)).toEqual([]);
@@ -79,17 +87,17 @@ describe("the command line", () => {
 					.all(),
 			).toEqual([{ actor: "A. Maker" }, { actor: "B. Editor" }]);
 		});
-		const shown = c.run("settings").out;
+		const shown = (await c.run("settings")).out;
 		expect(shown).toContain("Person: A. Maker");
 		expect(shown).toContain("1 root(s) located");
 	});
 
-	it("asks for a name before recording an edit, and changes nothing until it has one", () => {
+	it("asks for a name before recording an edit, and changes nothing until it has one", async () => {
 		const m = t.machine();
 		const work = t.tempDir();
 		const c = cli(m, work);
-		c.run("init", "Demo");
-		const r = c.run("roots", "add", "media", work, "--project", "Demo");
+		await c.run("init", "Demo");
+		const r = await c.run("roots", "add", "media", work, "--project", "Demo");
 		expect(r.code).toBe(2);
 		expect(r.err).toContain('settings person "Your Name"');
 		peek(catalogPathOf(path.join(work, "Demo")), (db) =>
@@ -99,41 +107,41 @@ describe("the command line", () => {
 		);
 	});
 
-	it("exits 2 for a typing mistake and 1 for a refusal, with the reason on stderr", () => {
+	it("exits 2 for a typing mistake and 1 for a refusal, with the reason on stderr", async () => {
 		const m = t.machine();
 		const work = t.tempDir();
 		const c = cli(m, work);
-		expect(c.run("frobnicate")).toMatchObject({
+		expect(await c.run("frobnicate")).toMatchObject({
 			code: 2,
 			err: expect.stringContaining('Unknown command "frobnicate"'),
 		});
-		expect(c.run("init", "--colour", "red")).toMatchObject({
+		expect(await c.run("init", "--colour", "red")).toMatchObject({
 			code: 2,
 			err: expect.stringContaining("--colour"),
 		});
-		expect(c.run("init")).toMatchObject({
+		expect(await c.run("init")).toMatchObject({
 			code: 2,
 			err: expect.stringContaining("Usage: npm run cli -- init"),
 		});
-		expect(c.run("roots", "frob", "--project", work).code).toBe(1);
-		expect(c.run("roots")).toMatchObject({
+		expect((await c.run("roots", "frob", "--project", work)).code).toBe(1);
+		expect(await c.run("roots")).toMatchObject({
 			code: 1,
 			err: expect.stringContaining("There is no project in"),
 		});
-		c.run("init", "Demo");
-		expect(c.run("init", "Demo")).toMatchObject({
+		await c.run("init", "Demo");
+		expect(await c.run("init", "Demo")).toMatchObject({
 			code: 1,
 			err: expect.stringContaining("already has a catalog"),
 		});
-		expect(c.run("roots", "frob", "--project", "Demo")).toMatchObject({
+		expect(await c.run("roots", "frob", "--project", "Demo")).toMatchObject({
 			code: 2,
 			err: expect.stringContaining('Unknown roots command "frob"'),
 		});
 	});
 
-	it("never touches the real settings file", () => {
+	it("never touches the real settings file", async () => {
 		const m = t.machine();
-		cli(m, t.tempDir()).run("settings", "person", "A. Maker");
+		await cli(m, t.tempDir()).run("settings", "person", "A. Maker");
 		expect(readSettings(m.settingsPath).person).toBe("A. Maker");
 		expect(m.settingsPath.startsWith(path.dirname(m.home))).toBe(true);
 	});

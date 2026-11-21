@@ -1,0 +1,254 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://github.com/Origen-Story/provenance-tracker/blob/main/spec/creator-statement.v3.schema.json",
+	"title": "Creator statement assertion, version 3",
+	"description": "The data of the custom C2PA assertion labelled org.provenancetracker.creator_statement, signed into a finished film. It says, in the creator's words and in numbers, how the film was made: what kind of material is on screen and audible moment by moment, each tracked ingredient with its origin class and who set that class, and the clips that could not be tied to a tracked asset. Built by buildCreatorStatement (packages/core/src/manifest/build.js). Origin classes are IPTC Digital Source Type codes or 'unknown' (docs/vocabulary.md). Times are seconds, rounded to milliseconds. Contains file names but no file paths and no database ids.",
+	"type": "object",
+	"required": [
+		"version",
+		"statedAt",
+		"text",
+		"author",
+		"organization",
+		"editedWith",
+		"output",
+		"composition",
+		"ingredients",
+		"unresolved",
+		"editorGeneratedClips"
+	],
+	"additionalProperties": false,
+	"properties": {
+		"version": {
+			"const": 3,
+			"description": "The statement format version. A change that a version-3 reader could misread gets a new version and a new schema file; this one stays."
+		},
+		"statedAt": {
+			"type": "string",
+			"description": "When the statement was signed, as an ISO 8601 time."
+		},
+		"text": {
+			"type": "string",
+			"description": "The creator's statement in their own words."
+		},
+		"author": { "type": "string" },
+		"organization": { "type": "string" },
+		"editedWith": {
+			"type": "string",
+			"description": "The editing software the creator names, if any."
+		},
+		"output": {
+			"type": "object",
+			"description": "The film itself.",
+			"required": [
+				"title",
+				"publicTitle",
+				"originClass",
+				"digitalSourceType",
+				"sequence",
+				"durationSeconds",
+				"fps"
+			],
+			"additionalProperties": false,
+			"properties": {
+				"title": {
+					"type": "string",
+					"description": "The exported file's name."
+				},
+				"publicTitle": {
+					"type": "string",
+					"description": "The title shown to viewers; empty when the creator set none."
+				},
+				"originClass": {
+					"type": "string",
+					"description": "The film's class: the creator's if confirmed, otherwise what its composition says."
+				},
+				"digitalSourceType": {
+					"type": ["string", "null"],
+					"description": "The IPTC URI of originClass; null for 'unknown'."
+				},
+				"sequence": {
+					"type": "string",
+					"description": "The editor's sequence name."
+				},
+				"durationSeconds": { "type": ["number", "null"] },
+				"fps": { "type": ["number", "null"] }
+			}
+		},
+		"composition": {
+			"type": "object",
+			"required": ["picture", "audio"],
+			"additionalProperties": false,
+			"properties": {
+				"picture": { "$ref": "#/$defs/lane" },
+				"audio": { "$ref": "#/$defs/lane" }
+			}
+		},
+		"ingredients": {
+			"type": "array",
+			"description": "Each tracked asset the timeline places, in order of first use, without the film itself.",
+			"items": { "$ref": "#/$defs/ingredient" }
+		},
+		"unresolved": {
+			"type": "array",
+			"description": "Enabled clips that are not tied to a tracked asset, with the class they were given.",
+			"items": { "$ref": "#/$defs/unresolved" }
+		},
+		"editorGeneratedClips": {
+			"type": "integer",
+			"minimum": 0,
+			"description": "Clips the editing software made itself (titles, colour mattes), counted, not listed."
+		}
+	},
+	"$defs": {
+		"position": {
+			"description": "Where material sits on the spectrum from camera-captured to fully synthetic.",
+			"enum": [
+				"captured",
+				"digital",
+				"assisted",
+				"hybrid",
+				"synthetic",
+				"unknown"
+			]
+		},
+		"stat": {
+			"type": "object",
+			"required": ["seconds", "percent"],
+			"properties": {
+				"seconds": { "type": ["number", "null"] },
+				"percent": { "type": "number" },
+				"combos": {
+					"type": "object",
+					"description": "On the mixed stat only: seconds and percent per combination of positions playing at once."
+				}
+			}
+		},
+		"lane": {
+			"type": ["object", "null"],
+			"description": "Picture or audio: time per position, mixed and gap, and the intervals that tile the film. Null when the timeline has no such lane.",
+			"required": ["byPosition", "mixed", "gap", "intervals"],
+			"additionalProperties": false,
+			"properties": {
+				"byPosition": {
+					"type": "object",
+					"additionalProperties": { "$ref": "#/$defs/stat" }
+				},
+				"mixed": { "$ref": "#/$defs/stat" },
+				"gap": { "$ref": "#/$defs/stat" },
+				"intervals": {
+					"type": "array",
+					"description": "Positions are what plays; refs are the ingredients playing, top track first; untracked counts layers that are not tracked assets.",
+					"items": {
+						"type": "object",
+						"required": ["start", "end", "positions", "refs"],
+						"additionalProperties": false,
+						"properties": {
+							"start": { "type": ["number", "null"] },
+							"end": { "type": ["number", "null"] },
+							"positions": {
+								"type": "array",
+								"items": { "$ref": "#/$defs/position" }
+							},
+							"refs": {
+								"type": "array",
+								"items": { "type": "string" }
+							},
+							"untracked": { "type": "integer", "minimum": 1 }
+						}
+					}
+				}
+			}
+		},
+		"ingredient": {
+			"type": "object",
+			"required": [
+				"ref",
+				"title",
+				"publicTitle",
+				"originClass",
+				"digitalSourceType",
+				"position",
+				"classSetBy",
+				"fileCredentials",
+				"classClaimedByFile",
+				"signedBy",
+				"signerName",
+				"aiAssisted",
+				"note",
+				"pictureSeconds",
+				"audioSeconds"
+			],
+			"additionalProperties": false,
+			"properties": {
+				"ref": {
+					"type": "string",
+					"description": "The ingredient's label in the manifest (ing-1, ing-2...), which the composition intervals use."
+				},
+				"title": {
+					"type": "string",
+					"description": "The ingredient's file name."
+				},
+				"publicTitle": { "type": "string" },
+				"originClass": { "type": "string" },
+				"digitalSourceType": { "type": ["string", "null"] },
+				"position": { "$ref": "#/$defs/position" },
+				"classSetBy": {
+					"enum": ["creator", "proposal"],
+					"description": "creator: the creator confirmed the class; proposal: the tracker proposed it from what it read and nobody confirmed it."
+				},
+				"fileCredentials": {
+					"enum": ["none", "unreadable", "present"],
+					"description": "Whether the ingredient's own file carried C2PA credentials, and whether they could be read."
+				},
+				"classClaimedByFile": {
+					"type": ["string", "null"],
+					"description": "The class the file's own credentials declare, kept beside originClass so a human decision never hides what the file said; null when they declare none."
+				},
+				"signedBy": {
+					"type": "string",
+					"description": "Who signed the ingredient's own credentials: device, tool or creator; empty when unsigned or unknown."
+				},
+				"signerName": { "type": "string" },
+				"aiAssisted": {
+					"type": "boolean",
+					"description": "An AI model wrote the instructions (such as code) and an ordinary program made the pixels; IPTC has no term for this."
+				},
+				"note": {
+					"type": "string",
+					"description": "The creator's note on the class."
+				},
+				"pictureSeconds": { "type": ["number", "null"] },
+				"audioSeconds": { "type": ["number", "null"] }
+			}
+		},
+		"unresolved": {
+			"type": "object",
+			"required": [
+				"clip",
+				"track",
+				"startSeconds",
+				"endSeconds",
+				"reason",
+				"originClass",
+				"position"
+			],
+			"additionalProperties": false,
+			"properties": {
+				"clip": {
+					"type": "string",
+					"description": "The clip's name in the editor."
+				},
+				"track": {
+					"type": "string",
+					"description": "V1, V2... for picture tracks; A1, A2... for audio."
+				},
+				"startSeconds": { "type": ["number", "null"] },
+				"endSeconds": { "type": ["number", "null"] },
+				"reason": { "enum": ["nested sequence", "no tracked asset"] },
+				"originClass": { "type": "string" },
+				"position": { "$ref": "#/$defs/position" }
+			}
+		}
+	}
+}

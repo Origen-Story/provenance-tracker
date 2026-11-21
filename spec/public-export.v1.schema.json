@@ -1,6 +1,6 @@
 {
 	"$schema": "https://json-schema.org/draft/2020-12/schema",
-	"$id": "https://github.com/Origen-Story/provenance-tracker/blob/main/schemas/public-export.v1.schema.json",
+	"$id": "https://github.com/Origen-Story/provenance-tracker/blob/main/spec/public-export.v1.schema.json",
 	"title": "Provenance Tracker public export, format version 1",
 	"description": "What a public page needs to show how a signed film was made. Built from one signed output's record: the creator statement as signed into the file, and how the signed file read back. Contains no file paths and no database ids.",
 	"type": "object",

@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
 import path from "node:path";
+import { readFileSync } from "node:fs";
+import { validate } from "../helpers/json-schema-lite.js";
+
+// The repository root, from packages/core/test/manifest/.
+const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
+const statementSchema = JSON.parse(
+	readFileSync(
+		path.join(ROOT, "spec", "creator-statement.v3.schema.json"),
+		"utf8",
+	),
+);
 import {
 	buildOutputManifest,
 	buildCreatorStatement,
@@ -8,6 +19,7 @@ import {
 	placedAssetRefs,
 	outputClassOf,
 	STATEMENT_LABEL,
+	STATEMENT_VERSION,
 	PARENT_LABEL,
 	sidecarPathFor,
 	archivedSidecarPath,
@@ -392,6 +404,59 @@ describe("buildCreatorStatement", () => {
 			originClass: "compositeSynthetic",
 			position: "hybrid",
 		});
+	});
+});
+
+describe("the creator statement and its schema (spec/creator-statement.v3.schema.json)", () => {
+	const args = {
+		output,
+		timeline,
+		composition,
+		segments,
+		assets,
+		statement,
+		statedAt: "2026-11-13T10:00:00Z",
+	};
+
+	it("the schema's version is the builder's version", () => {
+		expect(statementSchema.properties.version.const).toBe(STATEMENT_VERSION);
+	});
+
+	it("a statement the builder makes is valid, with every field described (no extra ones)", () => {
+		expect(validate(statementSchema, buildCreatorStatement(args))).toEqual([]);
+	});
+
+	it("so is one with an unresolved nested sequence", () => {
+		const nested = seg({
+			trackIndex: 4,
+			startFrame: 30,
+			endFrame: 90,
+			sourceKind: "sequence",
+			clipName: "subclip",
+			originClass: "compositeSynthetic",
+		});
+		expect(
+			validate(
+				statementSchema,
+				buildCreatorStatement({ ...args, segments: [...segments, nested] }),
+			),
+		).toEqual([]);
+	});
+
+	it("and so is the assertion actually placed in the manifest", () => {
+		const m = buildOutputManifest({ ...args, generator: GENERATOR });
+		const data = m.definition.assertions.find(
+			(a) => a.label === STATEMENT_LABEL,
+		).data;
+		expect(validate(statementSchema, data)).toEqual([]);
+	});
+
+	it("catches a statement that drifts from the schema", () => {
+		const s = buildCreatorStatement(args);
+		expect(validate(statementSchema, { ...s, extra: 1 })).not.toEqual([]);
+		expect(validate(statementSchema, { ...s, version: 2 })).not.toEqual([]);
+		const { unresolved: _omitted, ...missing } = s;
+		expect(validate(statementSchema, missing)).not.toEqual([]);
 	});
 });
 

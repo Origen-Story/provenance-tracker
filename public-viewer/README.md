@@ -2,7 +2,7 @@
 
 A page section that shows a signed film with how it was made: a strip of the timeline coloured by how much generative AI is in each moment, what is playing now, the creator's statement, every tracked source with its credentials, and how to check the signed file yourself.
 
-It reads one file, the **public export** the tracker writes on an output's **Export** tab (`<name>.provenance.json`, format in [`schemas/public-export.v1.schema.json`](../schemas/public-export.v1.schema.json)). It needs no server, no build step and no dependencies: three ES modules and one stylesheet.
+It reads one file, the **public export** the tracker writes on an output's **Export** tab (`<name>.provenance.json`, format in [`spec/public-export.v1.schema.json`](../spec/public-export.v1.schema.json)). It needs no server, no build step and no dependencies: three ES modules and one stylesheet.
 
 ## Try it
 

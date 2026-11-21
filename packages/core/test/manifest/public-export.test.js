@@ -14,10 +14,7 @@ import { validate } from "../helpers/json-schema-lite.js";
 // The repository root, from packages/core/test/manifest/.
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
 const SCHEMA = JSON.parse(
-	readFileSync(
-		path.join(ROOT, "schemas", "public-export.v1.schema.json"),
-		"utf8",
-	),
+	readFileSync(path.join(ROOT, "spec", "public-export.v1.schema.json"), "utf8"),
 );
 const GENERATOR = { name: "provenance-tracker", version: "0.0.0-test" };
 const dir = path.join(path.sep, "media", "project");

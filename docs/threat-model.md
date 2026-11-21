@@ -43,7 +43,7 @@ Be clear-eyed about these. None is hidden.
 - **Database edits.** Someone who can write to the database can change the record. There is no tamper-evident history yet; an append-only history is planned.
 - **Whether a statement is true.** A creator statement and an origin class are what the creator declares. Signing proves the file and the statement have not changed since they were signed. It does not prove the statement.
 - **Who signed.** With the development certificate (`npm run cert:generate`), a signature shows the file is intact but verifiers report the signer as unrecognised. That is correct: a self-made certificate proves nothing about identity.
-- **Credentials found in imported files.** The tracker reads and shows them. It does not yet keep the validation result or check the issuer against a trust list, so "has credentials" must not be read as "has trusted credentials".
+- **Credentials found in imported files.** The tracker reads them and keeps each reader's validation result (D21), but does not yet check the issuer against the C2PA trust list, and the readers it uses today misjudge some files: the old `c2pa-node` cannot decode current Pixel video, and c2patool reports it invalid when it is not (D15). So "has credentials" must not be read as "has trusted credentials", and an "invalid" verdict on camera video is not yet reliable.
 - **Copies on platforms.** Video platforms re-encode uploads and drop the credentials. The signed file you host and the public record are what a viewer can check.
 
 ## Code scanning

@@ -267,14 +267,17 @@ npm run cli -- help      # The command line (below)
 
 ## Command line (early)
 
-The rebuild's first piece you can run: projects as folders, each with its own catalog (`<project>/.provenancetracker/catalog.sqlite`), and media roots that can be on any drive. It does not yet scan; the app still uses Postgres. See [D26](docs/decisions.md) and [D28](docs/decisions.md).
+The rebuild's first piece you can run: projects as folders, each with its own catalog (`<project>/.provenancetracker/catalog.sqlite`), and media roots that can be on any drive. `scan` records every file in the roots; reading what the files say (`extract`) comes next. The app still uses Postgres. See [D26](docs/decisions.md) and [D28](docs/decisions.md).
 
 ```bash
 npm run cli -- settings person "Your Name"              # once per machine: the name your edits are recorded under
 npm run cli -- init "D:\Projects\Film" --name "Film"     # a new project
 npm run cli -- roots add footage "E:\Footage" --project "D:\Projects\Film"
 npm run cli -- roots --project "D:\Projects\Film"        # the roots, and where each is on this machine
+npm run cli -- scan --project "D:\Projects\Film"         # record every file: hashes, moves, new versions, duplicates
 ```
+
+A rescan reads only files that are new or changed; a moved file keeps everything known about it, and a drive that is not plugged in is skipped, never marked gone. Ctrl+C stops a scan cleanly.
 
 Moving a project to another computer: copy the project folder, then on that computer point each root at its folder there with `roots locate <name> <folder>`. Which folder each root is in is kept per machine (in `%LOCALAPPDATA%\provenancetracker\settings.json` on Windows), never in the project.
 

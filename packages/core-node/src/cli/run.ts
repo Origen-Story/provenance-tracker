@@ -1,4 +1,4 @@
-// The command line: init, roots and settings so far (roadmap Phase 4).
+// The command line: init, roots, scan and settings so far (roadmap Phase 4).
 // Everything it needs from outside (arguments, the folder it was started in,
 // the machine, where to print) is passed in, so tests run it in-process.
 
@@ -19,6 +19,7 @@ import {
 	renameRoot,
 	type RootView,
 } from "../roots.ts";
+import { scanProject, type ScanReport } from "../scan.ts";
 import { readSettings, updateSettings } from "../settings.ts";
 import { TOOL } from "../tool.ts";
 
@@ -28,6 +29,8 @@ export interface Io {
 	cwd: string;
 	out: (line: string) => void;
 	err: (line: string) => void;
+	/** Stops a scan between files (the entry point wires it to Ctrl+C). */
+	signal?: AbortSignal;
 }
 
 const HELP = `Provenance Tracker ${TOOL.version}
@@ -39,6 +42,7 @@ Usage: npm run cli -- <command> [options]
   roots add <name> <folder>           Add a media root [--note <text>]
   roots locate <name> <folder>        Say where a root is on this machine
   roots rename <name> <new name>      Rename a root
+  scan [--root <name>]                Record every file in the roots on this machine
   settings                            Show this machine's settings
   settings person <name>              Set the name your edits are recorded under
 
@@ -55,6 +59,7 @@ const OPTIONS = {
 	note: { type: "string" },
 	project: { type: "string" },
 	by: { type: "string" },
+	root: { type: "string", multiple: true },
 	help: { type: "boolean", short: "h" },
 } as const;
 
@@ -63,6 +68,7 @@ type Values = {
 	note?: string;
 	project?: string;
 	by?: string;
+	root?: string[];
 	help?: boolean;
 };
 
@@ -75,11 +81,11 @@ function resolveFrom(io: Io, p: string): string {
 	return path.resolve(io.cwd, p);
 }
 
-function withProject<T>(
+async function withProject<T>(
 	io: Io,
 	values: Values,
-	fn: (project: OpenProject) => T,
-): T {
+	fn: (project: OpenProject) => T | Promise<T>,
+): Promise<T> {
 	const folder = values.project
 		? resolveFrom(io, values.project)
 		: findProjectFolder(io.cwd);
@@ -93,7 +99,7 @@ function withProject<T>(
 			io.out(
 				`Upgraded the catalog from format ${project.upgraded.from} to ${project.upgraded.to}; the copy from before is ${project.upgraded.backup}`,
 			);
-		return fn(project);
+		return await fn(project);
 	} finally {
 		project.db.close();
 	}
@@ -129,9 +135,9 @@ function init(io: Io, args: string[], values: Values): void {
 	);
 }
 
-function roots(io: Io, args: string[], values: Values): void {
+async function roots(io: Io, args: string[], values: Values): Promise<void> {
 	const [sub, ...rest] = args;
-	withProject(io, values, (project) => {
+	await withProject(io, values, (project) => {
 		switch (sub) {
 			case undefined: {
 				const list = listRoots(project, io.machine);
@@ -215,8 +221,80 @@ function settings(io: Io, args: string[]): void {
 		);
 }
 
+/** 1536 → "1.5 KB": decimal units, as file managers show sizes. */
+export function formatBytes(bytes: number): string {
+	const units = ["bytes", "KB", "MB", "GB", "TB"];
+	let value = bytes;
+	let unit = 0;
+	while (value >= 1000 && unit < units.length - 1) {
+		value /= 1000;
+		unit++;
+	}
+	return unit === 0 ? `${bytes} bytes` : `${value.toFixed(1)} ${units[unit]}`;
+}
+
+const LISTED = 20;
+
+function printScan(io: Io, report: ScanReport): void {
+	const c = report.counts;
+	for (const root of report.roots)
+		io.out(
+			root.scanned
+				? `  ${root.name}: ${root.files} file(s) in ${root.folder}`
+				: `  ${root.name}: skipped (${root.reason}); its files were left as they were`,
+		);
+	io.out(
+		`${c.files} file(s): ${c.unchanged} unchanged, ${c.added - c.moved} new, ${c.moved} moved, ${c.replaced} changed, ${c.touched} with only a new time; ${c.gone} gone.`,
+	);
+	io.out(
+		`${c.newAssets} new asset(s) (kind "unsorted"), ${c.newVersions} new version(s) of known assets. Read ${formatBytes(c.hashedBytes)}.`,
+	);
+	if (report.duplicates.length) {
+		io.out(`${report.duplicates.length} set(s) of identical files:`);
+		for (const d of report.duplicates.slice(0, LISTED))
+			io.out(`  ${d.places.map((p) => `${p.root}/${p.path}`).join("  =  ")}`);
+		if (report.duplicates.length > LISTED)
+			io.out(
+				`  … and ${report.duplicates.length - LISTED} more (in run ${report.runId})`,
+			);
+	}
+	if (report.skipped.length) {
+		io.out(`${report.skipped.length} skipped:`);
+		for (const s of report.skipped.slice(0, LISTED))
+			io.out(`  ${s.root}/${s.path}: ${s.reason}`);
+		if (report.skipped.length > LISTED)
+			io.out(`  … and ${report.skipped.length - LISTED} more`);
+	}
+	if (report.outcome === "cancelled")
+		io.out(
+			"Stopped before the end. What was finished is kept; nothing was marked gone. Scan again to finish.",
+		);
+}
+
+async function scan(io: Io, args: string[], values: Values): Promise<number> {
+	if (args.length)
+		throw new UsageError("Usage: npm run cli -- scan [--root <name>]");
+	return withProject(io, values, async (project) => {
+		io.out(`Scanning project "${project.name}"`);
+		let last = Date.now();
+		const report = await scanProject(project, io.machine, {
+			roots: values.root,
+			signal: io.signal,
+			onProgress: (p) => {
+				if (Date.now() - last < 2000) return;
+				last = Date.now();
+				io.out(
+					`  reading ${p.hashed + 1} of ${p.toHash} (${formatBytes(p.bytes)} so far): ${p.file}`,
+				);
+			},
+		});
+		printScan(io, report);
+		return report.outcome === "ok" ? 0 : 1;
+	});
+}
+
 /** Run one command. @returns the exit code */
-export function run(argv: string[], io: Io): number {
+export async function run(argv: string[], io: Io): Promise<number> {
 	let parsed;
 	try {
 		parsed = parseArgs({
@@ -242,8 +320,10 @@ export function run(argv: string[], io: Io): number {
 				init(io, args, values);
 				return 0;
 			case "roots":
-				roots(io, args, values);
+				await roots(io, args, values);
 				return 0;
+			case "scan":
+				return await scan(io, args, values);
 			case "settings":
 				settings(io, args);
 				return 0;

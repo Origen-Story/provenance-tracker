@@ -13,6 +13,7 @@ import {
 	refusalMessage,
 } from "./format.ts";
 import type { Tool } from "./create.ts";
+import { forgetColumns } from "./columns.ts";
 
 export interface UpgradeStep {
 	from: number;
@@ -95,6 +96,7 @@ export function upgradeCatalog(
 				}),
 			);
 		});
+		forgetColumns(db);
 		applied.push({ from: step.from, to: step.to });
 		format = step.to;
 	}

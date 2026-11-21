@@ -93,8 +93,27 @@ export function prepareConnection(db: DatabaseSync): void {
 	db.exec("PRAGMA foreign_keys = ON; PRAGMA trusted_schema = OFF;");
 }
 
-/** Run fn inside one write transaction; roll back if it throws. */
+let savepoints = 0;
+
+/**
+ * Run fn inside one write transaction; roll back if it throws. Inside an
+ * open transaction it uses a savepoint, so functions that each need a
+ * transaction can call one another and still commit or fail as one.
+ */
 export function inTransaction<T>(db: DatabaseSync, fn: () => T): T {
+	if (db.isTransaction) {
+		const name = `pt_${++savepoints}`;
+		db.exec(`SAVEPOINT ${name}`);
+		try {
+			const result = fn();
+			db.exec(`RELEASE ${name}`);
+			return result;
+		} catch (err) {
+			db.exec(`ROLLBACK TO ${name}`);
+			db.exec(`RELEASE ${name}`);
+			throw err;
+		}
+	}
 	db.exec("BEGIN IMMEDIATE");
 	try {
 		const result = fn();

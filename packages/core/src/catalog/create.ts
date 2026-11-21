@@ -8,6 +8,7 @@ import {
 	prepareConnection,
 } from "./format.ts";
 import { CATALOG_V1_SQL } from "./schema-v1.ts";
+import { setMeta } from "./edit.ts";
 
 /** The SQL that creates a catalog of the current format. */
 export const CURRENT_SCHEMA_SQL = CATALOG_V1_SQL;
@@ -60,11 +61,18 @@ export function createCatalog(db: DatabaseSync, opts: NewCatalog): number {
 				now,
 				JSON.stringify({ format: CATALOG_FORMAT }),
 			);
-		const setMeta = db.prepare("INSERT INTO meta (key, value) VALUES (?, ?)");
-		setMeta.run("project_id", projectId);
-		setMeta.run("name", name.trim());
-		setMeta.run("created_at", now);
-		setMeta.run("created_with", `${tool.name} ${tool.version}`);
-		return Number(run.lastInsertRowid);
+		const runId = Number(run.lastInsertRowid);
+		const insertMeta = db.prepare(
+			"INSERT INTO meta (key, value) VALUES (?, ?)",
+		);
+		insertMeta.run("project_id", projectId);
+		insertMeta.run("created_at", now);
+		insertMeta.run("created_with", `${tool.name} ${tool.version}`);
+		// The name can change later, so it starts its history here.
+		setMeta(db, "name", name.trim(), {
+			actor: { kind: "tool", name: `${tool.name} ${tool.version}`, runId },
+			now,
+		});
+		return runId;
 	});
 }

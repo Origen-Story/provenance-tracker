@@ -1,8 +1,10 @@
 import { ExifTool } from "exiftool-vendored";
 import { createLogger } from "../logger.js";
+import { makeObservation, exifObservationFields } from "./observation.ts";
 
 const log = createLogger("exif");
 let exiftool = null;
+let exiftoolVersion = null;
 
 function getExifTool() {
 	if (!exiftool) {
@@ -11,19 +13,59 @@ function getExifTool() {
 	return exiftool;
 }
 
+async function getVersion() {
+	if (!exiftoolVersion) {
+		try {
+			exiftoolVersion = await getExifTool().version();
+		} catch {
+			return null;
+		}
+	}
+	return exiftoolVersion;
+}
+
 /**
- * Extract EXIF, XMP, and PNG text chunk metadata using exiftool-vendored.
+ * Read a file's EXIF, XMP, IPTC, container and PNG text metadata with
+ * ExifTool, once.
+ * @returns {Promise<{ tags: object|null, observation: import('./observation.ts').Observation }>}
+ *   `tags` is ExifTool's object as the current app uses it (null on failure);
+ *   `observation` holds every tag except the location ones (observation.ts).
+ */
+export async function readExif(filePath) {
+	const version = await getVersion();
+	const base = { kind: "exif", extractor: "exiftool", version };
+	try {
+		const tags = await getExifTool().read(filePath);
+		const { data, warnings } = exifObservationFields(tags);
+		return {
+			tags,
+			observation: makeObservation({ ...base, status: "ok", data, warnings }),
+		};
+	} catch (err) {
+		log.error(`extraction failed for ${filePath}:`, err.message);
+		return {
+			tags: null,
+			observation: makeObservation({
+				...base,
+				status: "unreadable",
+				error: err.message,
+			}),
+		};
+	}
+}
+
+/** The observation of a file's metadata (see readExif). */
+export async function observeExif(filePath) {
+	return (await readExif(filePath)).observation;
+}
+
+/**
+ * ExifTool's tags for a file, or null when the read failed.
  * @param {string} filePath
  * @returns {Promise<object|null>}
  */
 export async function extractExif(filePath) {
-	try {
-		const tags = await getExifTool().read(filePath);
-		return tags;
-	} catch (err) {
-		log.error(`extraction failed for ${filePath}:`, err.message);
-		return null;
-	}
+	return (await readExif(filePath)).tags;
 }
 
 export async function shutdownExifTool() {

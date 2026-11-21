@@ -6,8 +6,9 @@
 --
 -- Conventions: times are ISO 8601 UTC text ('2026-11-21T13:09:57.177Z');
 -- booleans are 0 or 1; JSON columns hold valid JSON text; a file is a root
--- plus a relative path written with '/'. Which absolute folder a root is on a
--- given machine is not in the catalog: it lives in that machine's settings.
+-- plus a relative path written with '/'. No absolute folder is in the catalog:
+-- a root inside the project folder is recorded relative to it, and a root
+-- outside it is placed in each machine's settings.
 --
 -- Two kinds of table. Records of what happened (runs, contents, observations,
 -- history, statements, signatures) never change: triggers refuse updates and

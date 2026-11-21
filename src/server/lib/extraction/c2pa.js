@@ -22,19 +22,22 @@
 //     provenance exists is not lost.
 
 import { loadC2paNode } from "./c2pa-node-loader.js";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
-import { existsSync } from "node:fs";
-import path from "node:path";
 import { createLogger } from "../logger.js";
+import {
+	activeManifestOf,
+	c2patoolObservation,
+	parseToolVersion,
+} from "@provenancetracker/core/extraction/c2patool-read.ts";
+import {
+	c2patoolPath as c2patoolPathFor,
+	readC2pa,
+} from "@provenancetracker/core-node/extract/c2patool.ts";
 import {
 	makeObservation,
 	c2paValidation,
 } from "@provenancetracker/core/extraction/observation.ts";
 
 const log = createLogger("c2pa");
-const execFileP = promisify(execFile);
 
 // The native binding is loaded on first read and may be unavailable (see
 // c2pa-node-loader.js); null means use c2patool.
@@ -47,58 +50,17 @@ async function getC2pa() {
 	return c2paNode;
 }
 
-// ---------- c2patool binary resolution ----------
+// ---------- c2patool ----------
 
-// Resolved once at module load. Order of preference:
-//   1. C2PATOOL_PATH env var (explicit override)
-//   2. The pinned binary at <repo>/tools/c2patool/c2patool[.exe]
-//      (npm run tools:fetch)
-//   3. `c2patool` on PATH, attempted lazily; if not present, the fallback is
-//      unavailable.
+// The pinned c2patool, found by core-node (C2PATOOL_PATH, then tools/, then
+// PATH); resolved once. Signing (manifest/c2patool.js) uses the same one.
 let c2patoolPath = null;
 export function resolveC2patoolPath() {
-	if (c2patoolPath !== null) return c2patoolPath;
-
-	if (process.env.C2PATOOL_PATH) {
-		c2patoolPath = process.env.C2PATOOL_PATH;
-		return c2patoolPath;
-	}
-
-	// From this file (src/server/lib/extraction/c2pa.js) go up 4 levels to the
-	// repo root, then into tools/c2patool/.
-	const here = fileURLToPath(import.meta.url);
-	const repoRoot = path.resolve(path.dirname(here), "..", "..", "..", "..");
-	const exeName = process.platform === "win32" ? "c2patool.exe" : "c2patool";
-	const bundled = path.join(repoRoot, "tools", "c2patool", exeName);
-	if (existsSync(bundled)) {
-		c2patoolPath = bundled;
-		return c2patoolPath;
-	}
-
-	// Last resort: hope it's on PATH. execFile will surface ENOENT if not.
-	c2patoolPath = "c2patool";
+	c2patoolPath ??= c2patoolPathFor(process.env);
 	return c2patoolPath;
 }
 
-let c2patoolVersion = null;
-async function getC2patoolVersion() {
-	if (c2patoolVersion) return c2patoolVersion;
-	try {
-		const { stdout } = await execFileP(resolveC2patoolPath(), ["--version"], {
-			timeout: 15000,
-		});
-		c2patoolVersion = parseToolVersion(stdout);
-	} catch {
-		return null; // not cached: the tool may be installed later
-	}
-	return c2patoolVersion;
-}
-
-/** "c2patool 0.27.1\n" -> "0.27.1"; null when no version number is present. */
-export function parseToolVersion(output) {
-	const m = String(output || "").match(/\bv?(\d+\.\d+\.\d+(?:[-+][\w.]+)?)\b/);
-	return m ? m[1] : null;
-}
+export { parseToolVersion, activeManifestOf, c2patoolObservation };
 
 // ---------- summary builder (shared shape for both readers) ----------
 
@@ -138,24 +100,6 @@ function buildSummary(active) {
 		};
 	}
 	return summary;
-}
-
-/**
- * The active manifest of a manifest store. c2pa-node 0.5.x returns
- * `active_manifest` as the RESOLVED MANIFEST OBJECT (see
- * node_modules/c2pa-node/dist/js-src/bindings.js, read()); c2patool and newer
- * readers return it as a label into `manifests`. Both are accepted. An earlier
- * version of this file indexed `manifests[active_manifest]` only and so
- * reported every manifest c2pa-node read cleanly as absent; the unit tests in
- * test/unit/extraction/c2pa-read.test.js pin this.
- */
-export function activeManifestOf(store) {
-	if (!store) return null;
-	const active = store.active_manifest || null;
-	if (active && typeof active === "object") return active;
-	if (typeof active === "string" && store.manifests)
-		return store.manifests[active] || null;
-	return null;
 }
 
 // ---------- readers: file -> observation ----------
@@ -232,70 +176,14 @@ async function readWithC2paNode(filePath) {
 	}
 }
 
-/**
- * Pure: a c2patool run as an observation. c2patool prints the manifest store
- * as JSON on stdout; a file with no manifest exits non-zero with a message on
- * stderr rather than an empty body.
- * @param {{ stdout?: string, err?: { code?: string, stderr?: string, message?: string }, version: string|null }} run
- */
-export function c2patoolObservation({ stdout, err, version }) {
-	const base = { kind: "c2pa", extractor: "c2patool", version };
-	if (err) {
-		if (err.code === "ENOENT")
-			return makeObservation({
-				...base,
-				status: "unavailable",
-				error:
-					"c2patool was not found. Run npm run tools:fetch or set C2PATOOL_PATH.",
-			});
-		// Non-zero exit usually means "no manifest". Tell that apart from a real
-		// failure by c2patool's wording.
-		const stderr = (err.stderr || "").trim();
-		if (/no.*manifest|no.*claim|jumbf.*not.*found/i.test(stderr))
-			return makeObservation({ ...base, status: "absent" });
-		return makeObservation({
-			...base,
-			status: "unreadable",
-			error: `c2patool: ${stderr || err.message}`,
-		});
-	}
-	let parsed;
-	try {
-		parsed = JSON.parse(stdout);
-	} catch (e) {
-		return makeObservation({
-			...base,
-			status: "unreadable",
-			error: `c2patool JSON parse: ${e.message}`,
-		});
-	}
-	if (!activeManifestOf(parsed))
-		return makeObservation({ ...base, status: "absent" });
-	return makeObservation({
-		...base,
-		status: "ok",
-		data: parsed,
-		validation: c2paValidation(parsed),
-	});
-}
-
 async function readWithC2patool(filePath) {
-	const version = await getC2patoolVersion();
-	try {
-		const { stdout } = await execFileP(resolveC2patoolPath(), [filePath], {
-			maxBuffer: 8 * 1024 * 1024,
-			timeout: 15000,
-		});
-		return c2patoolObservation({ stdout, version });
-	} catch (err) {
-		if (err.code === "ENOENT")
-			log.warn(
-				"c2patool binary not found; fallback disabled. Run npm run tools:fetch or set C2PATOOL_PATH.",
-			);
-		return c2patoolObservation({ err, version });
-	}
+	const obs = await readC2pa(filePath, { tool: resolveC2patoolPath() });
+	if (obs.status === "unavailable")
+		log.warn(
+			"c2patool binary not found; fallback disabled. Run npm run tools:fetch or set C2PATOOL_PATH.",
+		);
+	return obs;
 }
-
 // ---------- public API ----------
 
 /**

@@ -9,7 +9,8 @@
 		"./*": "./src/*"
 	},
 	"dependencies": {
-		"@provenancetracker/core": "0.2.0"
+		"@provenancetracker/core": "0.2.0",
+		"exiftool-vendored": "39.1.0"
 	},
 	"engines": {
 		"node": ">=24"

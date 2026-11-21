@@ -63,8 +63,9 @@ CREATE TABLE roots (
 ) STRICT;
 
 -- The logical thing ("the final film"), with its current values. kind says
--- how it entered the project: generated, archival or produced, or unsorted
--- when a scan found it and nobody has said yet. Titles empty
+-- how it entered the project: generated, archival or produced; unsorted
+-- when a scan found it and nobody has said yet; sidecar for an .xmp or .c2pa
+-- file beside another (extract sets it, only on an unsorted asset). Titles empty
 -- mean the file name. The *_folded columns hold the same text with accents
 -- removed and lower-cased (written by the edit functions), for filters.
 -- The origin class is an IPTC Digital Source Type code or 'unknown'
@@ -202,10 +203,13 @@ CREATE INDEX locations_content ON locations (content_sha256);
 
 -- Something read from a content, as the extractor returned it (D21): kind,
 -- extractor and version, status, the full data, validation. Never changes,
--- so a human decision can never erase what a file said.
+-- so a human decision can never erase what a file said. source_sha256 is the
+-- content that was read when it is not the observed content itself: an .xmp
+-- or .c2pa sidecar beside the file (D30).
 CREATE TABLE observations (
 	id INTEGER PRIMARY KEY,
 	content_sha256 TEXT NOT NULL REFERENCES contents (sha256),
+	source_sha256 TEXT REFERENCES contents (sha256),
 	run_id INTEGER NOT NULL REFERENCES runs (id),
 	kind TEXT NOT NULL,
 	extractor TEXT NOT NULL,
@@ -263,7 +267,8 @@ BEGIN
 END;
 
 -- A link between two assets: ingredient (the child is made from the parent),
--- derived_from (an enhanced or upscaled copy), output_of (an edit that used it).
+-- derived_from (an enhanced or upscaled copy), output_of (an edit that used it),
+-- sidecar_of (an .xmp or .c2pa file that describes the parent).
 -- match_method says how it was made: manual, filename_pattern, c2pa_ingredient, timeline.
 CREATE TABLE relationships (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,31 +1,12 @@
-import { ExifTool } from "exiftool-vendored";
+// The app's ExifTool reads, through core-node's reader (one ExifTool process
+// for the app and the command line; packages/core-node/src/extract/exiftool.ts).
 import { createLogger } from "../logger.js";
 import {
-	makeObservation,
-	exifObservationFields,
-} from "@provenancetracker/core/extraction/observation.ts";
+	readExif as readWithExifTool,
+	endExifTool,
+} from "@provenancetracker/core-node/extract/exiftool.ts";
 
 const log = createLogger("exif");
-let exiftool = null;
-let exiftoolVersion = null;
-
-function getExifTool() {
-	if (!exiftool) {
-		exiftool = new ExifTool({ taskTimeoutMillis: 10000 });
-	}
-	return exiftool;
-}
-
-async function getVersion() {
-	if (!exiftoolVersion) {
-		try {
-			exiftoolVersion = await getExifTool().version();
-		} catch {
-			return null;
-		}
-	}
-	return exiftoolVersion;
-}
 
 /**
  * Read a file's EXIF, XMP, IPTC, container and PNG text metadata with
@@ -35,26 +16,10 @@ async function getVersion() {
  *   `observation` holds every tag except the location ones (observation.ts).
  */
 export async function readExif(filePath) {
-	const version = await getVersion();
-	const base = { kind: "exif", extractor: "exiftool", version };
-	try {
-		const tags = await getExifTool().read(filePath);
-		const { data, warnings } = exifObservationFields(tags);
-		return {
-			tags,
-			observation: makeObservation({ ...base, status: "ok", data, warnings }),
-		};
-	} catch (err) {
-		log.error(`extraction failed for ${filePath}:`, err.message);
-		return {
-			tags: null,
-			observation: makeObservation({
-				...base,
-				status: "unreadable",
-				error: err.message,
-			}),
-		};
-	}
+	const result = await readWithExifTool(filePath);
+	if (result.observation.status !== "ok")
+		log.error(`extraction failed for ${filePath}:`, result.observation.error);
+	return result;
 }
 
 /** The observation of a file's metadata (see readExif). */
@@ -72,8 +37,5 @@ export async function extractExif(filePath) {
 }
 
 export async function shutdownExifTool() {
-	if (exiftool) {
-		await exiftool.end();
-		exiftool = null;
-	}
+	await endExifTool();
 }

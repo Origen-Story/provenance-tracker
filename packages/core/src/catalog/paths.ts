@@ -1,6 +1,7 @@
 // A file in a catalog is a root and a path inside it (D26): "root 3,
-// interviews/street.mov". Which folder root 3 is lives in this machine's
-// settings, so the same catalog works on a laptop with other drive letters.
+// interviews/street.mov". Which folder root 3 is comes from the project folder
+// (for a root inside it) or this machine's settings (D32), so the same catalog
+// works on a laptop with other drive letters.
 // These functions turn one form into the other. They never touch the disk:
 // the caller resolves symlinks and checks that folders exist.
 

@@ -55,10 +55,24 @@ BEGIN
 END;
 
 -- A media folder. A project can have several, on different drives.
+-- folder_in_project is the root's folder relative to the project folder
+-- ('/' between folders; '.' for the project folder itself) when the root is
+-- inside it, so a project folder copied, archived or restored anywhere finds
+-- the root again. NULL for a root outside the project folder, whose place is
+-- kept in each machine's settings.
 CREATE TABLE roots (
 	id INTEGER PRIMARY KEY,
 	name TEXT NOT NULL UNIQUE CHECK (name <> ''),
 	note TEXT NOT NULL DEFAULT '',
+	folder_in_project TEXT CHECK (
+		folder_in_project IS NULL OR folder_in_project = '.' OR (
+			folder_in_project <> '' AND folder_in_project <> '..'
+			AND instr(folder_in_project, char(92)) = 0
+			AND folder_in_project NOT GLOB '/*' AND folder_in_project NOT GLOB '?:*'
+			AND folder_in_project NOT GLOB '../*' AND folder_in_project NOT GLOB '*/../*'
+			AND folder_in_project NOT GLOB '*/..'
+		)
+	),
 	created_at TEXT NOT NULL
 ) STRICT;
 

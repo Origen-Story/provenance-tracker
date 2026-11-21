@@ -60,10 +60,10 @@ describe("the command line", () => {
 		);
 		expect(added).toMatchObject({ code: 0, err: "" });
 		expect(added.out).toContain(
-			`media  ${path.join(work, "Demo", "media")}  (ok)  Cards from day 1`,
+			`media  ${path.join(work, "Demo", "media")}  (ok, inside the project folder)  Cards from day 1`,
 		);
 		expect((await inside.run("roots")).out).toMatch(
-			/Project "Demo" .*\n {2}media {2}.*\(ok\)/,
+			/Project "Demo" .*\n {2}media {2}.*\(ok, inside the project folder\)/,
 		);
 		expect(
 			(
@@ -89,7 +89,7 @@ describe("the command line", () => {
 		});
 		const shown = (await c.run("settings")).out;
 		expect(shown).toContain("Person: A. Maker");
-		expect(shown).toContain("1 root(s) located");
+		expect(shown).toContain("0 root(s) outside the project folder placed here");
 	});
 
 	it("asks for a name before recording an edit, and changes nothing until it has one", async () => {

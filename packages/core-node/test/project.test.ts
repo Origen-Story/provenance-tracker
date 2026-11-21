@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
 import {
 	cpSync,
 	existsSync,
@@ -15,6 +16,7 @@ import {
 	catalogPathOf,
 	createProject,
 	findProjectFolder,
+	GITIGNORE_TEXT,
 	openProject,
 	PROJECT_DIR,
 	realFolder,
@@ -39,7 +41,8 @@ describe("createProject", () => {
 		expect(made.catalogPath).toBe(
 			path.join(folder, PROJECT_DIR, "catalog.sqlite"),
 		);
-		expect(readdirSync(path.join(folder, PROJECT_DIR))).toEqual([
+		expect(readdirSync(path.join(folder, PROJECT_DIR)).sort()).toEqual([
+			".gitignore",
 			"catalog.sqlite",
 		]);
 		peek(made.catalogPath, (db) => {
@@ -62,6 +65,34 @@ describe("createProject", () => {
 		expect(readSettings(m.settingsPath).projects).toEqual({
 			[made.projectId]: { folder, roots: {} },
 		});
+	});
+
+	it("keeps the catalog out of git when the project folder is a repository, without touching the repository's .gitignore", () => {
+		const folder = t.folder("video");
+		const git = (...args: string[]) =>
+			spawnSync("git", args, { cwd: folder, encoding: "utf8" });
+		expect(git("init", "-q").status).toBe(0);
+		writeFileSync(path.join(folder, ".gitignore"), "renders/\n");
+		createProject(folder, { name: "Video", machine: t.machine() });
+		expect(
+			readFileSync(path.join(folder, PROJECT_DIR, ".gitignore"), "utf8"),
+		).toBe(GITIGNORE_TEXT);
+		const status = git("status", "--porcelain", "--untracked-files=all");
+		expect(status.status).toBe(0);
+		expect(status.stdout.trim()).toBe("?? .gitignore");
+		expect(readFileSync(path.join(folder, ".gitignore"), "utf8")).toBe(
+			"renders/\n",
+		);
+	});
+
+	it("leaves a .gitignore already in .provenancetracker as it is", () => {
+		const folder = t.folder("film");
+		mkdirSync(path.join(folder, PROJECT_DIR));
+		writeFileSync(path.join(folder, PROJECT_DIR, ".gitignore"), "mine\n");
+		createProject(folder, { name: "Film", machine: t.machine() });
+		expect(
+			readFileSync(path.join(folder, PROJECT_DIR, ".gitignore"), "utf8"),
+		).toBe("mine\n");
 	});
 
 	it("refuses a folder that already has a catalog, and leaves it as it was", () => {

@@ -127,8 +127,9 @@ function person(io: Io, values: Values): Actor {
 }
 
 function printRoot(io: Io, root: RootView): void {
+	const where = root.inProject ? ", inside the project folder" : "";
 	io.out(
-		`  ${root.name}  ${root.folder ?? "-"}  (${root.status})${root.note ? `  ${root.note}` : ""}`,
+		`  ${root.name}  ${root.folder ?? "-"}  (${root.status}${where})${root.note ? `  ${root.note}` : ""}`,
 	);
 	for (const w of root.warnings) io.out(`    warning: ${w}`);
 }
@@ -177,8 +178,13 @@ async function roots(io: Io, args: string[], values: Values): Promise<void> {
 				const root = locateRoot(project, io.machine, {
 					name: rest[0],
 					folder: resolveFrom(io, rest[1]),
+					actor: () => person(io, values),
 				});
-				io.out(`Root "${root.name}" is at ${root.folder} on this machine.`);
+				io.out(
+					root.inProject
+						? `Root "${root.name}" is at ${root.folder}, inside the project folder, so every copy of the project finds it there.`
+						: `Root "${root.name}" is at ${root.folder} on this machine.`,
+				);
 				for (const w of root.warnings) io.out(`  warning: ${w}`);
 				return;
 			}
@@ -228,7 +234,7 @@ function settings(io: Io, args: string[]): void {
 	);
 	for (const [id, p] of projects)
 		io.out(
-			`  ${id}  ${p.folder ?? "(folder not known)"}  ${Object.keys(p.roots).length} root(s) located`,
+			`  ${id}  ${p.folder ?? "(folder not known)"}  ${Object.keys(p.roots).length} root(s) outside the project folder placed here`,
 		);
 }
 

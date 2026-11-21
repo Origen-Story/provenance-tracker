@@ -10,12 +10,12 @@
  * evidence about Gigapixel itself.
  */
 
-export const id = 'topaz-gigapixel';
+export const id = "topaz-gigapixel";
 
-export const coreFields = ['modelName', 'modelVersion', 'width', 'height'];
+export const coreFields = ["modelName", "modelVersion", "width", "height"];
 
 function toolString(exifTags) {
-	return `${exifTags?.Software || ''} ${exifTags?.CreatorTool || ''} ${exifTags?.HistorySoftwareAgent || ''}`;
+	return `${exifTags?.Software || ""} ${exifTags?.CreatorTool || ""} ${exifTags?.HistorySoftwareAgent || ""}`;
 }
 
 export function detect(exifTags) {
@@ -24,23 +24,25 @@ export function detect(exifTags) {
 
 export function parse(exifTags) {
 	const tool = toolString(exifTags);
-	const version = tool.match(/Topaz Gigapixel\s+([\d.]+)/i)?.[1] || '';
-	const filename = String(exifTags?.FileName || '');
+	const version = tool.match(/Topaz Gigapixel\s+([\d.]+)/i)?.[1] || "";
+	const filename = String(exifTags?.FileName || "");
 	// "-gigapixel-<model>-<scale>x[-<extras>]"
-	const tail = filename.match(/-gigapixel-([a-z0-9-]+?)-(\d+)x(?:-([a-z0-9 ._-]+?))?(?:\.[a-z0-9]+)?$/i);
+	const tail = filename.match(
+		/-gigapixel-([a-z0-9-]+?)-(\d+)x(?:-([a-z0-9 ._-]+?))?(?:\.[a-z0-9]+)?$/i,
+	);
 	const result = {
 		platform: id,
-		prompt: '',
-		negativePrompt: '',
-		modelName: 'Topaz Gigapixel',
-		modelVersion: tail?.[1] ? `${tail[1]} (app ${version || '?'})` : version,
-		seed: '',
+		prompt: "",
+		negativePrompt: "",
+		modelName: "Topaz Gigapixel",
+		modelVersion: tail?.[1] ? `${tail[1]} (app ${version || "?"})` : version,
+		seed: "",
 		width: exifTags?.ImageWidth || 0,
 		height: exifTags?.ImageHeight || 0,
 		otherParams: {
-			assetClass: 'modifier',
-			appVersion: version
-		}
+			assetClass: "modifier",
+			appVersion: version,
+		},
 	};
 	if (tail?.[1]) result.otherParams.model = tail[1];
 	if (tail?.[2]) result.otherParams.scale = `${tail[2]}x`;

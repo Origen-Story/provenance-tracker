@@ -1,15 +1,28 @@
 // IO for asset_relationships: links between any two assets across the three
 // asset tables (decision D4). Pure name matching lives in auto-link.js.
-import path from 'path';
-import { db } from '../../db/index.js';
-import { assets, archivalAssets, producedAssets, assetRelationships } from '../../db/schema.js';
-import { eq, and, or, sql, desc } from 'drizzle-orm';
-import { topazSourceBasename, findSourceCandidates, searchTerms } from './auto-link.js';
+import path from "path";
+import { db } from "../../db/index.js";
+import {
+	assets,
+	archivalAssets,
+	producedAssets,
+	assetRelationships,
+} from "../../db/schema.js";
+import { eq, and, or, sql, desc } from "drizzle-orm";
+import {
+	topazSourceBasename,
+	findSourceCandidates,
+	searchTerms,
+} from "./auto-link.js";
 
-export const ASSET_TYPES = ['ai', 'archival', 'produced'];
-export const RELATIONSHIP_TYPES = ['ingredient', 'derived_from', 'output_of'];
+export const ASSET_TYPES = ["ai", "archival", "produced"];
+export const RELATIONSHIP_TYPES = ["ingredient", "derived_from", "output_of"];
 
-const TABLES = { ai: assets, archival: archivalAssets, produced: producedAssets };
+const TABLES = {
+	ai: assets,
+	archival: archivalAssets,
+	produced: producedAssets,
+};
 
 export function tableFor(type) {
 	const table = TABLES[type];
@@ -18,22 +31,22 @@ export function tableFor(type) {
 }
 
 function toRef(type, row) {
-	const filename = row.filename || path.basename(row.filePath || '');
-	const label = type === 'ai' ? (row.assetId || filename) : (row.name || filename);
+	const filename = row.filename || path.basename(row.filePath || "");
+	const label = type === "ai" ? row.assetId || filename : row.name || filename;
 	return {
 		type,
 		id: row.id,
 		label,
 		filename,
 		filePath: row.filePath,
-		mimeType: row.mimeType || '',
-		originClass: row.originClass || 'unknown',
+		mimeType: row.mimeType || "",
+		originClass: row.originClass || "unknown",
 		originClassConfirmed: !!row.originClassConfirmed,
-		originClassNote: row.originClassNote || '',
+		originClassNote: row.originClassNote || "",
 		aiAssisted: !!row.aiAssisted,
-		signedBy: row.signedBy || '',
-		signerName: row.signerName || '',
-		isOutput: !!row.isOutput
+		signedBy: row.signedBy || "",
+		signerName: row.signerName || "",
+		isOutput: !!row.isOutput,
 	};
 }
 
@@ -43,32 +56,59 @@ export async function resolveAssetRef(type, id) {
 	return row ? toRef(type, row) : null;
 }
 
-export async function linkAssets({ parentType, parentId, childType, childId, relationshipType = 'ingredient', matchMethod = 'manual', confidence = 1, notes = '' }) {
+export async function linkAssets({
+	parentType,
+	parentId,
+	childType,
+	childId,
+	relationshipType = "ingredient",
+	matchMethod = "manual",
+	confidence = 1,
+	notes = "",
+}) {
 	tableFor(parentType);
 	tableFor(childType);
-	if (!RELATIONSHIP_TYPES.includes(relationshipType)) throw new Error(`Unknown relationship type: ${relationshipType}`);
-	if (parentType === childType && Number(parentId) === Number(childId)) throw new Error('An asset cannot be linked to itself');
+	if (!RELATIONSHIP_TYPES.includes(relationshipType))
+		throw new Error(`Unknown relationship type: ${relationshipType}`);
+	if (parentType === childType && Number(parentId) === Number(childId))
+		throw new Error("An asset cannot be linked to itself");
 
 	const where = and(
 		eq(assetRelationships.parentAssetType, parentType),
 		eq(assetRelationships.parentAssetId, parentId),
 		eq(assetRelationships.childAssetType, childType),
 		eq(assetRelationships.childAssetId, childId),
-		eq(assetRelationships.relationshipType, relationshipType)
+		eq(assetRelationships.relationshipType, relationshipType),
 	);
-	const [existing] = await db.select().from(assetRelationships).where(where).limit(1);
+	const [existing] = await db
+		.select()
+		.from(assetRelationships)
+		.where(where)
+		.limit(1);
 	if (existing) return existing;
 
-	const [row] = await db.insert(assetRelationships).values({
-		parentAssetType: parentType, parentAssetId: parentId,
-		childAssetType: childType, childAssetId: childId,
-		relationshipType, matchMethod, confidence, notes
-	}).returning();
+	const [row] = await db
+		.insert(assetRelationships)
+		.values({
+			parentAssetType: parentType,
+			parentAssetId: parentId,
+			childAssetType: childType,
+			childAssetId: childId,
+			relationshipType,
+			matchMethod,
+			confidence,
+			notes,
+		})
+		.returning();
 	return row;
 }
 
 export async function getRelationship(id) {
-	const [row] = await db.select().from(assetRelationships).where(eq(assetRelationships.id, id)).limit(1);
+	const [row] = await db
+		.select()
+		.from(assetRelationships)
+		.where(eq(assetRelationships.id, id))
+		.limit(1);
 	return row || null;
 }
 
@@ -79,16 +119,30 @@ export async function unlinkRelationship(id) {
 // Every link touching one asset, with the other side resolved to a reference.
 export async function listRelationshipsFor(type, id) {
 	tableFor(type);
-	const rows = await db.select().from(assetRelationships).where(or(
-		and(eq(assetRelationships.parentAssetType, type), eq(assetRelationships.parentAssetId, id)),
-		and(eq(assetRelationships.childAssetType, type), eq(assetRelationships.childAssetId, id))
-	));
+	const rows = await db
+		.select()
+		.from(assetRelationships)
+		.where(
+			or(
+				and(
+					eq(assetRelationships.parentAssetType, type),
+					eq(assetRelationships.parentAssetId, id),
+				),
+				and(
+					eq(assetRelationships.childAssetType, type),
+					eq(assetRelationships.childAssetId, id),
+				),
+			),
+		);
 	const parents = [];
 	const children = [];
 	for (const rel of rows) {
 		const isChild = rel.childAssetType === type && rel.childAssetId === id;
 		if (isChild) {
-			const asset = await resolveAssetRef(rel.parentAssetType, rel.parentAssetId);
+			const asset = await resolveAssetRef(
+				rel.parentAssetType,
+				rel.parentAssetId,
+			);
 			parents.push({ ...rel, asset });
 		} else {
 			const asset = await resolveAssetRef(rel.childAssetType, rel.childAssetId);
@@ -100,21 +154,56 @@ export async function listRelationshipsFor(type, id) {
 
 // Called by each table's delete function, since there are no foreign keys.
 export async function removeRelationshipsFor(type, id) {
-	await db.delete(assetRelationships).where(or(
-		and(eq(assetRelationships.parentAssetType, type), eq(assetRelationships.parentAssetId, id)),
-		and(eq(assetRelationships.childAssetType, type), eq(assetRelationships.childAssetId, id))
-	));
+	await db
+		.delete(assetRelationships)
+		.where(
+			or(
+				and(
+					eq(assetRelationships.parentAssetType, type),
+					eq(assetRelationships.parentAssetId, id),
+				),
+				and(
+					eq(assetRelationships.childAssetType, type),
+					eq(assetRelationships.childAssetId, id),
+				),
+			),
+		);
 }
 
 // Filenames of every asset in a project, for name-based matching.
 export async function buildFilenameIndex(projectId) {
 	const [ai, arch, prod] = await Promise.all([
-		db.select({ id: assets.id, filePath: assets.filePath }).from(assets).where(eq(assets.projectId, projectId)),
-		db.select({ id: archivalAssets.id, filename: archivalAssets.filename, filePath: archivalAssets.filePath }).from(archivalAssets).where(eq(archivalAssets.projectId, projectId)),
-		db.select({ id: producedAssets.id, filename: producedAssets.filename, filePath: producedAssets.filePath }).from(producedAssets).where(eq(producedAssets.projectId, projectId))
+		db
+			.select({ id: assets.id, filePath: assets.filePath })
+			.from(assets)
+			.where(eq(assets.projectId, projectId)),
+		db
+			.select({
+				id: archivalAssets.id,
+				filename: archivalAssets.filename,
+				filePath: archivalAssets.filePath,
+			})
+			.from(archivalAssets)
+			.where(eq(archivalAssets.projectId, projectId)),
+		db
+			.select({
+				id: producedAssets.id,
+				filename: producedAssets.filename,
+				filePath: producedAssets.filePath,
+			})
+			.from(producedAssets)
+			.where(eq(producedAssets.projectId, projectId)),
 	]);
-	const entry = (type, r) => ({ type, id: r.id, filename: r.filename || path.basename(r.filePath || '') });
-	return [...ai.map(r => entry('ai', r)), ...arch.map(r => entry('archival', r)), ...prod.map(r => entry('produced', r))];
+	const entry = (type, r) => ({
+		type,
+		id: r.id,
+		filename: r.filename || path.basename(r.filePath || ""),
+	});
+	return [
+		...ai.map((r) => entry("ai", r)),
+		...arch.map((r) => entry("archival", r)),
+		...prod.map((r) => entry("produced", r)),
+	];
 }
 
 // Name search across the three tables, for the "set parent" picker.
@@ -126,14 +215,31 @@ export async function searchAssets(projectId, q, limit = 20) {
 	const fields = {
 		ai: [assets.assetId, assets.filePath, assets.description],
 		archival: [archivalAssets.name, archivalAssets.filename],
-		produced: [producedAssets.name, producedAssets.filename]
+		produced: [producedAssets.name, producedAssets.filename],
 	};
-	const tables = { ai: assets, archival: archivalAssets, produced: producedAssets };
-	const rows = await Promise.all(Object.keys(tables).map(type => {
-		const table = tables[type];
-		const conds = [eq(table.projectId, projectId), ...terms.map(t => or(...fields[type].map(f => sql`${f} ILIKE ${t}`)))];
-		return db.select().from(table).where(and(...conds)).orderBy(desc(table.id)).limit(limit).then(rs => rs.map(r => toRef(type, r)));
-	}));
+	const tables = {
+		ai: assets,
+		archival: archivalAssets,
+		produced: producedAssets,
+	};
+	const rows = await Promise.all(
+		Object.keys(tables).map((type) => {
+			const table = tables[type];
+			const conds = [
+				eq(table.projectId, projectId),
+				...terms.map((t) =>
+					or(...fields[type].map((f) => sql`${f} ILIKE ${t}`)),
+				),
+			];
+			return db
+				.select()
+				.from(table)
+				.where(and(...conds))
+				.orderBy(desc(table.id))
+				.limit(limit)
+				.then((rs) => rs.map((r) => toRef(type, r)));
+		}),
+	);
 	return rows.flat().slice(0, limit);
 }
 
@@ -150,11 +256,20 @@ export async function autoLinkEnhancer({ type, id, filename, projectId }) {
 	if (candidates.length === 1) {
 		const [c] = candidates;
 		const linked = await linkAssets({
-			parentType: c.type, parentId: c.id, childType: type, childId: id,
-			relationshipType: 'derived_from', matchMethod: 'filename_pattern', confidence: 0.7,
-			notes: `source stem "${stem}" matched ${c.filename}`
+			parentType: c.type,
+			parentId: c.id,
+			childType: type,
+			childId: id,
+			relationshipType: "derived_from",
+			matchMethod: "filename_pattern",
+			confidence: 0.7,
+			notes: `source stem "${stem}" matched ${c.filename}`,
 		});
-		return { linked, parent: await resolveAssetRef(c.type, c.id), suggestedParents: [] };
+		return {
+			linked,
+			parent: await resolveAssetRef(c.type, c.id),
+			suggestedParents: [],
+		};
 	}
 	return { linked: null, parent: null, suggestedParents: candidates };
 }

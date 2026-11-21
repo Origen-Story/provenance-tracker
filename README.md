@@ -57,6 +57,7 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 ### 1. Create a project
 
 On first launch you'll be prompted to create a project. Choose which modules to enable:
+
 - **AI Assets** — for AI-generated images/video (MidJourney, ComfyUI, Freepik, etc.)
 - **Archival** — for historical/reference images from museums, archives, libraries
 - **Produced** (always on) — for original recordings, field audio, video, photos
@@ -66,11 +67,13 @@ Set a storage path where copied imports are kept. Files tracked in place (see be
 ### 2. Import assets
 
 Go to **Import** and choose your asset type, then your import method:
+
 - **Upload** — drag and drop or browse files
 - **Scan folder** — point to a folder, optionally with its subfolders
 - **File path** — import a single file by path
 
 For scan and file path you choose between **keeping files where they are** (track in place, the default for produced media) and copying them into managed storage. In place suits video work: the edit project already links to the files, nothing is duplicated, and timelines match by path. The tracker never moves, renames or deletes an in-place file; Settings › Storage Integrity reports one that went missing or changed size.
+
 - **URL** (archival only) — download from a web source
 
 Metadata is extracted automatically. Fill in any gaps on the enrichment form, then confirm.
@@ -161,7 +164,7 @@ To show the dashboard from a laptop, copy the code, the database and the media, 
    pg_dump --format=custom --no-owner --no-privileges --file provenance_full_YYYY-MM-DD.dump --dbname "<DATABASE_URL from .env>"
    ```
 2. **Make the paths match.** On macOS or Linux, a symlink at the original path is enough. On Windows the paths start with a drive letter; two ways to have the same letter after every restart:
-   - **An external drive** holding the media: in Disk Management, right-click its volume, *Change Drive Letter and Paths*, and give it the letter the main machine uses. Windows remembers the letter for that drive, and the laptop's own disk stays free.
+   - **An external drive** holding the media: in Disk Management, right-click its volume, _Change Drive Letter and Paths_, and give it the letter the main machine uses. Windows remembers the letter for that drive, and the laptop's own disk stays free.
    - **A folder shown as a drive**, persistent across restarts (unlike `subst`). In an administrator PowerShell, then restart once:
      ```powershell
      New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\DOS Devices' -Name 'P:' -PropertyType String -Value '\??\C:\Demo\P'
@@ -185,12 +188,12 @@ To show the dashboard from a laptop, copy the code, the database and the media, 
 
 ## What gets extracted automatically
 
-| Platform | What's extracted | What you'll need to add |
-|----------|-----------------|------------------------|
-| **ComfyUI** | Full prompt, negative prompt, model, seed, steps, CFG, sampler, scheduler, dimensions, LoRAs | Description, generation date |
-| **MidJourney** | Full prompt, model version, seed, stylize, aspect ratio, C2PA timestamp | Description |
-| **Freepik** | C2PA manifest, digital source type (XMP) | Prompt, model, generation date |
-| **Other** | EXIF data, file hash, dimensions | Most fields |
+| Platform       | What's extracted                                                                             | What you'll need to add        |
+| -------------- | -------------------------------------------------------------------------------------------- | ------------------------------ |
+| **ComfyUI**    | Full prompt, negative prompt, model, seed, steps, CFG, sampler, scheduler, dimensions, LoRAs | Description, generation date   |
+| **MidJourney** | Full prompt, model version, seed, stylize, aspect ratio, C2PA timestamp                      | Description                    |
+| **Freepik**    | C2PA manifest, digital source type (XMP)                                                     | Prompt, model, generation date |
+| **Other**      | EXIF data, file hash, dimensions                                                             | Most fields                    |
 
 Adobe Firefly, ElevenLabs, Topaz Video AI and Topaz Gigapixel files are recognised too; each parser is one module under `src/server/lib/extraction/parsers/`. There is no Meta.ai parser: those files fall under "Other", and a digital source type in their XMP is still read by the classifier.
 
@@ -233,19 +236,19 @@ schemas/                     # JSON Schema of the public export
 
 ## Database tables
 
-| Table | Purpose |
-|-------|---------|
-| `projects` | Multi-project support with module toggles and Notion config |
-| `assets` | AI-generated asset records |
-| `generation_params` | Normalized AI generation parameters (prompt, model, seed, etc.) |
-| `asset_metadata` | Raw extracted metadata blobs (EXIF, PNG text, C2PA, platform) |
-| `archival_assets` | Archival image records with provenance fields |
-| `produced_assets` | Original produced content records |
-| `search_groups` | Per-project keyword/category groups for Archive Search |
-| `search_candidates` | Wikimedia search results (holds review status + download-queue state) |
-| `search_jobs` | Background search jobs with progress/cancellation state |
-| `manifests` | C2PA Content Credentials manifests |
-| `asset_relationships` | Parent/derivative links between assets |
+| Table                 | Purpose                                                               |
+| --------------------- | --------------------------------------------------------------------- |
+| `projects`            | Multi-project support with module toggles and Notion config           |
+| `assets`              | AI-generated asset records                                            |
+| `generation_params`   | Normalized AI generation parameters (prompt, model, seed, etc.)       |
+| `asset_metadata`      | Raw extracted metadata blobs (EXIF, PNG text, C2PA, platform)         |
+| `archival_assets`     | Archival image records with provenance fields                         |
+| `produced_assets`     | Original produced content records                                     |
+| `search_groups`       | Per-project keyword/category groups for Archive Search                |
+| `search_candidates`   | Wikimedia search results (holds review status + download-queue state) |
+| `search_jobs`         | Background search jobs with progress/cancellation state               |
+| `manifests`           | C2PA Content Credentials manifests                                    |
+| `asset_relationships` | Parent/derivative links between assets                                |
 
 ## Key commands
 
@@ -279,17 +282,17 @@ Do not use `drizzle-kit push` (the `db:push` script): it bypasses migration trac
 
 Copy `.env.example` to `.env`:
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `PORT` | No | Express port (default: 3001) |
-| `HOST` | No | Address the server listens on (default: `127.0.0.1`, this machine only). Change it only behind a proxy that adds a login; see Deployment notes |
-| `ALLOWED_HOSTS` | No | Comma-separated host names the API answers to beside `localhost`, for use with `HOST` |
-| `NOTION_API_KEY` | No | Notion integration token (for archival sync) |
-| `APP_CONTACT` | Recommended (archival) | Email or URL sent in the User-Agent on outbound HTTP. Wikimedia's policy requires identification — unidentified clients are throttled or blocked, which makes Archive Search unreliable. |
-| `STORAGE_PATH` | No | Root folder for downloaded archival images (default: `./data`) |
-| `NODE_ENV` | No | Set to `production` to serve the built client from `dist/` |
-| `LOG_LEVEL` | No | Server log verbosity: `debug`, `info`, `warn`, `error` (default: `info`) |
+| Variable         | Required               | Description                                                                                                                                                                              |
+| ---------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`   | Yes                    | PostgreSQL connection string                                                                                                                                                             |
+| `PORT`           | No                     | Express port (default: 3001)                                                                                                                                                             |
+| `HOST`           | No                     | Address the server listens on (default: `127.0.0.1`, this machine only). Change it only behind a proxy that adds a login; see Deployment notes                                           |
+| `ALLOWED_HOSTS`  | No                     | Comma-separated host names the API answers to beside `localhost`, for use with `HOST`                                                                                                    |
+| `NOTION_API_KEY` | No                     | Notion integration token (for archival sync)                                                                                                                                             |
+| `APP_CONTACT`    | Recommended (archival) | Email or URL sent in the User-Agent on outbound HTTP. Wikimedia's policy requires identification — unidentified clients are throttled or blocked, which makes Archive Search unreliable. |
+| `STORAGE_PATH`   | No                     | Root folder for downloaded archival images (default: `./data`)                                                                                                                           |
+| `NODE_ENV`       | No                     | Set to `production` to serve the built client from `dist/`                                                                                                                               |
+| `LOG_LEVEL`      | No                     | Server log verbosity: `debug`, `info`, `warn`, `error` (default: `info`)                                                                                                                 |
 
 ## License
 

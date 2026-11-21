@@ -10,19 +10,19 @@
  * checks between keywords/categories and bails.
  */
 
-import { db } from '../../db/index.js';
-import { searchJobs } from '../../db/schema.js';
-import { eq, and, sql, asc, desc, or, lt, inArray } from 'drizzle-orm';
-import { createLogger } from '../logger.js';
-import { executeGroupSearch } from './search.js';
-import { getGroupByGroupId } from './groups.js';
+import { db } from "../../db/index.js";
+import { searchJobs } from "../../db/schema.js";
+import { eq, and, sql, asc, desc, or, lt, inArray } from "drizzle-orm";
+import { createLogger } from "../logger.js";
+import { executeGroupSearch } from "./search.js";
+import { getGroupByGroupId } from "./groups.js";
 
-const log = createLogger('search-jobs');
+const log = createLogger("search-jobs");
 const POLL_INTERVAL_MS = 2000;
-const LEASE_SECONDS = 300;    // longer than candidate queue — a single job can take minutes.
-                              // Long enough to tolerate the image-info fetch phase for a ~10k
-                              // title search at ~1 req/s, in case a stretch of batches stalls
-                              // and no progress update fires for a while.
+const LEASE_SECONDS = 300; // longer than candidate queue — a single job can take minutes.
+// Long enough to tolerate the image-info fetch phase for a ~10k
+// title search at ~1 req/s, in case a stretch of batches stalls
+// and no progress update fires for a while.
 
 let _running = false;
 let _timer = null;
@@ -57,7 +57,7 @@ async function tick() {
 			await executeGroupSearch(job.projectId, group, job.id);
 			// executeGroupSearch marks status='completed' itself so it can write final counters in one transaction
 		} catch (err) {
-			if (err?.code === 'CANCELLED') {
+			if (err?.code === "CANCELLED") {
 				log.info(`CANCEL job ${job.id}`);
 				return;
 			}
@@ -65,7 +65,7 @@ async function tick() {
 			await markFailed(job.id, err.message || String(err));
 		}
 	} catch (err) {
-		log.error('tick error:', err.message);
+		log.error("tick error:", err.message);
 	} finally {
 		_running = false;
 	}
@@ -73,22 +73,30 @@ async function tick() {
 
 // Claim the next queued (or stale-leased) job by flipping it to 'running' with a fresh lease.
 async function claimNext() {
-	const rows = await db.select().from(searchJobs)
-		.where(or(
-			eq(searchJobs.status, 'queued'),
-			and(eq(searchJobs.status, 'running'), lt(searchJobs.leaseUntil, sql`now()`))
-		))
+	const rows = await db
+		.select()
+		.from(searchJobs)
+		.where(
+			or(
+				eq(searchJobs.status, "queued"),
+				and(
+					eq(searchJobs.status, "running"),
+					lt(searchJobs.leaseUntil, sql`now()`),
+				),
+			),
+		)
 		.orderBy(asc(searchJobs.createdAt), asc(searchJobs.id))
 		.limit(1);
 	if (rows.length === 0) return null;
 	const job = rows[0];
 
-	const [claimed] = await db.update(searchJobs)
+	const [claimed] = await db
+		.update(searchJobs)
 		.set({
-			status: 'running',
+			status: "running",
 			startedAt: job.startedAt || sql`now()`,
 			leaseUntil: sql`now() + interval '${sql.raw(String(LEASE_SECONDS))} seconds'`,
-			updatedAt: sql`now()`
+			updatedAt: sql`now()`,
 		})
 		.where(and(eq(searchJobs.id, job.id), eq(searchJobs.status, job.status)))
 		.returning();
@@ -96,12 +104,13 @@ async function claimNext() {
 }
 
 async function markFailed(jobId, errorMsg) {
-	await db.update(searchJobs)
+	await db
+		.update(searchJobs)
 		.set({
-			status: 'failed',
+			status: "failed",
 			lastError: errorMsg,
 			completedAt: sql`now()`,
-			updatedAt: sql`now()`
+			updatedAt: sql`now()`,
 		})
 		.where(eq(searchJobs.id, jobId));
 }
@@ -109,16 +118,19 @@ async function markFailed(jobId, errorMsg) {
 // On startup: release leases from a prior process so orphaned 'running' jobs
 // become re-claimable. They go back to 'queued' to be re-run from scratch.
 export async function releaseStaleSearchJobs() {
-	const rows = await db.update(searchJobs)
+	const rows = await db
+		.update(searchJobs)
 		.set({
-			status: 'queued',
+			status: "queued",
 			leaseUntil: null,
-			updatedAt: sql`now()`
+			updatedAt: sql`now()`,
 		})
-		.where(eq(searchJobs.status, 'running'))
+		.where(eq(searchJobs.status, "running"))
 		.returning({ id: searchJobs.id });
 	if (rows.length > 0) {
-		log.info(`Re-queued ${rows.length} orphan job${rows.length !== 1 ? 's' : ''} from prior run`);
+		log.info(
+			`Re-queued ${rows.length} orphan job${rows.length !== 1 ? "s" : ""} from prior run`,
+		);
 	}
 }
 
@@ -128,28 +140,38 @@ export async function releaseStaleSearchJobs() {
 
 export async function enqueueSearch(projectId, group) {
 	const keywordsTotal = Object.values(group.keywords || {}).reduce(
-		(n, arr) => n + (Array.isArray(arr) ? arr.length : 0), 0
+		(n, arr) => n + (Array.isArray(arr) ? arr.length : 0),
+		0,
 	);
 	const categoriesTotal = (group.categories || []).length;
 
-	const [job] = await db.insert(searchJobs).values({
-		projectId,
-		groupId: group.groupId,
-		groupName: group.groupName,
-		status: 'queued',
-		keywordsTotal,
-		categoriesTotal
-	}).returning();
+	const [job] = await db
+		.insert(searchJobs)
+		.values({
+			projectId,
+			groupId: group.groupId,
+			groupName: group.groupName,
+			status: "queued",
+			keywordsTotal,
+			categoriesTotal,
+		})
+		.returning();
 	return job;
 }
 
 export async function getJob(id) {
-	const [row] = await db.select().from(searchJobs).where(eq(searchJobs.id, id)).limit(1);
+	const [row] = await db
+		.select()
+		.from(searchJobs)
+		.where(eq(searchJobs.id, id))
+		.limit(1);
 	return row || null;
 }
 
 export async function listJobs(projectId, { limit = 20 } = {}) {
-	return await db.select().from(searchJobs)
+	return await db
+		.select()
+		.from(searchJobs)
 		.where(eq(searchJobs.projectId, projectId))
 		.orderBy(desc(searchJobs.createdAt))
 		.limit(limit);
@@ -157,13 +179,19 @@ export async function listJobs(projectId, { limit = 20 } = {}) {
 
 export async function cancelJob(id) {
 	// Only cancel jobs that haven't finished. Worker checks between iterations and exits.
-	const rows = await db.update(searchJobs)
+	const rows = await db
+		.update(searchJobs)
 		.set({
-			status: 'cancelled',
+			status: "cancelled",
 			completedAt: sql`now()`,
-			updatedAt: sql`now()`
+			updatedAt: sql`now()`,
 		})
-		.where(and(eq(searchJobs.id, id), inArray(searchJobs.status, ['queued', 'running'])))
+		.where(
+			and(
+				eq(searchJobs.id, id),
+				inArray(searchJobs.status, ["queued", "running"]),
+			),
+		)
 		.returning();
 	return rows[0] || null;
 }
@@ -171,10 +199,11 @@ export async function cancelJob(id) {
 // Retry a failed/cancelled job: flip back to 'queued' and zero progress counters
 // so the worker re-runs from scratch. Safe to call repeatedly.
 export async function retryJob(id) {
-	const rows = await db.update(searchJobs)
+	const rows = await db
+		.update(searchJobs)
 		.set({
-			status: 'queued',
-			lastError: '',
+			status: "queued",
+			lastError: "",
 			completedAt: null,
 			leaseUntil: null,
 			startedAt: null,
@@ -186,9 +215,14 @@ export async function retryJob(id) {
 			skippedLicense: 0,
 			skippedDuplicate: 0,
 			skippedExisting: 0,
-			updatedAt: sql`now()`
+			updatedAt: sql`now()`,
 		})
-		.where(and(eq(searchJobs.id, id), inArray(searchJobs.status, ['failed', 'cancelled'])))
+		.where(
+			and(
+				eq(searchJobs.id, id),
+				inArray(searchJobs.status, ["failed", "cancelled"]),
+			),
+		)
 		.returning();
 	return rows[0] || null;
 }
@@ -198,11 +232,12 @@ export async function retryJob(id) {
 // ---------------------------------------------------------------------------
 
 export async function updateProgress(jobId, patch) {
-	await db.update(searchJobs)
+	await db
+		.update(searchJobs)
 		.set({
 			...patch,
 			leaseUntil: sql`now() + interval '${sql.raw(String(LEASE_SECONDS))} seconds'`,
-			updatedAt: sql`now()`
+			updatedAt: sql`now()`,
 		})
 		.where(eq(searchJobs.id, jobId));
 }
@@ -211,17 +246,18 @@ export async function updateProgress(jobId, patch) {
 // between keywords/categories so cancellation is responsive without a separate channel.
 export async function isCancelled(jobId) {
 	const job = await getJob(jobId);
-	return job?.status === 'cancelled';
+	return job?.status === "cancelled";
 }
 
 export async function markCompleted(jobId, finalCounters) {
-	await db.update(searchJobs)
+	await db
+		.update(searchJobs)
 		.set({
 			...finalCounters,
-			status: 'completed',
+			status: "completed",
 			completedAt: sql`now()`,
 			leaseUntil: null,
-			updatedAt: sql`now()`
+			updatedAt: sql`now()`,
 		})
 		.where(eq(searchJobs.id, jobId));
 }

@@ -1,7 +1,7 @@
-import { ExifTool } from 'exiftool-vendored';
-import { createLogger } from '../logger.js';
+import { ExifTool } from "exiftool-vendored";
+import { createLogger } from "../logger.js";
 
-const log = createLogger('exif');
+const log = createLogger("exif");
 let exiftool = null;
 
 function getExifTool() {

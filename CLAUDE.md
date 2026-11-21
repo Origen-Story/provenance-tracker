@@ -3,12 +3,14 @@
 Local web app that records where multimedia assets came from (camera, archive, AI generation, AI enhancement) and writes C2PA Content Credentials for finished video and audio. Rules only; the runbook is README.md and the explanations are in docs/.
 
 ## Commands (from repo root)
+
 - Tests: `npm test`. Run them before saying anything is done. They run vitest inside the repo guard (scripts/test.mjs), which fails if a test changes the checkout or the suite takes over 60 s.
 - Tests are pure or temp-dir only: no database, no network, no signing against certs/. Small fixtures are committed under test/fixtures/; large media stays in test-fixtures/ (gitignored).
 - Dev: `npm run dev` (Express on 3001, Vite on 5173). Build: `npm run build`.
 - Node 24 locally and in CI.
 
 ## Rules
+
 - JavaScript only (.js, .jsx), no TypeScript. Relative imports between modules.
 - Schema changes: edit src/server/db/schema.js, `npm run db:generate`, make the SQL idempotent (IF NOT EXISTS) with a shell edit in the same commit, `npm run db:migrate`. Never `npm run db:push`. The guard hook blocks the file tools on migrations/ so that one edit is a deliberate step, not a habit.
 - Originals are never modified in place. Signing, re-encoding and exporting write a new file; the row keeps the original path.
@@ -21,9 +23,11 @@ Local web app that records where multimedia assets came from (camera, archive, A
 - Commits stage explicit paths. No `git add -A`, no force push, no history rewrite.
 
 ## Worktrees
+
 - .claude/worktrees/ are code-only: no database migrations, no signing, no .env. node_modules is symlinked (Windows needs Developer Mode or the link fails silently).
 
 ## Pointers
+
 - Architecture, queue behaviour, environment: docs/architecture.md
 - What the tool defends against, and what leaves the machine: docs/threat-model.md, docs/network.md
 - Decisions, numbered: docs/decisions.md

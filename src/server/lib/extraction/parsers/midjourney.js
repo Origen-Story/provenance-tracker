@@ -3,35 +3,39 @@
  * Midjourney embeds the prompt and job info in EXIF Description/UserComment.
  */
 
-export const id = 'midjourney';
+export const id = "midjourney";
 
 // Fields a typical MidJourney export populates. If most are empty after parse(),
 // the Description/UserComment format likely changed and the parser needs an update.
-export const coreFields = ['prompt', 'modelVersion', 'aspectRatio'];
+export const coreFields = ["prompt", "modelVersion", "aspectRatio"];
 
-export function detect(exifTags, chunks) {
-	const desc = exifTags?.Description || exifTags?.ImageDescription || exifTags?.UserComment || '';
-	const software = exifTags?.Software || '';
+export function detect(exifTags, _chunks) {
+	const desc =
+		exifTags?.Description ||
+		exifTags?.ImageDescription ||
+		exifTags?.UserComment ||
+		"";
+	const software = exifTags?.Software || "";
 	return (
-		software.toLowerCase().includes('midjourney') ||
+		software.toLowerCase().includes("midjourney") ||
 		/--v\s+\d/.test(desc) ||
 		/--ar\s+[\d:]+/.test(desc)
 	);
 }
 
-export function parse(exifTags, chunks) {
+export function parse(exifTags, _chunks) {
 	const result = {
-		platform: 'midjourney',
-		prompt: '',
-		negativePrompt: '',
-		modelName: 'Midjourney',
-		modelVersion: '',
-		seed: '',
+		platform: "midjourney",
+		prompt: "",
+		negativePrompt: "",
+		modelName: "Midjourney",
+		modelVersion: "",
+		seed: "",
 		width: 0,
 		height: 0,
-		aspectRatio: '',
-		stylize: '',
-		otherParams: {}
+		aspectRatio: "",
+		stylize: "",
+		otherParams: {},
 	};
 
 	// Midjourney puts the full prompt string (with params) in Description or UserComment
@@ -39,8 +43,8 @@ export function parse(exifTags, chunks) {
 		exifTags?.Description ||
 		exifTags?.ImageDescription ||
 		exifTags?.UserComment ||
-		exifTags?.['XMP:Description'] ||
-		'';
+		exifTags?.["XMP:Description"] ||
+		"";
 
 	if (raw) {
 		// Extract --version
@@ -56,12 +60,14 @@ export function parse(exifTags, chunks) {
 		if (arMatch) result.aspectRatio = arMatch[1];
 
 		// Extract --stylize
-		const styleMatch = raw.match(/--stylize\s+(\d+)/i) || raw.match(/--s\s+(\d+)/);
+		const styleMatch =
+			raw.match(/--stylize\s+(\d+)/i) || raw.match(/--s\s+(\d+)/);
 		if (styleMatch) result.stylize = styleMatch[1];
 
 		// Prompt is everything before the first --param
 		const paramStart = raw.search(/\s+--/);
-		result.prompt = paramStart > -1 ? raw.slice(0, paramStart).trim() : raw.trim();
+		result.prompt =
+			paramStart > -1 ? raw.slice(0, paramStart).trim() : raw.trim();
 
 		result.otherParams.fullPromptString = raw;
 	}
@@ -71,4 +77,3 @@ export function parse(exifTags, chunks) {
 
 	return result;
 }
-

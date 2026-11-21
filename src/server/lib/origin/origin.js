@@ -1,14 +1,22 @@
 // IO around the pure classifier: gather a row's stored signals, write the
 // proposal back, and let the user confirm or override. A confirmed class is
 // never overwritten by a proposal unless `force` is passed.
-import { db } from '../../db/index.js';
-import { assetMetadata } from '../../db/schema.js';
-import { eq, and, sql } from 'drizzle-orm';
-import { proposeOriginClass, parseJsonSafe, ORIGIN_CLASSES } from './classify.js';
-import { originClassDef } from '../../../shared/origin-vocabulary.js';
-import { tableFor, listRelationshipsFor, linkAssets } from '../relationships/relationships.js';
-import { cleanPublicTitle } from '../manifest/build.js';
-import { recomputeTimelinesForAsset } from '../timeline/timelines.js';
+import { db } from "../../db/index.js";
+import { assetMetadata } from "../../db/schema.js";
+import { eq, sql } from "drizzle-orm";
+import {
+	proposeOriginClass,
+	parseJsonSafe,
+	ORIGIN_CLASSES,
+} from "./classify.js";
+import { originClassDef } from "../../../shared/origin-vocabulary.js";
+import {
+	tableFor,
+	listRelationshipsFor,
+	linkAssets,
+} from "../relationships/relationships.js";
+import { cleanPublicTitle } from "../manifest/build.js";
+import { recomputeTimelinesForAsset } from "../timeline/timelines.js";
 
 export { ORIGIN_CLASSES };
 
@@ -25,32 +33,39 @@ export async function collectSignals(type, row) {
 	let c2paSummary = null;
 	let exifTags = {};
 	let platformData = null;
-	if (type === 'ai') {
-		const blobs = await db.select().from(assetMetadata).where(eq(assetMetadata.assetId, row.id));
+	if (type === "ai") {
+		const blobs = await db
+			.select()
+			.from(assetMetadata)
+			.where(eq(assetMetadata.assetId, row.id));
 		for (const b of blobs) {
-			if (b.metadataType === 'c2pa') c2paSummary = parseJsonSafe(b.rawJson);
-			else if (b.metadataType === 'exif') exifTags = parseJsonSafe(b.rawJson, {}) || {};
-			else if (b.metadataType === 'platform') platformData = parseJsonSafe(b.rawJson);
+			if (b.metadataType === "c2pa") c2paSummary = parseJsonSafe(b.rawJson);
+			else if (b.metadataType === "exif")
+				exifTags = parseJsonSafe(b.rawJson, {}) || {};
+			else if (b.metadataType === "platform")
+				platformData = parseJsonSafe(b.rawJson);
 		}
 	} else {
 		c2paSummary = parseJsonSafe(row.c2paJson);
 		exifTags = parseJsonSafe(row.exifJson, {}) || {};
 	}
 	const rels = await listRelationshipsFor(type, row.id);
-	const parent = rels.parents.find(r => r.relationshipType === 'derived_from');
+	const parent = rels.parents.find(
+		(r) => r.relationshipType === "derived_from",
+	);
 	return {
 		c2paSummary,
 		exifTags,
-		platform: row.platform || '',
+		platform: row.platform || "",
 		platformData,
 		parentClass: parent?.asset?.originClass || null,
-		parentRef: parent?.asset || null
+		parentRef: parent?.asset || null,
 	};
 }
 
 export async function proposeForAsset(type, id) {
 	const row = await getRow(type, id);
-	if (!row) throw new Error('Asset not found');
+	if (!row) throw new Error("Asset not found");
 	const signals = await collectSignals(type, row);
 	const proposal = proposeOriginClass({ table: type, ...signals });
 	return { row, proposal, signals };
@@ -66,25 +81,41 @@ export async function applyProposal(type, id, { force = false } = {}) {
 	if (row.originClassConfirmed && !force) {
 		// The class is the user's. Who signed the file is not theirs to decide,
 		// so that part is kept current.
-		if ((row.signedBy || '') === proposal.signedBy && (row.signerName || '') === proposal.signerName) return { row, proposal, applied: false };
-		const signer = { signedBy: proposal.signedBy, signerName: proposal.signerName };
-		if (type === 'produced') signer.captureSigned = proposal.captureSigned;
-		const [kept] = await db.update(table).set(signer).where(eq(table.id, id)).returning();
+		if (
+			(row.signedBy || "") === proposal.signedBy &&
+			(row.signerName || "") === proposal.signerName
+		)
+			return { row, proposal, applied: false };
+		const signer = {
+			signedBy: proposal.signedBy,
+			signerName: proposal.signerName,
+		};
+		if (type === "produced") signer.captureSigned = proposal.captureSigned;
+		const [kept] = await db
+			.update(table)
+			.set(signer)
+			.where(eq(table.id, id))
+			.returning();
 		return { row: kept, proposal, applied: false };
 	}
 	const patch = {
 		originClass: proposal.originClass,
 		originClassSource: proposal.source,
 		originClassConfirmed: false,
-		originClassNote: '',
+		originClassNote: "",
 		aiAssisted: false,
 		signedBy: proposal.signedBy,
 		signerName: proposal.signerName,
-		updatedAt: sql`now()`
+		updatedAt: sql`now()`,
 	};
-	if (type === 'produced') patch.captureSigned = proposal.captureSigned;
-	const [updated] = await db.update(table).set(patch).where(eq(table.id, id)).returning();
-	if (row.originClass !== proposal.originClass || !!row.aiAssisted) await recomputeTimelinesForAsset(type, id);
+	if (type === "produced") patch.captureSigned = proposal.captureSigned;
+	const [updated] = await db
+		.update(table)
+		.set(patch)
+		.where(eq(table.id, id))
+		.returning();
+	if (row.originClass !== proposal.originClass || !!row.aiAssisted)
+		await recomputeTimelinesForAsset(type, id);
 	return { row: updated, proposal, applied: true };
 }
 
@@ -93,34 +124,54 @@ export async function applyProposal(type, id, { force = false } = {}) {
 async function reproposeDerivedChildren(type, id) {
 	const rels = await listRelationshipsFor(type, id);
 	for (const rel of rels.children) {
-		if (rel.relationshipType !== 'derived_from' || !rel.asset) continue;
+		if (rel.relationshipType !== "derived_from" || !rel.asset) continue;
 		await applyProposal(rel.asset.type, rel.asset.id);
 	}
 }
 
-export async function setOriginClass(type, id, { originClass, confirmed = true, ingredientClasses, note, aiAssisted } = {}) {
-	if (!ORIGIN_CLASSES.includes(originClass)) throw new Error(`Unknown origin class: ${originClass}`);
+export async function setOriginClass(
+	type,
+	id,
+	{ originClass, confirmed = true, ingredientClasses, note, aiAssisted } = {},
+) {
+	if (!ORIGIN_CLASSES.includes(originClass))
+		throw new Error(`Unknown origin class: ${originClass}`);
 	if (ingredientClasses !== undefined) {
-		if (!Array.isArray(ingredientClasses) || ingredientClasses.some(c => !ORIGIN_CLASSES.includes(c))) {
-			throw new Error('ingredientClasses must be an array of origin classes');
+		if (
+			!Array.isArray(ingredientClasses) ||
+			ingredientClasses.some((c) => !ORIGIN_CLASSES.includes(c))
+		) {
+			throw new Error("ingredientClasses must be an array of origin classes");
 		}
 	}
 	const table = tableFor(type);
 	const patch = {
 		originClass,
 		originClassConfirmed: !!confirmed,
-		originClassSource: 'user',
-		updatedAt: sql`now()`
+		originClassSource: "user",
+		updatedAt: sql`now()`,
 	};
-	if (ingredientClasses !== undefined) patch.originIngredientClasses = JSON.stringify(ingredientClasses);
-	if (note !== undefined) patch.originClassNote = String(note || '').trim().slice(0, 2000);
+	if (ingredientClasses !== undefined)
+		patch.originIngredientClasses = JSON.stringify(ingredientClasses);
+	if (note !== undefined)
+		patch.originClassNote = String(note || "")
+			.trim()
+			.slice(0, 2000);
 	// The flag only means something for digital work with no AI in its pixels
 	// (see spectrumPosition); it is cleared for any other class.
-	if (aiAssisted !== undefined || originClassDef(originClass).position !== 'digital') {
-		patch.aiAssisted = !!aiAssisted && originClassDef(originClass).position === 'digital';
+	if (
+		aiAssisted !== undefined ||
+		originClassDef(originClass).position !== "digital"
+	) {
+		patch.aiAssisted =
+			!!aiAssisted && originClassDef(originClass).position === "digital";
 	}
-	const [updated] = await db.update(table).set(patch).where(eq(table.id, id)).returning();
-	if (!updated) throw new Error('Asset not found');
+	const [updated] = await db
+		.update(table)
+		.set(patch)
+		.where(eq(table.id, id))
+		.returning();
+	if (!updated) throw new Error("Asset not found");
 	await reproposeDerivedChildren(type, id);
 	// Screen-time breakdowns that count this asset change with its class.
 	await recomputeTimelinesForAsset(type, id);
@@ -131,10 +182,12 @@ export async function setOriginClass(type, id, { originClass, confirmed = true, 
 // statement when an output is signed, so set it before signing.
 export async function setPublicTitle(type, id, title) {
 	const table = tableFor(type);
-	const [updated] = await db.update(table)
+	const [updated] = await db
+		.update(table)
 		.set({ publicTitle: cleanPublicTitle(title), updatedAt: sql`now()` })
-		.where(eq(table.id, id)).returning();
-	if (!updated) throw new Error('Asset not found');
+		.where(eq(table.id, id))
+		.returning();
+	if (!updated) throw new Error("Asset not found");
 	return updated;
 }
 
@@ -151,9 +204,12 @@ export async function linkWithRepropose(args) {
 // class is left alone; only who signed the file is refreshed on those rows.
 export async function reproposeProject(projectId) {
 	const counts = {};
-	for (const type of ['ai', 'archival', 'produced']) {
+	for (const type of ["ai", "archival", "produced"]) {
 		const table = tableFor(type);
-		const rows = await db.select({ id: table.id }).from(table).where(eq(table.projectId, projectId));
+		const rows = await db
+			.select({ id: table.id })
+			.from(table)
+			.where(eq(table.projectId, projectId));
 		let changed = 0;
 		for (const r of rows) {
 			const { applied } = await applyProposal(type, r.id);

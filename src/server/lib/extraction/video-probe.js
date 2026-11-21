@@ -8,13 +8,15 @@
 // is normalised here so callers never see exiftool's variety.
 
 export function parseDurationSeconds(value) {
-	if (value == null || value === '') return null;
-	if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-	if (typeof value === 'object') return parseDurationSeconds(value.rawValue ?? value.toString?.());
+	if (value == null || value === "") return null;
+	if (typeof value === "number") return Number.isFinite(value) ? value : null;
+	if (typeof value === "object")
+		return parseDurationSeconds(value.rawValue ?? value.toString?.());
 	const s = String(value).trim();
 	// h:mm:ss(.fraction)
 	const clock = s.match(/^(\d+):(\d{1,2}):(\d{1,2}(?:\.\d+)?)$/);
-	if (clock) return Number(clock[1]) * 3600 + Number(clock[2]) * 60 + Number(clock[3]);
+	if (clock)
+		return Number(clock[1]) * 3600 + Number(clock[2]) * 60 + Number(clock[3]);
 	// mm:ss(.fraction)
 	const short = s.match(/^(\d{1,2}):(\d{1,2}(?:\.\d+)?)$/);
 	if (short) return Number(short[1]) * 60 + Number(short[2]);
@@ -26,11 +28,15 @@ export function parseDurationSeconds(value) {
 }
 
 function isoDate(value) {
-	if (!value) return '';
-	if (typeof value === 'string') return value;
-	if (typeof value === 'object') {
-		if (typeof value.toISOString === 'function') {
-			try { return value.toISOString(); } catch { /* fall through */ }
+	if (!value) return "";
+	if (typeof value === "string") return value;
+	if (typeof value === "object") {
+		if (typeof value.toISOString === "function") {
+			try {
+				return value.toISOString();
+			} catch {
+				/* fall through */
+			}
 		}
 		if (value.rawValue) return String(value.rawValue);
 		return String(value);
@@ -39,24 +45,38 @@ function isoDate(value) {
 }
 
 function containerFrom(tags) {
-	const brand = String(tags.MajorBrand || '');
-	if (/MP4/i.test(brand)) return 'mp4';
-	if (/QuickTime|qt/i.test(brand)) return 'mov';
-	const ft = String(tags.FileType || tags.FileTypeExtension || '').toLowerCase();
-	return ft || '';
+	const brand = String(tags.MajorBrand || "");
+	if (/MP4/i.test(brand)) return "mp4";
+	if (/QuickTime|qt/i.test(brand)) return "mov";
+	const ft = String(
+		tags.FileType || tags.FileTypeExtension || "",
+	).toLowerCase();
+	return ft || "";
 }
 
 export function probeVideoTags(tags) {
 	const t = tags || {};
 	const frameRate = Number(t.VideoFrameRate ?? t.FrameRate ?? 0) || null;
 	return {
-		durationSeconds: parseDurationSeconds(t.Duration ?? t.MediaDuration ?? t.TrackDuration),
+		durationSeconds: parseDurationSeconds(
+			t.Duration ?? t.MediaDuration ?? t.TrackDuration,
+		),
 		frameRate,
 		width: Number(t.ImageWidth ?? t.SourceImageWidth ?? 0) || 0,
 		height: Number(t.ImageHeight ?? t.SourceImageHeight ?? 0) || 0,
 		container: containerFrom(t),
-		videoCodec: String(t.CompressorID ?? t.CompressorName ?? t.VideoCodec ?? '').trim(),
-		audioCodec: String(t.AudioFormat ?? t.AudioCodec ?? t.Encoding ?? '').trim(),
-		createdAt: isoDate(t.CreateDate ?? t.MediaCreateDate ?? t.DateTimeOriginal ?? t.TrackCreateDate ?? '')
+		videoCodec: String(
+			t.CompressorID ?? t.CompressorName ?? t.VideoCodec ?? "",
+		).trim(),
+		audioCodec: String(
+			t.AudioFormat ?? t.AudioCodec ?? t.Encoding ?? "",
+		).trim(),
+		createdAt: isoDate(
+			t.CreateDate ??
+				t.MediaCreateDate ??
+				t.DateTimeOriginal ??
+				t.TrackCreateDate ??
+				"",
+		),
 	};
 }

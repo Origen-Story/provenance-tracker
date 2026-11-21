@@ -1,0 +1,8 @@
+# Generated, or bytes that tests and tools depend on: never reformatted.
+package-lock.json
+src/server/db/migrations/
+test/fixtures/
+test-fixtures/
+tools/
+.claude/
+# Prettier also skips everything in .gitignore.

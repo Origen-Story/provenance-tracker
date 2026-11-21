@@ -12,13 +12,13 @@
  *      fuzzier signals (regex on description, Software-tag substring) go later.
  */
 
-import * as topazVideoAi from './topaz-video-ai.js';
-import * as topazGigapixel from './topaz-gigapixel.js';
-import * as comfyui from './comfyui.js';
-import * as firefly from './firefly.js';
-import * as elevenlabs from './elevenlabs.js';
-import * as midjourney from './midjourney.js';
-import * as freepik from './freepik.js';
+import * as topazVideoAi from "./topaz-video-ai.js";
+import * as topazGigapixel from "./topaz-gigapixel.js";
+import * as comfyui from "./comfyui.js";
+import * as firefly from "./firefly.js";
+import * as elevenlabs from "./elevenlabs.js";
+import * as midjourney from "./midjourney.js";
+import * as freepik from "./freepik.js";
 
 // Order rationale:
 //   1. topaz-video-ai — `Videoai` tag is the most specific, and a Topaz output of
@@ -31,4 +31,12 @@ import * as freepik from './freepik.js';
 //   3. comfyui — PNG `prompt`/`workflow` chunks are uniquely ComfyUI.
 //   4. firefly / elevenlabs — specific C2PA claim-generator strings.
 //   5. midjourney / freepik — fuzzier (Software tag substring, --params regex).
-export const parsers = [topazVideoAi, topazGigapixel, comfyui, firefly, elevenlabs, midjourney, freepik];
+export const parsers = [
+	topazVideoAi,
+	topazGigapixel,
+	comfyui,
+	firefly,
+	elevenlabs,
+	midjourney,
+	freepik,
+];

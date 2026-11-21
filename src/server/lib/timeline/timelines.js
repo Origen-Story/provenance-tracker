@@ -2,62 +2,101 @@
 // project's assets, persist segments, compute and cache the breakdown, and
 // link matched assets to the output (relationship output_of). Pure logic
 // lives in formats/, match.js and breakdown.js.
-import path from 'path';
-import { mkdir, writeFile, stat } from 'fs/promises';
-import { existsSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { db } from '../../db/index.js';
-import { timelines, timelineSegments, assets, archivalAssets, producedAssets } from '../../db/schema.js';
-import { eq, and, sql, asc, desc } from 'drizzle-orm';
-import { parseTimeline } from './formats/index.js';
-import { buildMatchIndex, matchClips, sourcesFromTimeline, matchesByClip, reconcileManualMatch } from './match.js';
-import { computeBreakdown, segmentsFromTimeline } from './breakdown.js';
-import { positionsIn } from './compose.js';
-import { compositeClassFor } from '../../../shared/origin-vocabulary.js';
-import { computeFileHash } from '../core/file-utils.js';
-import { linkAssets, resolveAssetRef, tableFor } from '../relationships/relationships.js';
-import { createLogger } from '../logger.js';
+import path from "path";
+import { mkdir, writeFile, stat } from "fs/promises";
+import { existsSync } from "fs";
+import { fileURLToPath } from "url";
+import { db } from "../../db/index.js";
+import {
+	timelines,
+	timelineSegments,
+	assets,
+	archivalAssets,
+	producedAssets,
+} from "../../db/schema.js";
+import { eq, and, sql, asc, desc } from "drizzle-orm";
+import { parseTimeline } from "./formats/index.js";
+import {
+	buildMatchIndex,
+	matchClips,
+	sourcesFromTimeline,
+	matchesByClip,
+	reconcileManualMatch,
+} from "./match.js";
+import { computeBreakdown, segmentsFromTimeline } from "./breakdown.js";
+import { positionsIn } from "./compose.js";
+import { compositeClassFor } from "../../../shared/origin-vocabulary.js";
+import { computeFileHash } from "../core/file-utils.js";
+import {
+	linkAssets,
+	resolveAssetRef,
+	tableFor,
+} from "../relationships/relationships.js";
+import { createLogger } from "../logger.js";
 
-const log = createLogger('timelines');
+const log = createLogger("timelines");
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function storageRoot(project) {
-	return project?.storagePath || process.env.STORAGE_PATH || path.resolve(__dirname, '../../../../data');
+	return (
+		project?.storagePath ||
+		process.env.STORAGE_PATH ||
+		path.resolve(__dirname, "../../../../data")
+	);
 }
 
 function safeName(name) {
-	return String(name || 'timeline.xml').replace(/[^a-zA-Z0-9._-]/g, '_');
+	return String(name || "timeline.xml").replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
 // Every asset in the project in the shape match.js expects.
 export async function buildProjectAssetIndex(projectId) {
 	const pick = (type, r) => ({
-		type, id: r.id,
-		filename: r.filename || path.basename(r.filePath || ''),
-		filePath: r.filePath, originalFilePath: r.originalFilePath || null,
-		fileHash: r.fileHash || '', fileSize: r.fileSize || 0,
-		originClass: r.originClass || 'unknown', originClassConfirmed: !!r.originClassConfirmed, aiAssisted: !!r.aiAssisted
+		type,
+		id: r.id,
+		filename: r.filename || path.basename(r.filePath || ""),
+		filePath: r.filePath,
+		originalFilePath: r.originalFilePath || null,
+		fileHash: r.fileHash || "",
+		fileSize: r.fileSize || 0,
+		originClass: r.originClass || "unknown",
+		originClassConfirmed: !!r.originClassConfirmed,
+		aiAssisted: !!r.aiAssisted,
 	});
 	const [ai, arch, prod] = await Promise.all([
 		db.select().from(assets).where(eq(assets.projectId, projectId)),
-		db.select().from(archivalAssets).where(eq(archivalAssets.projectId, projectId)),
-		db.select().from(producedAssets).where(eq(producedAssets.projectId, projectId))
+		db
+			.select()
+			.from(archivalAssets)
+			.where(eq(archivalAssets.projectId, projectId)),
+		db
+			.select()
+			.from(producedAssets)
+			.where(eq(producedAssets.projectId, projectId)),
 	]);
-	return [...ai.map(r => pick('ai', r)), ...arch.map(r => pick('archival', r)), ...prod.map(r => pick('produced', r))];
+	return [
+		...ai.map((r) => pick("ai", r)),
+		...arch.map((r) => pick("archival", r)),
+		...prod.map((r) => pick("produced", r)),
+	];
 }
 
 const io = {
 	statSize: async (p) => (existsSync(p) ? (await stat(p)).size : null),
-	hashFile: async (p) => (existsSync(p) ? computeFileHash(p) : null)
+	hashFile: async (p) => (existsSync(p) ? computeFileHash(p) : null),
 };
 
 async function storeRaw(project, producedAssetId, xmlText, sourceFileName) {
-	const dir = path.join(storageRoot(project), 'timelines', String(producedAssetId || 'unassigned'));
+	const dir = path.join(
+		storageRoot(project),
+		"timelines",
+		String(producedAssetId || "unassigned"),
+	);
 	if (!existsSync(dir)) await mkdir(dir, { recursive: true });
 	const base = safeName(sourceFileName);
-	const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 	const dest = path.join(dir, `${stamp}_${base}`);
-	await writeFile(dest, xmlText, 'utf8');
+	await writeFile(dest, xmlText, "utf8");
 	return dest;
 }
 
@@ -66,9 +105,21 @@ async function storeRaw(project, producedAssetId, xmlText, sourceFileName) {
  * matched by the timeline (it never is, the sequence is not a file), so the
  * produced row is only the owner here.
  */
-export async function importTimeline({ project, producedAssetId, xmlText, sourceFileName, primaryTrackIndex = 1, includeOverlays = false }) {
+export async function importTimeline({
+	project,
+	producedAssetId,
+	xmlText,
+	sourceFileName,
+	primaryTrackIndex = 1,
+	includeOverlays = false,
+}) {
 	const parsed = parseTimeline(xmlText);
-	const sourceFilePath = await storeRaw(project, producedAssetId, xmlText, sourceFileName);
+	const sourceFilePath = await storeRaw(
+		project,
+		producedAssetId,
+		xmlText,
+		sourceFileName,
+	);
 	const sourceFileHash = await computeFileHash(sourceFilePath);
 
 	const index = buildMatchIndex(await buildProjectAssetIndex(project.id));
@@ -78,65 +129,79 @@ export async function importTimeline({ project, producedAssetId, xmlText, source
 	const segments = segmentsFromTimeline(parsed, byClip);
 	const fps = parsed.sequence.fps || null;
 
-	const [row] = await db.insert(timelines).values({
-		projectId: project.id,
-		producedAssetId: producedAssetId || null,
-		sourceFormat: parsed.format,
-		sourceFormatVersion: parsed.version || '',
-		sourceFileName: sourceFileName || '',
-		sourceFilePath,
-		sourceFileHash,
-		sequenceName: parsed.sequence.name,
-		timebase: parsed.sequence.timebase,
-		ntsc: parsed.sequence.ntsc,
-		fps,
-		durationFrames: parsed.sequence.durationFrames,
-		width: parsed.sequence.width,
-		height: parsed.sequence.height,
-		primaryTrackIndex,
-		includeOverlays,
-		notesJson: JSON.stringify(parsed.notes || [])
-	}).returning();
+	const [row] = await db
+		.insert(timelines)
+		.values({
+			projectId: project.id,
+			producedAssetId: producedAssetId || null,
+			sourceFormat: parsed.format,
+			sourceFormatVersion: parsed.version || "",
+			sourceFileName: sourceFileName || "",
+			sourceFilePath,
+			sourceFileHash,
+			sequenceName: parsed.sequence.name,
+			timebase: parsed.sequence.timebase,
+			ntsc: parsed.sequence.ntsc,
+			fps,
+			durationFrames: parsed.sequence.durationFrames,
+			width: parsed.sequence.width,
+			height: parsed.sequence.height,
+			primaryTrackIndex,
+			includeOverlays,
+			notesJson: JSON.stringify(parsed.notes || []),
+		})
+		.returning();
 
 	if (segments.length) {
-		await db.insert(timelineSegments).values(segments.map((s, i) => ({
-			timelineId: row.id,
-			trackKind: s.trackKind,
-			trackIndex: s.trackIndex,
-			clipId: s.clipId,
-			clipName: s.name,
-			enabled: s.enabled,
-			startFrame: s.startFrame,
-			endFrame: s.endFrame,
-			inFrame: s.inFrame,
-			outFrame: s.outFrame,
-			startSeconds: fps ? s.startFrame / fps : null,
-			endSeconds: fps ? s.endFrame / fps : null,
-			sourceKind: s.sourceKind,
-			sourceKey: s.sourceKey || '',
-			sourceName: s.sourceName || '',
-			sourcePath: s.sourcePath || '',
-			matchedAssetType: s.matchedAssetType,
-			matchedAssetId: s.matchedAssetId,
-			matchMethod: s.matchMethod,
-			matchConfidence: s.matchConfidence,
-			originClass: null,
-			sortOrder: i
-		})));
+		await db.insert(timelineSegments).values(
+			segments.map((s, i) => ({
+				timelineId: row.id,
+				trackKind: s.trackKind,
+				trackIndex: s.trackIndex,
+				clipId: s.clipId,
+				clipName: s.name,
+				enabled: s.enabled,
+				startFrame: s.startFrame,
+				endFrame: s.endFrame,
+				inFrame: s.inFrame,
+				outFrame: s.outFrame,
+				startSeconds: fps ? s.startFrame / fps : null,
+				endSeconds: fps ? s.endFrame / fps : null,
+				sourceKind: s.sourceKind,
+				sourceKey: s.sourceKey || "",
+				sourceName: s.sourceName || "",
+				sourcePath: s.sourcePath || "",
+				matchedAssetType: s.matchedAssetType,
+				matchedAssetId: s.matchedAssetId,
+				matchMethod: s.matchMethod,
+				matchConfidence: s.matchConfidence,
+				originClass: null,
+				sortOrder: i,
+			})),
+		);
 	}
 
 	await linkMatchedAssets(row, segments);
-	if (producedAssetId) await flagOutput(producedAssetId, 'timeline');
+	if (producedAssetId) await flagOutput(producedAssetId, "timeline");
 	await recomputeTimeline(row.id);
-	log.info(`timeline ${row.id} imported: ${parsed.format} v${parsed.version}, ${segments.length} segments, ${sources.length} sources, ${[...bySource.values()].filter(m => m.asset).length} matched`);
+	log.info(
+		`timeline ${row.id} imported: ${parsed.format} v${parsed.version}, ${segments.length} segments, ${sources.length} sources, ${[...bySource.values()].filter((m) => m.asset).length} matched`,
+	);
 	return getTimeline(row.id);
 }
 
 // An imported timeline makes its produced asset a finished edit (D10). A flag
 // the user set is left alone.
 async function flagOutput(producedAssetId, source) {
-	await db.update(producedAssets).set({ isOutput: true, outputSource: source, updatedAt: sql`now()` })
-		.where(and(eq(producedAssets.id, producedAssetId), sql`(${producedAssets.isOutput} = false OR ${producedAssets.outputSource} <> 'user')`));
+	await db
+		.update(producedAssets)
+		.set({ isOutput: true, outputSource: source, updatedAt: sql`now()` })
+		.where(
+			and(
+				eq(producedAssets.id, producedAssetId),
+				sql`(${producedAssets.isOutput} = false OR ${producedAssets.outputSource} <> 'user')`,
+			),
+		);
 }
 
 // Each distinct matched asset becomes a parent of the output (output_of).
@@ -148,18 +213,30 @@ async function linkMatchedAssets(timelineRow, segments) {
 		const key = `${s.matchedAssetType}:${s.matchedAssetId}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
-		if (s.matchedAssetType === 'produced' && s.matchedAssetId === timelineRow.producedAssetId) continue;
+		if (
+			s.matchedAssetType === "produced" &&
+			s.matchedAssetId === timelineRow.producedAssetId
+		)
+			continue;
 		await linkAssets({
-			parentType: s.matchedAssetType, parentId: s.matchedAssetId,
-			childType: 'produced', childId: timelineRow.producedAssetId,
-			relationshipType: 'output_of', matchMethod: 'timeline', confidence: s.matchConfidence || 0.5,
-			notes: `timeline ${timelineRow.id} clip ${s.clipId}`
-		}).catch(err => log.warn(`link skipped for ${key}: ${err.message}`));
+			parentType: s.matchedAssetType,
+			parentId: s.matchedAssetId,
+			childType: "produced",
+			childId: timelineRow.producedAssetId,
+			relationshipType: "output_of",
+			matchMethod: "timeline",
+			confidence: s.matchConfidence || 0.5,
+			notes: `timeline ${timelineRow.id} clip ${s.clipId}`,
+		}).catch((err) => log.warn(`link skipped for ${key}: ${err.message}`));
 	}
 }
 
 async function loadSegments(timelineId) {
-	return db.select().from(timelineSegments).where(eq(timelineSegments.timelineId, timelineId)).orderBy(asc(timelineSegments.sortOrder));
+	return db
+		.select()
+		.from(timelineSegments)
+		.where(eq(timelineSegments.timelineId, timelineId))
+		.orderBy(asc(timelineSegments.sortOrder));
 }
 
 // Effective class per segment: explicit override, else the matched asset's
@@ -171,7 +248,11 @@ async function effectiveSegments(rows) {
 		let asset = null;
 		if (r.matchedAssetType && r.matchedAssetId) {
 			const key = `${r.matchedAssetType}:${r.matchedAssetId}`;
-			if (!refCache.has(key)) refCache.set(key, await resolveAssetRef(r.matchedAssetType, r.matchedAssetId));
+			if (!refCache.has(key))
+				refCache.set(
+					key,
+					await resolveAssetRef(r.matchedAssetType, r.matchedAssetId),
+				);
 			asset = refCache.get(key);
 		}
 		out.push({
@@ -181,31 +262,45 @@ async function effectiveSegments(rows) {
 			asset,
 			originClass: r.originClass || asset?.originClass || null,
 			aiAssisted: !r.originClass && !!asset?.aiAssisted,
-			originClassOverride: r.originClass || null
+			originClassOverride: r.originClass || null,
 		});
 	}
 	return out;
 }
 
 export async function recomputeTimeline(id) {
-	const [row] = await db.select().from(timelines).where(eq(timelines.id, id)).limit(1);
-	if (!row) throw new Error('Timeline not found');
+	const [row] = await db
+		.select()
+		.from(timelines)
+		.where(eq(timelines.id, id))
+		.limit(1);
+	if (!row) throw new Error("Timeline not found");
 	const segs = await effectiveSegments(await loadSegments(id));
 	const breakdown = computeBreakdown(segs, {
 		durationFrames: row.durationFrames,
 		fps: row.fps,
 		primaryTrackIndex: row.primaryTrackIndex || 1,
-		includeOverlays: !!row.includeOverlays
+		includeOverlays: !!row.includeOverlays,
 	});
-	await db.update(timelines).set({ breakdownJson: JSON.stringify(breakdown), updatedAt: sql`now()` }).where(eq(timelines.id, id));
-	await classifyOutputFromComposition(row.producedAssetId, breakdown.composition);
+	await db
+		.update(timelines)
+		.set({ breakdownJson: JSON.stringify(breakdown), updatedAt: sql`now()` })
+		.where(eq(timelines.id, id));
+	await classifyOutputFromComposition(
+		row.producedAssetId,
+		breakdown.composition,
+	);
 	return breakdown;
 }
 
 // A breakdown cached before the composition lanes existed (D10) is
 // recomputed on first read rather than by a data migration.
 function parseBreakdown(json) {
-	try { return JSON.parse(json || 'null'); } catch { return null; }
+	try {
+		return JSON.parse(json || "null");
+	} catch {
+		return null;
+	}
 }
 function isStale(breakdown) {
 	return !breakdown || !breakdown.composition?.picture?.byPosition;
@@ -216,28 +311,53 @@ function isStale(breakdown) {
 // a timeline that says nothing yet, leaves the row alone.
 async function classifyOutputFromComposition(producedAssetId, composition) {
 	if (!producedAssetId || !composition) return;
-	const positions = positionsIn(composition).filter(p => p !== 'unknown');
+	const positions = positionsIn(composition).filter((p) => p !== "unknown");
 	if (!positions.length) return;
 	const originClass = compositeClassFor(positionsIn(composition));
-	await db.update(producedAssets).set({ originClass, originClassSource: 'timeline_composition', updatedAt: sql`now()` })
-		.where(and(eq(producedAssets.id, producedAssetId), eq(producedAssets.originClassConfirmed, false), sql`${producedAssets.originClass} <> ${originClass}`));
+	await db
+		.update(producedAssets)
+		.set({
+			originClass,
+			originClassSource: "timeline_composition",
+			updatedAt: sql`now()`,
+		})
+		.where(
+			and(
+				eq(producedAssets.id, producedAssetId),
+				eq(producedAssets.originClassConfirmed, false),
+				sql`${producedAssets.originClass} <> ${originClass}`,
+			),
+		);
 }
 
 export async function getTimeline(id) {
-	const [row] = await db.select().from(timelines).where(eq(timelines.id, id)).limit(1);
+	const [row] = await db
+		.select()
+		.from(timelines)
+		.where(eq(timelines.id, id))
+		.limit(1);
 	if (!row) return null;
 	const segments = await effectiveSegments(await loadSegments(id));
 	let breakdown = parseBreakdown(row.breakdownJson);
 	if (isStale(breakdown)) breakdown = await recomputeTimeline(id);
-	let notes = [];
-	try { notes = JSON.parse(row.notesJson || '[]'); } catch { notes = []; }
+	let notes;
+	try {
+		notes = JSON.parse(row.notesJson || "[]");
+	} catch {
+		notes = [];
+	}
 	return { ...row, breakdown, notes, segments };
 }
 
 export async function listTimelines({ projectId, producedAssetId }) {
 	const conds = [eq(timelines.projectId, projectId)];
-	if (producedAssetId) conds.push(eq(timelines.producedAssetId, producedAssetId));
-	const rows = await db.select().from(timelines).where(and(...conds)).orderBy(asc(timelines.createdAt));
+	if (producedAssetId)
+		conds.push(eq(timelines.producedAssetId, producedAssetId));
+	const rows = await db
+		.select()
+		.from(timelines)
+		.where(and(...conds))
+		.orderBy(asc(timelines.createdAt));
 	const out = [];
 	for (const r of rows) {
 		let breakdown = parseBreakdown(r.breakdownJson);
@@ -247,9 +367,13 @@ export async function listTimelines({ projectId, producedAssetId }) {
 	return out;
 }
 
-export async function updateTimelineSettings(id, { primaryTrackIndex, includeOverlays }) {
+export async function updateTimelineSettings(
+	id,
+	{ primaryTrackIndex, includeOverlays },
+) {
 	const patch = { updatedAt: sql`now()` };
-	if (primaryTrackIndex !== undefined) patch.primaryTrackIndex = parseInt(primaryTrackIndex) || 1;
+	if (primaryTrackIndex !== undefined)
+		patch.primaryTrackIndex = parseInt(primaryTrackIndex) || 1;
 	if (includeOverlays !== undefined) patch.includeOverlays = !!includeOverlays;
 	await db.update(timelines).set(patch).where(eq(timelines.id, id));
 	await recomputeTimeline(id);
@@ -261,20 +385,40 @@ export async function updateTimelineSettings(id, { primaryTrackIndex, includeOve
  * class override (null clears it). Every segment of the same source file
  * follows the match, since they are the same media.
  */
-export async function updateSegment(timelineId, segmentId, { matchedAssetType, matchedAssetId, originClass, applyToSource = true } = {}) {
-	const [seg] = await db.select().from(timelineSegments).where(and(eq(timelineSegments.id, segmentId), eq(timelineSegments.timelineId, timelineId))).limit(1);
-	if (!seg) throw new Error('Segment not found');
+export async function updateSegment(
+	timelineId,
+	segmentId,
+	{ matchedAssetType, matchedAssetId, originClass, applyToSource = true } = {},
+) {
+	const [seg] = await db
+		.select()
+		.from(timelineSegments)
+		.where(
+			and(
+				eq(timelineSegments.id, segmentId),
+				eq(timelineSegments.timelineId, timelineId),
+			),
+		)
+		.limit(1);
+	if (!seg) throw new Error("Segment not found");
 	const patch = {};
 	if (matchedAssetType !== undefined || matchedAssetId !== undefined) {
 		if (matchedAssetType && matchedAssetId) {
 			tableFor(matchedAssetType);
 			const table = tableFor(matchedAssetType);
-			const [asset] = await db.select().from(table).where(eq(table.id, parseInt(matchedAssetId))).limit(1);
-			if (!asset) throw new Error('Matched asset not found');
+			const [asset] = await db
+				.select()
+				.from(table)
+				.where(eq(table.id, parseInt(matchedAssetId)))
+				.limit(1);
+			if (!asset) throw new Error("Matched asset not found");
 			// If the file at the clip's path is the picked asset by path or hash,
 			// record that evidence rather than the weaker 'manual'.
 			const hash = seg.sourcePath ? await io.hashFile(seg.sourcePath) : null;
-			const evidence = reconcileManualMatch({ path: seg.sourcePath, hash }, asset);
+			const evidence = reconcileManualMatch(
+				{ path: seg.sourcePath, hash },
+				asset,
+			);
 			patch.matchedAssetType = matchedAssetType;
 			patch.matchedAssetId = asset.id;
 			patch.matchMethod = evidence.method;
@@ -282,18 +426,26 @@ export async function updateSegment(timelineId, segmentId, { matchedAssetType, m
 		} else {
 			patch.matchedAssetType = null;
 			patch.matchedAssetId = null;
-			patch.matchMethod = 'unmatched';
+			patch.matchMethod = "unmatched";
 			patch.matchConfidence = 0;
 		}
 	}
 	if (originClass !== undefined) patch.originClass = originClass || null;
 	if (Object.keys(patch).length) {
-		const where = applyToSource && seg.sourceKey && seg.sourceKind === 'file'
-			? and(eq(timelineSegments.timelineId, timelineId), eq(timelineSegments.sourceKey, seg.sourceKey))
-			: eq(timelineSegments.id, segmentId);
+		const where =
+			applyToSource && seg.sourceKey && seg.sourceKind === "file"
+				? and(
+						eq(timelineSegments.timelineId, timelineId),
+						eq(timelineSegments.sourceKey, seg.sourceKey),
+					)
+				: eq(timelineSegments.id, segmentId);
 		await db.update(timelineSegments).set(patch).where(where);
 	}
-	const [row] = await db.select().from(timelines).where(eq(timelines.id, timelineId)).limit(1);
+	const [row] = await db
+		.select()
+		.from(timelines)
+		.where(eq(timelines.id, timelineId))
+		.limit(1);
 	if (patch.matchedAssetType && row) {
 		await linkMatchedAssets(row, [{ ...seg, ...patch, clipId: seg.clipId }]);
 	}
@@ -304,17 +456,40 @@ export async function updateSegment(timelineId, segmentId, { matchedAssetType, m
 // Called when an asset's origin class changes: every timeline that uses it
 // gets a fresh breakdown.
 export async function recomputeTimelinesForAsset(type, id) {
-	const rows = await db.selectDistinct({ timelineId: timelineSegments.timelineId }).from(timelineSegments)
-		.where(and(eq(timelineSegments.matchedAssetType, type), eq(timelineSegments.matchedAssetId, id)));
-	for (const r of rows) await recomputeTimeline(r.timelineId).catch(err => log.warn(`recompute ${r.timelineId} failed: ${err.message}`));
+	const rows = await db
+		.selectDistinct({ timelineId: timelineSegments.timelineId })
+		.from(timelineSegments)
+		.where(
+			and(
+				eq(timelineSegments.matchedAssetType, type),
+				eq(timelineSegments.matchedAssetId, id),
+			),
+		);
+	for (const r of rows)
+		await recomputeTimeline(r.timelineId).catch((err) =>
+			log.warn(`recompute ${r.timelineId} failed: ${err.message}`),
+		);
 	return rows.length;
 }
 
 // Finished edits in a project with their latest timeline's composition, for
 // the Outputs list.
 export async function listOutputs(projectId) {
-	const rows = await db.select().from(producedAssets).where(and(eq(producedAssets.projectId, projectId), eq(producedAssets.isOutput, true))).orderBy(desc(producedAssets.createdAt));
-	const tls = await db.select().from(timelines).where(eq(timelines.projectId, projectId)).orderBy(asc(timelines.createdAt));
+	const rows = await db
+		.select()
+		.from(producedAssets)
+		.where(
+			and(
+				eq(producedAssets.projectId, projectId),
+				eq(producedAssets.isOutput, true),
+			),
+		)
+		.orderBy(desc(producedAssets.createdAt));
+	const tls = await db
+		.select()
+		.from(timelines)
+		.where(eq(timelines.projectId, projectId))
+		.orderBy(asc(timelines.createdAt));
 	const latest = new Map();
 	for (const t of tls) if (t.producedAssetId) latest.set(t.producedAssetId, t);
 	const out = [];
@@ -322,7 +497,20 @@ export async function listOutputs(projectId) {
 		const t = latest.get(r.id);
 		let breakdown = t ? parseBreakdown(t.breakdownJson) : null;
 		if (t && isStale(breakdown)) breakdown = await recomputeTimeline(t.id);
-		out.push({ ...r, timeline: t ? { id: t.id, sequenceName: t.sequenceName, durationFrames: t.durationFrames, fps: t.fps, createdAt: t.createdAt, composition: breakdown?.composition || null, counts: breakdown?.counts || null } : null });
+		out.push({
+			...r,
+			timeline: t
+				? {
+						id: t.id,
+						sequenceName: t.sequenceName,
+						durationFrames: t.durationFrames,
+						fps: t.fps,
+						createdAt: t.createdAt,
+						composition: breakdown?.composition || null,
+						counts: breakdown?.counts || null,
+					}
+				: null,
+		});
 	}
 	return out;
 }

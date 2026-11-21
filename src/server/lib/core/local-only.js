@@ -20,16 +20,21 @@
 // Host header unchanged (vite.config.js, changeOrigin: false), so Host and
 // Origin still agree and no port list is needed.
 
-const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1']);
-const WILDCARD = new Set(['0.0.0.0', '::']);
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1"]);
+const WILDCARD = new Set(["0.0.0.0", "::"]);
 
-export const DEFAULT_HOST = '127.0.0.1';
+export const DEFAULT_HOST = "127.0.0.1";
 
-const clean = (name) => String(name || '').trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+const clean = (name) =>
+	String(name || "")
+		.trim()
+		.toLowerCase()
+		.replace(/^\[|\]$/g, "")
+		.replace(/\.$/, "");
 
 // The address to listen on: loopback unless HOST says otherwise.
 export function listenHost(env = {}) {
-	return String(env.HOST || '').trim() || DEFAULT_HOST;
+	return String(env.HOST || "").trim() || DEFAULT_HOST;
 }
 
 export function isLoopbackHost(host) {
@@ -43,7 +48,10 @@ export function isLoopbackHost(host) {
  * without naming a host still refuses every non-local request.
  */
 export function allowedHostnames(env = {}) {
-	const names = String(env.ALLOWED_HOSTS || '').split(',').map(clean).filter(Boolean);
+	const names = String(env.ALLOWED_HOSTS || "")
+		.split(",")
+		.map(clean)
+		.filter(Boolean);
 	const host = clean(listenHost(env));
 	if (!WILDCARD.has(host) && !LOOPBACK.has(host)) names.push(host);
 	return [...new Set(names)];
@@ -52,7 +60,7 @@ export function allowedHostnames(env = {}) {
 // "localhost:3001" or "[::1]:3001" to { hostname, host }, or null when it is
 // not a plain host[:port].
 function parseHost(value) {
-	const raw = String(value || '').trim();
+	const raw = String(value || "").trim();
 	if (!raw || /[\s/@?#\\]/.test(raw)) return null;
 	try {
 		const url = new URL(`http://${raw}`);
@@ -70,20 +78,40 @@ function parseHost(value) {
  * @param {string[]} [request.allowedHosts] from allowedHostnames()
  * @returns {{ ok: true } | { ok: false, reason: string }}
  */
-export function checkLocalRequest({ host, origin, secFetchSite, allowedHosts = [] } = {}) {
+export function checkLocalRequest({
+	host,
+	origin,
+	secFetchSite,
+	allowedHosts = [],
+} = {}) {
 	const target = parseHost(host);
-	if (!target) return { ok: false, reason: 'missing or malformed Host header' };
-	if (!LOOPBACK.has(target.hostname) && !allowedHosts.includes(target.hostname)) {
-		return { ok: false, reason: `Host "${target.hostname}" is not this machine` };
+	if (!target) return { ok: false, reason: "missing or malformed Host header" };
+	if (
+		!LOOPBACK.has(target.hostname) &&
+		!allowedHosts.includes(target.hostname)
+	) {
+		return {
+			ok: false,
+			reason: `Host "${target.hostname}" is not this machine`,
+		};
 	}
-	if (origin !== undefined && origin !== '') {
-		let from = null;
-		try { from = new URL(origin); } catch { from = null; }
-		if (!from || !/^https?:$/.test(from.protocol)) return { ok: false, reason: 'Origin is not a web address' };
-		if (from.host.toLowerCase() !== target.host) return { ok: false, reason: `Origin "${from.host}" is not the page this server serves` };
+	if (origin !== undefined && origin !== "") {
+		let from;
+		try {
+			from = new URL(origin);
+		} catch {
+			from = null;
+		}
+		if (!from || !/^https?:$/.test(from.protocol))
+			return { ok: false, reason: "Origin is not a web address" };
+		if (from.host.toLowerCase() !== target.host)
+			return {
+				ok: false,
+				reason: `Origin "${from.host}" is not the page this server serves`,
+			};
 	}
-	if (String(secFetchSite || '').toLowerCase() === 'cross-site') {
-		return { ok: false, reason: 'the browser marked the request cross-site' };
+	if (String(secFetchSite || "").toLowerCase() === "cross-site") {
+		return { ok: false, reason: "the browser marked the request cross-site" };
 	}
 	return { ok: true };
 }
@@ -97,11 +125,13 @@ export function localOnly({ allowedHosts = [], onRefuse } = {}) {
 		const verdict = checkLocalRequest({
 			host: req.headers.host,
 			origin: req.headers.origin,
-			secFetchSite: req.headers['sec-fetch-site'],
-			allowedHosts
+			secFetchSite: req.headers["sec-fetch-site"],
+			allowedHosts,
 		});
 		if (verdict.ok) return next();
 		onRefuse?.(req, verdict.reason);
-		res.status(403).json({ error: 'This API only answers the tracker\'s own pages on this machine.' });
+		res.status(403).json({
+			error: "This API only answers the tracker's own pages on this machine.",
+		});
 	};
 }

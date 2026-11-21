@@ -9,9 +9,9 @@
  * a URL pointing at the project repo).
  */
 
-const APP_NAME = 'ProvenanceTracker';
-const APP_VERSION = '1.0';
-const DEFAULT_CONTACT = 'https://provenancetracker.org';
+const APP_NAME = "ProvenanceTracker";
+const APP_VERSION = "1.0";
+const DEFAULT_CONTACT = "https://provenancetracker.org";
 const contact = process.env.APP_CONTACT || DEFAULT_CONTACT;
 
 export const USER_AGENT = `${APP_NAME}/${APP_VERSION} (${contact})`;

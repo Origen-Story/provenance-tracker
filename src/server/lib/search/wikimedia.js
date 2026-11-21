@@ -3,13 +3,13 @@
  * Handles file search, category crawling, image info retrieval, and license classification.
  */
 
-import { throttledFetch } from './rate-limiter.js';
-import { USER_AGENT } from '../user-agent.js';
-import { createLogger } from '../logger.js';
+import { throttledFetch } from "./rate-limiter.js";
+import { USER_AGENT } from "../user-agent.js";
+import { createLogger } from "../logger.js";
 
-const log = createLogger('wikimedia');
+const log = createLogger("wikimedia");
 
-const API_URL = 'https://commons.wikimedia.org/w/api.php';
+const API_URL = "https://commons.wikimedia.org/w/api.php";
 
 // Abort any single API request that hangs longer than this. Node's undici fetch
 // has no default request timeout, so a stalled TCP connection can hang forever
@@ -22,20 +22,20 @@ const REQUEST_TIMEOUT_MS = 60_000;
 // MediaWiki's action=query accepts POST; format/origin stay in the query string.
 async function apiCall(params) {
 	const url = new URL(API_URL);
-	url.searchParams.set('format', 'json');
-	url.searchParams.set('origin', '*');
+	url.searchParams.set("format", "json");
+	url.searchParams.set("origin", "*");
 	const body = new URLSearchParams();
 	for (const [k, v] of Object.entries(params)) {
 		body.set(k, v);
 	}
 	const res = await throttledFetch(url.toString(), {
-		method: 'POST',
+		method: "POST",
 		headers: {
-			'User-Agent': USER_AGENT,
-			'Content-Type': 'application/x-www-form-urlencoded'
+			"User-Agent": USER_AGENT,
+			"Content-Type": "application/x-www-form-urlencoded",
 		},
 		body,
-		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 	});
 	if (!res.ok) throw new Error(`Wikimedia API error: ${res.status}`);
 	return res.json();
@@ -56,12 +56,12 @@ export async function searchFiles(query, { maxResults = 200 } = {}) {
 
 	while (titles.length < maxResults) {
 		const data = await apiCall({
-			action: 'query',
-			list: 'search',
-			srnamespace: '6', // File namespace
+			action: "query",
+			list: "search",
+			srnamespace: "6", // File namespace
 			srsearch: query,
 			srlimit: String(Math.min(batchSize, maxResults - titles.length)),
-			sroffset: String(offset)
+			sroffset: String(offset),
 		});
 
 		const results = data.query?.search || [];
@@ -86,7 +86,10 @@ export async function searchFiles(query, { maxResults = 200 } = {}) {
  * Recursively get file page titles from a Wikimedia category.
  * Crawls subcategories up to `depth` levels.
  */
-export async function getCategoryMembers(categoryTitle, { depth = 2, maxFiles = 2000, _visited = new Set() } = {}) {
+export async function getCategoryMembers(
+	categoryTitle,
+	{ depth = 2, maxFiles = 2000, _visited = new Set() } = {},
+) {
 	if (_visited.has(categoryTitle)) return [];
 	_visited.add(categoryTitle);
 
@@ -96,11 +99,11 @@ export async function getCategoryMembers(categoryTitle, { depth = 2, maxFiles = 
 	let cmcontinue = null;
 	do {
 		const params = {
-			action: 'query',
-			list: 'categorymembers',
+			action: "query",
+			list: "categorymembers",
 			cmtitle: categoryTitle,
-			cmtype: 'file|subcat',
-			cmlimit: '500'
+			cmtype: "file|subcat",
+			cmlimit: "500",
 		};
 		if (cmcontinue) params.cmcontinue = cmcontinue;
 
@@ -108,9 +111,11 @@ export async function getCategoryMembers(categoryTitle, { depth = 2, maxFiles = 
 		const members = data.query?.categorymembers || [];
 
 		for (const m of members) {
-			if (m.ns === 6) { // File namespace
+			if (m.ns === 6) {
+				// File namespace
 				fileTitles.push(m.title);
-			} else if (m.ns === 14 && depth > 0) { // Category namespace
+			} else if (m.ns === 14 && depth > 0) {
+				// Category namespace
 				subcategories.push(m.title);
 			}
 		}
@@ -127,7 +132,7 @@ export async function getCategoryMembers(categoryTitle, { depth = 2, maxFiles = 
 			const subFiles = await getCategoryMembers(subcat, {
 				depth: depth - 1,
 				maxFiles: maxFiles - fileTitles.length,
-				_visited
+				_visited,
 			});
 			fileTitles.push(...subFiles);
 		}
@@ -159,12 +164,12 @@ export async function getImageInfo(titles, onBatch) {
 		const batch = titles.slice(i, i + BATCH_SIZE);
 		try {
 			const data = await apiCall({
-				action: 'query',
-				titles: batch.join('|'),
-				prop: 'imageinfo|categories',
-				iiprop: 'url|size|extmetadata|mime',
-				iiurlwidth: '300', // request 300px thumbnail
-				cllimit: '50'
+				action: "query",
+				titles: batch.join("|"),
+				prop: "imageinfo|categories",
+				iiprop: "url|size|extmetadata|mime",
+				iiurlwidth: "300", // request 300px thumbnail
+				cllimit: "50",
 			});
 
 			const pages = data.query?.pages || {};
@@ -178,7 +183,9 @@ export async function getImageInfo(titles, onBatch) {
 			}
 		} catch (err) {
 			failed++;
-			log.warn(`Batch starting at title ${i} failed (${batch.length} titles): ${err.message}`);
+			log.warn(
+				`Batch starting at title ${i} failed (${batch.length} titles): ${err.message}`,
+			);
 		}
 
 		fetched += batch.length;
@@ -192,7 +199,9 @@ export async function getImageInfo(titles, onBatch) {
 	}
 
 	if (failed > 0) {
-		log.warn(`getImageInfo done: ${failed} of ${Math.ceil(titles.length / BATCH_SIZE)} batches failed (up to ${failed * BATCH_SIZE} titles skipped)`);
+		log.warn(
+			`getImageInfo done: ${failed} of ${Math.ceil(titles.length / BATCH_SIZE)} batches failed (up to ${failed * BATCH_SIZE} titles skipped)`,
+		);
 	}
 
 	return results;
@@ -203,28 +212,36 @@ export async function getImageInfo(titles, onBatch) {
 // ---------------------------------------------------------------------------
 
 function extractText(extField) {
-	if (!extField) return '';
-	return (extField.value || '').replace(/<[^>]*>/g, '').trim();
+	if (!extField) return "";
+	return (extField.value || "").replace(/<[^>]*>/g, "").trim();
 }
 
 function normalizeCandidate(page, info, ext) {
 	const license = extractText(ext.LicenseShortName);
-	const title = (page.title || '').replace(/^File:/, '');
+	const title = (page.title || "").replace(/^File:/, "");
 
 	return {
-		sourcePageUrl: `https://commons.wikimedia.org/wiki/${encodeURIComponent(page.title).replace(/%20/g, '_')}`,
-		imageUrl: info.url || '',
-		thumbnailUrl: info.thumburl || '',
+		sourcePageUrl: `https://commons.wikimedia.org/wiki/${encodeURIComponent(page.title).replace(/%20/g, "_")}`,
+		imageUrl: info.url || "",
+		thumbnailUrl: info.thumburl || "",
 		title,
 		description: extractText(ext.ImageDescription),
 		author: extractText(ext.Artist),
 		license,
 		licenseUrl: extractText(ext.LicenseUrl),
 		licenseTier: classifyLicense(license),
-		originalDate: extractText(ext.DateTimeOriginal) || extractText(ext.DateTime),
-		dimensions: JSON.stringify({ width: info.width || 0, height: info.height || 0 }),
-		categories: JSON.stringify((page.categories || []).map(c => c.title?.replace(/^Category:/, '') || '')),
-		rawMetadata: JSON.stringify({ pageId: page.pageid, extmetadata: ext })
+		originalDate:
+			extractText(ext.DateTimeOriginal) || extractText(ext.DateTime),
+		dimensions: JSON.stringify({
+			width: info.width || 0,
+			height: info.height || 0,
+		}),
+		categories: JSON.stringify(
+			(page.categories || []).map(
+				(c) => c.title?.replace(/^Category:/, "") || "",
+			),
+		),
+		rawMetadata: JSON.stringify({ pageId: page.pageid, extmetadata: ext }),
 	};
 }
 
@@ -233,27 +250,34 @@ function normalizeCandidate(page, info, ext) {
  * Green = safe to use. Yellow = attribution required. Red = restricted or unknown.
  */
 export function classifyLicense(licenseStr) {
-	if (!licenseStr) return 'red';
+	if (!licenseStr) return "red";
 	const lower = licenseStr.toLowerCase();
 
 	// Green: public domain variants
-	if (lower.includes('public domain') || lower.includes('pd-')
-		|| lower === 'pd' || lower.includes('cc0')
-		|| lower.includes('copyrighted free use')) {
-		return 'green';
+	if (
+		lower.includes("public domain") ||
+		lower.includes("pd-") ||
+		lower === "pd" ||
+		lower.includes("cc0") ||
+		lower.includes("copyrighted free use")
+	) {
+		return "green";
 	}
 
 	// Red: NC or ND restrictions (check before yellow to avoid false match on "CC BY-NC-SA")
-	if (lower.includes('-nc') || lower.includes('-nd')) {
-		return 'red';
+	if (lower.includes("-nc") || lower.includes("-nd")) {
+		return "red";
 	}
 
 	// Yellow: CC BY / CC BY-SA (without NC/ND, which was caught above)
-	if (lower.startsWith('cc by') || lower.startsWith('cc-by')
-		|| lower.includes('attribution')) {
-		return 'yellow';
+	if (
+		lower.startsWith("cc by") ||
+		lower.startsWith("cc-by") ||
+		lower.includes("attribution")
+	) {
+		return "yellow";
 	}
 
 	// Red: everything else (GFDL, FAL, unknown, etc.)
-	return 'red';
+	return "red";
 }

@@ -45,8 +45,8 @@ Note: Origen Story's projects currently use only the high-priority set. Deferred
 - **ESLint + Prettier config** — standard JS/JSX rules, auto-format on save. Keep it lightweight — no over-opinionated ruleset.
 - **Dockerfile for the app** — `docker-compose.yml` already runs Postgres; add a second service for the Node app so a single `docker compose up` boots the whole stack. Useful for contributors who don't want Node 22 on their host.
 - **`/api/health` endpoint** — returns `{ ok: true, db: true, version: "..." }`. Useful for reverse-proxy health checks and for the self-hosting docs.
-- **Plugin-style extraction registry** — refactor [`ai-extraction.js`](../src/server/lib/extraction/ai-extraction.js) from a big if/else into a `{ detect, parse }` registry. Prerequisite for adding platform parsers cleanly. *(Scheduled this session.)*
-- **Retry-failed-job endpoint + UI button** — today we flip `search_jobs.status` back to `queued` via SQL. Should be a proper endpoint (mirrors `retryCandidate` in [`queue.js`](../src/server/lib/search/queue.js)) with a button on the search page. *(Scheduled this session.)*
+- **Plugin-style extraction registry** — refactor [`ai-extraction.js`](../src/server/lib/extraction/ai-extraction.js) from a big if/else into a `{ detect, parse }` registry. Prerequisite for adding platform parsers cleanly. _(Scheduled this session.)_
+- **Retry-failed-job endpoint + UI button** — today we flip `search_jobs.status` back to `queued` via SQL. Should be a proper endpoint (mirrors `retryCandidate` in [`queue.js`](../src/server/lib/search/queue.js)) with a button on the search page. _(Scheduled this session.)_
 
 ---
 
@@ -69,4 +69,4 @@ Note: Origen Story's projects currently use only the high-priority set. Deferred
 - **A new cut of the same film carries its details forward** — today each re-export is a separate output, so the public title, the creator statement (text, author, organisation) and the class given to nested-sequence clips have to be entered again although none of them changed. A re-export should be addable as a new version of an existing output: it inherits those details, imports its own timeline, and signs as the next version. Came up on 2026-11-15, when a second cut needed all of them copied across by hand.
 - **Choose the sequence when a timeline file holds several** — a Premiere XML export of a whole project contains every sequence, and the xmeml parser takes the first one without saying so. On 2026-11-15 that was a 631-second assembly instead of the 146-second film. Offer the sequences by name and length, default to the one whose length matches the output, and refuse to guess when none matches.
 
-*(Add more as they come up.)*
+_(Add more as they come up.)_

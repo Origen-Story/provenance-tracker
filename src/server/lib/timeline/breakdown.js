@@ -18,14 +18,14 @@
 // - Audio is reported per class with stereo-exploded pairs collapsed (same
 //   source, same position), as frames and as a share of the timeline.
 
-import { composeLanes } from './compose.js';
+import { composeLanes } from "./compose.js";
 
 export function classOfSegment(seg) {
 	if (seg.originClass) return seg.originClass;
 	// A title, matte or other generator built in the editor: made by a person
 	// with ordinary tools (IPTC digitalCreation).
-	if (seg.sourceKind === 'generator') return 'digitalCreation';
-	return 'unknown';
+	if (seg.sourceKind === "generator") return "digitalCreation";
+	return "unknown";
 }
 
 function clip(seg, durationFrames) {
@@ -41,13 +41,21 @@ function tally(byClass, cls, frames) {
 function finish(byClass, durationFrames, fps, coveredFrames) {
 	const out = {};
 	for (const [cls, frames] of Object.entries(byClass)) {
-		out[cls] = { frames, seconds: fps ? frames / fps : null, percent: durationFrames ? (frames / durationFrames) * 100 : 0 };
+		out[cls] = {
+			frames,
+			seconds: fps ? frames / fps : null,
+			percent: durationFrames ? (frames / durationFrames) * 100 : 0,
+		};
 	}
 	const gapFrames = Math.max(0, durationFrames - coveredFrames);
 	return {
 		byClass: out,
 		coveredFrames,
-		gap: { frames: gapFrames, seconds: fps ? gapFrames / fps : null, percent: durationFrames ? (gapFrames / durationFrames) * 100 : 0 }
+		gap: {
+			frames: gapFrames,
+			seconds: fps ? gapFrames / fps : null,
+			percent: durationFrames ? (gapFrames / durationFrames) * 100 : 0,
+		},
 	};
 }
 
@@ -55,30 +63,46 @@ function primaryBreakdown(segments, durationFrames, fps, primaryTrackIndex) {
 	const byClass = {};
 	let covered = 0;
 	for (const seg of segments) {
-		if (seg.trackKind !== 'video' || seg.trackIndex !== primaryTrackIndex || !seg.enabled) continue;
+		if (
+			seg.trackKind !== "video" ||
+			seg.trackIndex !== primaryTrackIndex ||
+			!seg.enabled
+		)
+			continue;
 		const r = clip(seg, durationFrames);
 		if (!r) continue;
 		const frames = r[1] - r[0];
 		tally(byClass, classOfSegment(seg), frames);
 		covered += frames;
 	}
-	return { trackIndex: primaryTrackIndex, ...finish(byClass, durationFrames, fps, Math.min(covered, durationFrames)) };
+	return {
+		trackIndex: primaryTrackIndex,
+		...finish(byClass, durationFrames, fps, Math.min(covered, durationFrames)),
+	};
 }
 
 // Sweep: at every breakpoint pick the enabled clip on the highest video track.
 function overlayBreakdown(segments, durationFrames, fps) {
-	const vids = segments.filter(s => s.trackKind === 'video' && s.enabled).map(s => ({ s, r: clip(s, durationFrames) })).filter(x => x.r);
+	const vids = segments
+		.filter((s) => s.trackKind === "video" && s.enabled)
+		.map((s) => ({ s, r: clip(s, durationFrames) }))
+		.filter((x) => x.r);
 	const points = new Set([0, durationFrames]);
-	for (const { r } of vids) { points.add(r[0]); points.add(r[1]); }
+	for (const { r } of vids) {
+		points.add(r[0]);
+		points.add(r[1]);
+	}
 	const sorted = [...points].sort((a, b) => a - b);
 	const byClass = {};
 	let covered = 0;
 	for (let i = 0; i < sorted.length - 1; i++) {
-		const a = sorted[i], b = sorted[i + 1];
+		const a = sorted[i],
+			b = sorted[i + 1];
 		if (b <= a) continue;
 		let top = null;
 		for (const { s, r } of vids) {
-			if (r[0] <= a && r[1] >= b && (!top || s.trackIndex > top.trackIndex)) top = s;
+			if (r[0] <= a && r[1] >= b && (!top || s.trackIndex > top.trackIndex))
+				top = s;
 		}
 		if (!top) continue;
 		tally(byClass, classOfSegment(top), b - a);
@@ -93,16 +117,22 @@ function audioBreakdown(segments, durationFrames, fps) {
 	const tracks = {};
 	let total = 0;
 	for (const seg of segments) {
-		if (seg.trackKind !== 'audio' || !seg.enabled) continue;
+		if (seg.trackKind !== "audio" || !seg.enabled) continue;
 		const r = clip(seg, durationFrames);
 		if (!r) continue;
 		const frames = r[1] - r[0];
 		const cls = classOfSegment(seg);
-		const t = tracks[seg.trackIndex] || (tracks[seg.trackIndex] = { index: seg.trackIndex, frames: 0, byClass: {} });
+		const t =
+			tracks[seg.trackIndex] ||
+			(tracks[seg.trackIndex] = {
+				index: seg.trackIndex,
+				frames: 0,
+				byClass: {},
+			});
 		t.frames += frames;
 		tally(t.byClass, cls, frames);
 		// Stereo-exploded pairs: same source at the same position on another track.
-		const key = `${seg.sourceKey || seg.name || ''}|${r[0]}|${r[1]}|${seg.inFrame ?? ''}`;
+		const key = `${seg.sourceKey || seg.name || ""}|${r[0]}|${r[1]}|${seg.inFrame ?? ""}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
 		tally(byClass, cls, frames);
@@ -110,32 +140,45 @@ function audioBreakdown(segments, durationFrames, fps) {
 	}
 	const out = {};
 	for (const [cls, frames] of Object.entries(byClass)) {
-		out[cls] = { frames, seconds: fps ? frames / fps : null, percentOfTimeline: durationFrames ? (frames / durationFrames) * 100 : 0 };
+		out[cls] = {
+			frames,
+			seconds: fps ? frames / fps : null,
+			percentOfTimeline: durationFrames ? (frames / durationFrames) * 100 : 0,
+		};
 	}
-	return { byClass: out, totalFrames: total, tracks: Object.values(tracks).sort((a, b) => a.index - b.index) };
+	return {
+		byClass: out,
+		totalFrames: total,
+		tracks: Object.values(tracks).sort((a, b) => a.index - b.index),
+	};
 }
 
-export function computeBreakdown(segments, { durationFrames, fps, primaryTrackIndex = 1, includeOverlays = false }) {
+export function computeBreakdown(
+	segments,
+	{ durationFrames, fps, primaryTrackIndex = 1, includeOverlays = false },
+) {
 	const segs = segments || [];
 	const counts = {
 		segments: segs.length,
-		unmatched: segs.filter(s => !s.matched && s.sourceKind === 'file').length,
-		generators: segs.filter(s => s.sourceKind === 'generator').length,
-		nested: segs.filter(s => s.sourceKind === 'sequence').length,
-		disabled: segs.filter(s => !s.enabled).length
+		unmatched: segs.filter((s) => !s.matched && s.sourceKind === "file").length,
+		generators: segs.filter((s) => s.sourceKind === "generator").length,
+		nested: segs.filter((s) => s.sourceKind === "sequence").length,
+		disabled: segs.filter((s) => !s.enabled).length,
 	};
 	return {
 		durationFrames,
 		fps,
 		durationSeconds: fps ? durationFrames / fps : null,
 		primary: primaryBreakdown(segs, durationFrames, fps, primaryTrackIndex),
-		overlays: includeOverlays ? overlayBreakdown(segs, durationFrames, fps) : null,
+		overlays: includeOverlays
+			? overlayBreakdown(segs, durationFrames, fps)
+			: null,
 		audio: audioBreakdown(segs, durationFrames, fps),
 		// What is on screen and audible at each moment, across all tracks (D10).
 		// The UI and the public export read this; primary/overlays/audio above
 		// are the per-track tallies kept for the record.
 		composition: composeLanes(segs, { durationFrames, fps }),
-		counts
+		counts,
 	};
 }
 
@@ -159,14 +202,15 @@ export function segmentsFromTimeline(timeline, matchesByClipId = new Map()) {
 				sourceKind: c.sourceKind,
 				sourceKey: c.file?.id || c.file?.path || null,
 				sourceName: c.file?.name || c.nestedSequenceName || c.name,
-				sourcePath: c.file?.path || '',
+				sourcePath: c.file?.path || "",
 				matched: !!m?.asset,
-				matchMethod: m?.method || (c.sourceKind === 'file' ? 'unmatched' : c.sourceKind),
+				matchMethod:
+					m?.method || (c.sourceKind === "file" ? "unmatched" : c.sourceKind),
 				matchConfidence: m?.confidence ?? 0,
 				matchedAssetType: m?.asset?.type || null,
 				matchedAssetId: m?.asset?.id || null,
 				originClass: m?.asset?.originClass || null,
-				aiAssisted: !!m?.asset?.aiAssisted
+				aiAssisted: !!m?.asset?.aiAssisted,
 			});
 		}
 	}

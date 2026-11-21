@@ -1,9 +1,13 @@
-import path from 'path';
-import { extractExif } from './exif.js';
-import { extractC2pa } from './c2pa.js';
-import { extractPngChunks } from './png-chunks.js';
-import { parsers } from './parsers/index.js';
-import { computeFileHash, getMimeType, getFileSize } from '../core/file-utils.js';
+import path from "path";
+import { extractExif } from "./exif.js";
+import { extractC2pa } from "./c2pa.js";
+import { extractPngChunks } from "./png-chunks.js";
+import { parsers } from "./parsers/index.js";
+import {
+	computeFileHash,
+	getMimeType,
+	getFileSize,
+} from "../core/file-utils.js";
 
 // Walk the registered parsers in priority order; first detect() match wins.
 // Falls back to a generic EXIF-only shape so callers always get the same fields.
@@ -24,28 +28,28 @@ export function detectAndParse(exifTags, chunks) {
 		}
 	}
 	return {
-		platform: 'unknown',
+		platform: "unknown",
 		coverage: 0,
 		data: {
-			platform: 'unknown',
-			prompt: exifTags?.Description || exifTags?.ImageDescription || '',
-			negativePrompt: '',
-			modelName: exifTags?.Software || '',
-			modelVersion: '',
-			seed: '',
+			platform: "unknown",
+			prompt: exifTags?.Description || exifTags?.ImageDescription || "",
+			negativePrompt: "",
+			modelName: exifTags?.Software || "",
+			modelVersion: "",
+			seed: "",
 			width: exifTags?.ImageWidth || exifTags?.ExifImageWidth || 0,
 			height: exifTags?.ImageHeight || exifTags?.ExifImageHeight || 0,
-			otherParams: {}
-		}
+			otherParams: {},
+		},
 	};
 }
 
 function computeCoverage(parser, data) {
 	const fields = parser.coreFields || [];
 	if (fields.length === 0) return 100;
-	const populated = fields.filter(f => {
+	const populated = fields.filter((f) => {
 		const v = data?.[f];
-		return v !== undefined && v !== null && v !== '' && v !== 0;
+		return v !== undefined && v !== null && v !== "" && v !== 0;
 	}).length;
 	return Math.round((populated / fields.length) * 100);
 }
@@ -54,10 +58,10 @@ function computeCoverage(parser, data) {
  * Determine asset type from MIME type.
  */
 function getAssetType(mimeType) {
-	if (mimeType.startsWith('image/')) return 'image';
-	if (mimeType.startsWith('video/')) return 'video';
-	if (mimeType.startsWith('audio/')) return 'audio';
-	return 'other';
+	if (mimeType.startsWith("image/")) return "image";
+	if (mimeType.startsWith("video/")) return "video";
+	if (mimeType.startsWith("audio/")) return "audio";
+	return "other";
 }
 
 /**
@@ -65,26 +69,36 @@ function getAssetType(mimeType) {
  * Returns everything needed to populate the import form.
  */
 export async function extractAIAsset(filePath) {
-	const [exifTags, c2paManifest, pngChunks, fileHash, fileSize] = await Promise.all([
-		extractExif(filePath),
-		extractC2pa(filePath),
-		extractPngChunks(filePath),
-		computeFileHash(filePath),
-		getFileSize(filePath)
-	]);
+	const [exifTags, c2paManifest, pngChunks, fileHash, fileSize] =
+		await Promise.all([
+			extractExif(filePath),
+			extractC2pa(filePath),
+			extractPngChunks(filePath),
+			computeFileHash(filePath),
+			getFileSize(filePath),
+		]);
 
 	const mimeType = getMimeType(filePath);
 	const filename = path.basename(filePath);
 	const assetType = getAssetType(mimeType);
 
-	const { platform, coverage, data: platformData } = detectAndParse(exifTags, pngChunks);
+	const {
+		platform,
+		coverage,
+		data: platformData,
+	} = detectAndParse(exifTags, pngChunks);
 
 	// Build clean EXIF summary (exclude noise)
-	const skipKeys = new Set(['SourceFile', 'ExifToolVersion', 'FileInodeChangeDate', 'FilePermissions']);
+	const skipKeys = new Set([
+		"SourceFile",
+		"ExifToolVersion",
+		"FileInodeChangeDate",
+		"FilePermissions",
+	]);
 	const exifSummary = {};
 	if (exifTags) {
 		for (const [k, v] of Object.entries(exifTags)) {
-			if (!skipKeys.has(k) && typeof v !== 'object') exifSummary[k] = v;
+			if (!skipKeys.has(k) && typeof v !== "object") exifSummary[k] = v;
 		}
 	}
 
@@ -93,7 +107,7 @@ export async function extractAIAsset(filePath) {
 		exifTags?.DateTimeOriginal?.toString()?.slice(0, 10) ||
 		exifTags?.CreateDate?.toString()?.slice(0, 10) ||
 		exifTags?.ModifyDate?.toString()?.slice(0, 10) ||
-		'';
+		"";
 
 	return {
 		filePath,
@@ -106,23 +120,25 @@ export async function extractAIAsset(filePath) {
 		extractionCoverage: coverage,
 		generationDate,
 		// Platform-parsed fields (pre-fill the form)
-		suggestedPrompt: platformData.prompt || '',
-		suggestedNegativePrompt: platformData.negativePrompt || '',
-		suggestedModel: platformData.modelName || '',
-		suggestedModelVersion: platformData.modelVersion || '',
-		suggestedSeed: platformData.seed || '',
+		suggestedPrompt: platformData.prompt || "",
+		suggestedNegativePrompt: platformData.negativePrompt || "",
+		suggestedModel: platformData.modelName || "",
+		suggestedModelVersion: platformData.modelVersion || "",
+		suggestedSeed: platformData.seed || "",
 		suggestedSteps: platformData.steps || 0,
-		suggestedCfgScale: platformData.cfgScale || '',
-		suggestedSampler: platformData.sampler || '',
-		suggestedScheduler: platformData.scheduler || '',
+		suggestedCfgScale: platformData.cfgScale || "",
+		suggestedSampler: platformData.sampler || "",
+		suggestedScheduler: platformData.scheduler || "",
 		suggestedWidth: platformData.width || 0,
 		suggestedHeight: platformData.height || 0,
-		suggestedAspectRatio: platformData.aspectRatio || '',
-		suggestedStylize: platformData.stylize || '',
+		suggestedAspectRatio: platformData.aspectRatio || "",
+		suggestedStylize: platformData.stylize || "",
 		// Raw data for storage
 		exifJson: JSON.stringify(exifSummary),
 		c2paJson: c2paManifest ? JSON.stringify(c2paManifest) : null,
-		pngChunksJson: Object.keys(pngChunks).length ? JSON.stringify(pngChunks) : null,
-		platformJson: JSON.stringify({ platform, ...platformData })
+		pngChunksJson: Object.keys(pngChunks).length
+			? JSON.stringify(pngChunks)
+			: null,
+		platformJson: JSON.stringify({ platform, ...platformData }),
 	};
 }

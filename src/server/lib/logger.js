@@ -10,7 +10,8 @@
 // LOG_LEVEL env var controls verbosity: debug | info | warn | error (default: info).
 
 const LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
-const CURRENT = LEVELS[(process.env.LOG_LEVEL || '').toLowerCase()] ?? LEVELS.info;
+const CURRENT =
+	LEVELS[(process.env.LOG_LEVEL || "").toLowerCase()] ?? LEVELS.info;
 
 function timestamp() {
 	return new Date().toISOString().slice(11, 19);
@@ -18,18 +19,19 @@ function timestamp() {
 
 function write(level, module, args) {
 	if (LEVELS[level] < CURRENT) return;
-	const prefix = module ? `[${module}]` : '';
-	const head = `${timestamp()} ${level.toUpperCase().padEnd(5)} ${prefix}`.trimEnd();
+	const prefix = module ? `[${module}]` : "";
+	const head =
+		`${timestamp()} ${level.toUpperCase().padEnd(5)} ${prefix}`.trimEnd();
 	const stream = LEVELS[level] >= LEVELS.warn ? console.error : console.log;
 	stream(head, ...args);
 }
 
-export function createLogger(module = '') {
+export function createLogger(module = "") {
 	return {
-		debug: (...args) => write('debug', module, args),
-		info: (...args) => write('info', module, args),
-		warn: (...args) => write('warn', module, args),
-		error: (...args) => write('error', module, args),
+		debug: (...args) => write("debug", module, args),
+		info: (...args) => write("info", module, args),
+		warn: (...args) => write("warn", module, args),
+		error: (...args) => write("error", module, args),
 		child: (sub) => createLogger(module ? `${module}/${sub}` : sub),
 	};
 }

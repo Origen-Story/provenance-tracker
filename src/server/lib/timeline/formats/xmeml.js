@@ -30,56 +30,78 @@
 // - The sequence <duration> can be shorter than the clips on it (seen in a
 //   Premiere 2026 export whose rendered file ran to the last clip); the
 //   duration is the later of the two.
-import { XMLParser } from 'fast-xml-parser';
+import { XMLParser } from "fast-xml-parser";
 
-export const id = 'xmeml';
-export const label = 'Final Cut Pro XML (xmeml)';
+export const id = "xmeml";
+export const label = "Final Cut Pro XML (xmeml)";
 
 export function detect(xmlText) {
-	return /<xmeml[\s>]/.test(String(xmlText || '').slice(0, 2048));
+	return /<xmeml[\s>]/.test(String(xmlText || "").slice(0, 2048));
 }
 
 // file://localhost/P%3a/video-provenance-test/assets/a%20b.mp4 -> P:/video-provenance-test/assets/a b.mp4
 // file:///Users/me/clip.mov -> /Users/me/clip.mov
 export function pathurlToPath(pathurl) {
-	if (!pathurl) return '';
+	if (!pathurl) return "";
 	let p = String(pathurl).trim();
-	p = p.replace(/^file:\/\/localhost\//i, '').replace(/^file:\/\/\//i, '').replace(/^file:\/\//i, '');
-	try { p = decodeURIComponent(p); } catch { /* leave as-is */ }
+	p = p
+		.replace(/^file:\/\/localhost\//i, "")
+		.replace(/^file:\/\/\//i, "")
+		.replace(/^file:\/\//i, "");
+	try {
+		p = decodeURIComponent(p);
+	} catch {
+		/* leave as-is */
+	}
 	if (/^[A-Za-z]:/.test(p)) return p; // Windows drive path
-	return p.startsWith('/') ? p : '/' + p;
+	return p.startsWith("/") ? p : "/" + p;
 }
 
-const ARRAY_TAGS = new Set(['track', 'clipitem', 'file', 'link', 'transitionitem', 'generatoritem', 'clip', 'sequence', 'bin', 'children']);
+const ARRAY_TAGS = new Set([
+	"track",
+	"clipitem",
+	"file",
+	"link",
+	"transitionitem",
+	"generatoritem",
+	"clip",
+	"sequence",
+	"bin",
+	"children",
+]);
 
 const parser = new XMLParser({
 	ignoreAttributes: false,
-	attributeNamePrefix: '@_',
+	attributeNamePrefix: "@_",
 	parseTagValue: false,
 	trimValues: true,
-	isArray: (name) => ARRAY_TAGS.has(name)
+	isArray: (name) => ARRAY_TAGS.has(name),
 });
 
 const num = (v, fallback = 0) => {
-	if (v == null || v === '') return fallback;
+	if (v == null || v === "") return fallback;
 	const n = Number(v);
 	return Number.isFinite(n) ? n : fallback;
 };
 const bool = (v, fallback = true) => {
-	if (v == null || v === '') return fallback;
-	return String(v).toUpperCase() === 'TRUE';
+	if (v == null || v === "") return fallback;
+	return String(v).toUpperCase() === "TRUE";
 };
-const text = (v) => (v == null ? '' : typeof v === 'object' ? (v['#text'] ?? '') : String(v));
+const text = (v) =>
+	v == null ? "" : typeof v === "object" ? (v["#text"] ?? "") : String(v);
 const first = (arr) => (Array.isArray(arr) ? arr[0] : arr);
 
 // Walk the whole tree once and remember every <file> that carries a body.
 function collectFileDefs(node, defs) {
-	if (!node || typeof node !== 'object') return;
-	if (Array.isArray(node)) { for (const n of node) collectFileDefs(n, defs); return; }
+	if (!node || typeof node !== "object") return;
+	if (Array.isArray(node)) {
+		for (const n of node) collectFileDefs(n, defs);
+		return;
+	}
 	for (const [key, val] of Object.entries(node)) {
-		if (key === 'file') {
+		if (key === "file") {
 			for (const f of Array.isArray(val) ? val : [val]) {
-				const fid = f?.['@_id'];
+				const fid = f?.["@_id"];
 				if (fid && (f.pathurl || f.name) && !defs.has(fid)) {
 					const rate = first(f.rate);
 					defs.set(fid, {
@@ -89,12 +111,12 @@ function collectFileDefs(node, defs) {
 						path: pathurlToPath(text(f.pathurl)),
 						durationFrames: num(f.duration, null),
 						timebase: rate ? num(rate.timebase, null) : null,
-						ntsc: rate ? bool(rate.ntsc, false) : null
+						ntsc: rate ? bool(rate.ntsc, false) : null,
 					});
 				}
 				collectFileDefs(f, defs);
 			}
-		} else if (val && typeof val === 'object') {
+		} else if (val && typeof val === "object") {
 			collectFileDefs(val, defs);
 		}
 	}
@@ -105,21 +127,21 @@ function rateOf(node, fallback) {
 	if (!rate) return fallback;
 	const timebase = num(rate.timebase, fallback.timebase);
 	const ntsc = bool(rate.ntsc, fallback.ntsc);
-	return { timebase, ntsc, fps: ntsc ? timebase * 1000 / 1001 : timebase };
+	return { timebase, ntsc, fps: ntsc ? (timebase * 1000) / 1001 : timebase };
 }
 
 function parseClip(item, fileDefs, notes) {
 	const clip = {
-		id: item['@_id'] || '',
+		id: item["@_id"] || "",
 		name: text(item.name),
 		enabled: bool(item.enabled, true),
 		startFrame: num(item.start, 0),
 		endFrame: num(item.end, 0),
 		inFrame: num(item.in, 0),
 		outFrame: num(item.out, 0),
-		sourceKind: 'file',
+		sourceKind: "file",
 		file: null,
-		linkedClipIds: []
+		linkedClipIds: [],
 	};
 	for (const l of item.link || []) {
 		const ref = text(l.linkclipref);
@@ -127,16 +149,33 @@ function parseClip(item, fileDefs, notes) {
 	}
 	const f = first(item.file);
 	if (f) {
-		const fid = f['@_id'];
+		const fid = f["@_id"];
 		const def = fid ? fileDefs.get(fid) : null;
-		if (def) clip.file = { id: def.id, name: def.name, pathurl: def.pathurl, path: def.path, durationFrames: def.durationFrames };
-		else if (f.pathurl || f.name) clip.file = { id: fid || '', name: text(f.name), pathurl: text(f.pathurl), path: pathurlToPath(text(f.pathurl)), durationFrames: num(f.duration, null) };
-		else notes.push(`clip ${clip.id} (${clip.name}) references file ${fid} which is never defined`);
+		if (def)
+			clip.file = {
+				id: def.id,
+				name: def.name,
+				pathurl: def.pathurl,
+				path: def.path,
+				durationFrames: def.durationFrames,
+			};
+		else if (f.pathurl || f.name)
+			clip.file = {
+				id: fid || "",
+				name: text(f.name),
+				pathurl: text(f.pathurl),
+				path: pathurlToPath(text(f.pathurl)),
+				durationFrames: num(f.duration, null),
+			};
+		else
+			notes.push(
+				`clip ${clip.id} (${clip.name}) references file ${fid} which is never defined`,
+			);
 	} else if (item.sequence) {
-		clip.sourceKind = 'sequence';
+		clip.sourceKind = "sequence";
 		clip.nestedSequenceName = text(first(item.sequence)?.name);
 	} else if (item.mediatype || item.effect) {
-		clip.sourceKind = 'generator';
+		clip.sourceKind = "generator";
 	}
 	return clip;
 }
@@ -146,24 +185,49 @@ function parseClip(item, fileDefs, notes) {
  * Pure; exported for tests. `transitions` are [{ start, end }] on the same track.
  */
 export function resolveTransitionEdges(clips, transitions, notes = []) {
-	const ts = transitions.filter(t => t.start >= 0 && t.end >= t.start);
-	const length = (c) => (c.outFrame > c.inFrame ? c.outFrame - c.inFrame : null);
-	const fromStartTransition = (end) => ts.filter(t => t.start < end && t.end <= end).sort((a, b) => b.end - a.end)[0]?.start;
-	const fromEndTransition = (start) => ts.filter(t => t.start >= start && t.end > start).sort((a, b) => a.start - b.start)[0]?.end;
+	const ts = transitions.filter((t) => t.start >= 0 && t.end >= t.start);
+	const length = (c) =>
+		c.outFrame > c.inFrame ? c.outFrame - c.inFrame : null;
+	const fromStartTransition = (end) =>
+		ts
+			.filter((t) => t.start < end && t.end <= end)
+			.sort((a, b) => b.end - a.end)[0]?.start;
+	const fromEndTransition = (start) =>
+		ts
+			.filter((t) => t.start >= start && t.end > start)
+			.sort((a, b) => a.start - b.start)[0]?.end;
 	for (const c of clips) {
 		const startOpen = c.startFrame < 0;
 		const endOpen = c.endFrame < 0;
 		if (!startOpen && !endOpen) continue;
-		if (startOpen && !endOpen) c.startFrame = fromStartTransition(c.endFrame) ?? (length(c) != null ? c.endFrame - length(c) : -1);
-		else if (endOpen && !startOpen) c.endFrame = fromEndTransition(c.startFrame) ?? (length(c) != null ? c.startFrame + length(c) : -1);
+		if (startOpen && !endOpen)
+			c.startFrame =
+				fromStartTransition(c.endFrame) ??
+				(length(c) != null ? c.endFrame - length(c) : -1);
+		else if (endOpen && !startOpen)
+			c.endFrame =
+				fromEndTransition(c.startFrame) ??
+				(length(c) != null ? c.startFrame + length(c) : -1);
 		else {
 			// Both edges in transitions: find the pair whose gap matches the clip's length.
 			const len = length(c);
-			const pair = len == null ? null : ts.flatMap(a => ts.filter(b => b.start > a.start).map(b => [a, b])).find(([a, b]) => Math.abs((b.end - a.start) - len) <= 1);
-			if (pair) { c.startFrame = pair[0].start; c.endFrame = pair[1].end; }
+			const pair =
+				len == null
+					? null
+					: ts
+							.flatMap((a) =>
+								ts.filter((b) => b.start > a.start).map((b) => [a, b]),
+							)
+							.find(([a, b]) => Math.abs(b.end - a.start - len) <= 1);
+			if (pair) {
+				c.startFrame = pair[0].start;
+				c.endFrame = pair[1].end;
+			}
 		}
 		if (c.startFrame < 0 || c.endFrame < 0) {
-			notes.push(`clip ${c.id} (${c.name}) has an edge inside a transition that could not be placed; it is left out of screen time`);
+			notes.push(
+				`clip ${c.id} (${c.name}) has an edge inside a transition that could not be placed; it is left out of screen time`,
+			);
 			c.startFrame = Math.max(c.startFrame, 0);
 			c.endFrame = Math.max(c.endFrame, 0);
 			if (c.endFrame <= c.startFrame) c.endFrame = c.startFrame;
@@ -177,11 +241,15 @@ function parseTracks(mediaNode, kind, fileDefs, notes) {
 	const list = mediaNode?.track || [];
 	list.forEach((t, i) => {
 		const clips = [];
-		for (const item of t.clipitem || []) clips.push(parseClip(item, fileDefs, notes));
+		for (const item of t.clipitem || [])
+			clips.push(parseClip(item, fileDefs, notes));
 		for (const g of t.generatoritem || []) {
-			clips.push({ ...parseClip(g, fileDefs, notes), sourceKind: 'generator' });
+			clips.push({ ...parseClip(g, fileDefs, notes), sourceKind: "generator" });
 		}
-		const transitions = (t.transitionitem || []).map(x => ({ start: num(x.start, -1), end: num(x.end, -1) }));
+		const transitions = (t.transitionitem || []).map((x) => ({
+			start: num(x.start, -1),
+			end: num(x.end, -1),
+		}));
 		resolveTransitionEdges(clips, transitions, notes);
 		clips.sort((a, b) => a.startFrame - b.startFrame);
 		tracks.push({
@@ -189,7 +257,7 @@ function parseTracks(mediaNode, kind, fileDefs, notes) {
 			index: i + 1,
 			enabled: bool(t.enabled, true),
 			locked: bool(t.locked, false),
-			clips
+			clips,
 		});
 	});
 	return tracks;
@@ -198,8 +266,8 @@ function parseTracks(mediaNode, kind, fileDefs, notes) {
 export function parse(xmlText) {
 	const doc = parser.parse(xmlText);
 	const root = first(doc.xmeml);
-	if (!root) throw new Error('not an xmeml document');
-	const version = root['@_version'] || '';
+	if (!root) throw new Error("not an xmeml document");
+	const version = root["@_version"] || "";
 	const notes = [];
 
 	const fileDefs = new Map();
@@ -217,12 +285,15 @@ export function parse(xmlText) {
 			while (stack.length && !seq) {
 				const n = stack.pop();
 				if (!n) continue;
-				if (n.sequence) { seq = first(n.sequence); break; }
+				if (n.sequence) {
+					seq = first(n.sequence);
+					break;
+				}
 				for (const b of n.bin || []) stack.push(first(b.children));
 			}
 		}
 	}
-	if (!seq) throw new Error('xmeml: no <sequence> found');
+	if (!seq) throw new Error("xmeml: no <sequence> found");
 
 	const rate = rateOf(seq, { timebase: 30, ntsc: false, fps: 30 });
 	const media = first(seq.media);
@@ -232,12 +303,20 @@ export function parse(xmlText) {
 	const tc = first(seq.timecode);
 
 	const tracks = [
-		...parseTracks(video, 'video', fileDefs, notes),
-		...parseTracks(audio, 'audio', fileDefs, notes)
+		...parseTracks(video, "video", fileDefs, notes),
+		...parseTracks(audio, "audio", fileDefs, notes),
 	];
 	const declared = num(seq.duration, 0);
-	const lastEnd = Math.max(0, ...tracks.flatMap(t => t.clips.filter(c => c.enabled).map(c => c.endFrame)));
-	if (lastEnd > declared) notes.push(`the sequence declares ${declared} frames but its clips run to frame ${lastEnd}; using ${lastEnd}`);
+	const lastEnd = Math.max(
+		0,
+		...tracks.flatMap((t) =>
+			t.clips.filter((c) => c.enabled).map((c) => c.endFrame),
+		),
+	);
+	if (lastEnd > declared)
+		notes.push(
+			`the sequence declares ${declared} frames but its clips run to frame ${lastEnd}; using ${lastEnd}`,
+		);
 
 	return {
 		format: id,
@@ -250,9 +329,9 @@ export function parse(xmlText) {
 			durationFrames: Math.max(declared, lastEnd),
 			width: num(vformat?.width, 0),
 			height: num(vformat?.height, 0),
-			startTimecode: text(tc?.string) || ''
+			startTimecode: text(tc?.string) || "",
 		},
 		tracks,
-		notes
+		notes,
 	};
 }

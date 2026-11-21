@@ -9,15 +9,15 @@
 // duplicate was not imported at all, so neither is ever deleted.
 
 export const MODULE_FOLDERS = Object.freeze({
-	'archival': 'archival-images',
-	'ai-assets': 'ai-assets',
-	'produced': 'produced-assets'
+	archival: "archival-images",
+	"ai-assets": "ai-assets",
+	produced: "produced-assets",
 });
 
 export const IMPORT_MODULES = Object.freeze(Object.keys(MODULE_FOLDERS));
 
 export function isImportModule(module) {
-	return typeof module === 'string' && Object.hasOwn(MODULE_FOLDERS, module);
+	return typeof module === "string" && Object.hasOwn(MODULE_FOLDERS, module);
 }
 
 // The storage folder for a module, or null when the name is not a known one.
@@ -25,6 +25,11 @@ export function moduleFolder(module) {
 	return isImportModule(module) ? MODULE_FOLDERS[module] : null;
 }
 
-export function mayDeleteSource({ deleteOriginal, inPlace, duplicate, copied }) {
+export function mayDeleteSource({
+	deleteOriginal,
+	inPlace,
+	duplicate,
+	copied,
+}) {
 	return deleteOriginal === true && !inPlace && !duplicate && copied === true;
 }

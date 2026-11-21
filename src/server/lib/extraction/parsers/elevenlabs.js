@@ -14,59 +14,72 @@
  * generation-parameter parser.
  */
 
-export const id = 'elevenlabs';
+export const id = "elevenlabs";
 
 // Minimal — ElevenLabs exposes almost nothing beyond identification.
-export const coreFields = ['platform', 'modelName'];
+export const coreFields = ["platform", "modelName"];
 
 function hasC2paSignal(exifTags) {
-	if (exifTags?.Actions?.softwareAgent === 'ElevenLabs') return true;
-	if (Array.isArray(exifTags?.Actions) && exifTags.Actions.some(a => a?.softwareAgent === 'ElevenLabs')) return true;
-	if (exifTags?.Author?.name === 'Eleven Labs Inc.') return true;
+	if (exifTags?.Actions?.softwareAgent === "ElevenLabs") return true;
+	if (
+		Array.isArray(exifTags?.Actions) &&
+		exifTags.Actions.some((a) => a?.softwareAgent === "ElevenLabs")
+	)
+		return true;
+	if (exifTags?.Author?.name === "Eleven Labs Inc.") return true;
 	return false;
 }
 
 function hasFilenameSignal(exifTags) {
-	const name = (exifTags?.FileName || '').toLowerCase();
+	const name = (exifTags?.FileName || "").toLowerCase();
 	if (!name) return false;
-	const isAudio = name.endsWith('.mp3') || name.endsWith('.wav') || name.endsWith('.m4a') || name.endsWith('.flac') || name.endsWith('.ogg');
+	const isAudio =
+		name.endsWith(".mp3") ||
+		name.endsWith(".wav") ||
+		name.endsWith(".m4a") ||
+		name.endsWith(".flac") ||
+		name.endsWith(".ogg");
 	if (!isAudio) return false;
-	return name.includes('elevenlabs');
+	return name.includes("elevenlabs");
 }
 
-export function detect(exifTags, chunks) {
+export function detect(exifTags, _chunks) {
 	if (!exifTags) return false;
 	return hasC2paSignal(exifTags) || hasFilenameSignal(exifTags);
 }
 
-export function parse(exifTags, chunks) {
+export function parse(exifTags, _chunks) {
 	const result = {
-		platform: 'elevenlabs',
-		prompt: '',
-		negativePrompt: '',
-		modelName: 'ElevenLabs',
-		modelVersion: '',
-		seed: '',
+		platform: "elevenlabs",
+		prompt: "",
+		negativePrompt: "",
+		modelName: "ElevenLabs",
+		modelVersion: "",
+		seed: "",
 		width: 0,
 		height: 0,
-		otherParams: {}
+		otherParams: {},
 	};
 
 	// Action records c2pa.created for fresh gens — worth preserving for provenance.
 	const action = Array.isArray(exifTags?.Actions)
-		? exifTags.Actions.find(a => a?.softwareAgent === 'ElevenLabs')
-		: (exifTags?.Actions?.softwareAgent === 'ElevenLabs' ? exifTags.Actions : null);
+		? exifTags.Actions.find((a) => a?.softwareAgent === "ElevenLabs")
+		: exifTags?.Actions?.softwareAgent === "ElevenLabs"
+			? exifTags.Actions
+			: null;
 	if (action?.action) result.otherParams.c2paAction = action.action;
-	if (action?.digitalSourceType) result.otherParams.digitalSourceType = action.digitalSourceType;
+	if (action?.digitalSourceType)
+		result.otherParams.digitalSourceType = action.digitalSourceType;
 
 	if (exifTags?.Author?.name) result.otherParams.author = exifTags.Author.name;
 
 	// Duration is a genuine core attribute for audio, unlike width/height.
-	if (exifTags?.Duration != null) result.otherParams.duration = exifTags.Duration;
+	if (exifTags?.Duration != null)
+		result.otherParams.duration = exifTags.Duration;
 
 	if (!hasC2paSignal(exifTags) && hasFilenameSignal(exifTags)) {
 		// Flag filename-only matches so UI / re-extraction can show lower confidence.
-		result.otherParams.detectionSource = 'filename';
+		result.otherParams.detectionSource = "filename";
 	}
 
 	return result;

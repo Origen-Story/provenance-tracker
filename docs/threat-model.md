@@ -8,27 +8,27 @@ A single-user tool that runs on your own computer. It has no login. One person s
 
 ## What is worth protecting
 
-| Thing | Why it matters |
-| --- | --- |
-| The signing key | Whoever holds it can sign files as you |
-| Your media and the catalog | Unreleased work, file paths, prompts, notes |
-| The record itself | A provenance record that can be silently altered is worth nothing |
-| Your original files | The tracker reads them; it must never damage or delete them |
+| Thing                      | Why it matters                                                    |
+| -------------------------- | ----------------------------------------------------------------- |
+| The signing key            | Whoever holds it can sign files as you                            |
+| Your media and the catalog | Unreleased work, file paths, prompts, notes                       |
+| The record itself          | A provenance record that can be silently altered is worth nothing |
+| Your original files        | The tracker reads them; it must never damage or delete them       |
 
 ## What the tracker defends against
 
-| Threat | Defence | Where |
-| --- | --- | --- |
-| Another device on the same network (shared office, hotel, conference Wi-Fi) opens the app or its API | The server listens on `127.0.0.1` only, so the connection is refused before any code runs. The Vite dev server does the same | `src/server/index.js`, `listenHost` |
-| A web page you visit sends requests to the local API (a hidden form post needs no permission from the server) | A request whose `Origin` is not the tracker's own page is refused, and so is any request the browser labels cross-site | `src/server/lib/core/local-only.js` |
-| DNS rebinding: a site points its own name at `127.0.0.1` so the browser treats the API as that site's | A request whose `Host` header is not `localhost`, `127.0.0.1` or `::1` is refused | same |
-| The file preview is used to read a key, a `.env` file or a document | The preview serves image, video and audio files only, judged by extension, and answers "wrong type" before it says whether a file exists | `src/server/routes/preview.js`, `isPreviewable` |
-| The API reveals where the signing key is | Project responses carry `signingConfigured` (true or false) and never the two paths. The settings form sends a path only to replace one | `src/server/lib/core/project-response.js` |
-| A request overwrites fields the server owns (a file path, a hash, the project a row belongs to) | Each update route accepts a named list of fields | `src/server/lib/archival/fields.js` and the matching lists for the other asset kinds |
-| An import writes outside the project's storage, or deletes a file it did not import | The storage folder comes from a fixed list of module names. "Delete originals" removes a source only after the tracker has copied it; a duplicate and a file tracked in place are never deleted | `src/server/lib/core/import-rules.js` |
-| The bundled database is reachable from the network | Docker publishes Postgres on `127.0.0.1` only | `docker-compose.yml` |
-| A signature or public export leaks local paths | The stored manifest definition has the key paths removed; the public export holds file names, never paths | `src/server/lib/manifest/` |
-| A secret is committed | `.env` and `certs/` are gitignored; tests never touch them | `.gitignore` |
+| Threat                                                                                                        | Defence                                                                                                                                                                                         | Where                                                                                |
+| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Another device on the same network (shared office, hotel, conference Wi-Fi) opens the app or its API          | The server listens on `127.0.0.1` only, so the connection is refused before any code runs. The Vite dev server does the same                                                                    | `src/server/index.js`, `listenHost`                                                  |
+| A web page you visit sends requests to the local API (a hidden form post needs no permission from the server) | A request whose `Origin` is not the tracker's own page is refused, and so is any request the browser labels cross-site                                                                          | `src/server/lib/core/local-only.js`                                                  |
+| DNS rebinding: a site points its own name at `127.0.0.1` so the browser treats the API as that site's         | A request whose `Host` header is not `localhost`, `127.0.0.1` or `::1` is refused                                                                                                               | same                                                                                 |
+| The file preview is used to read a key, a `.env` file or a document                                           | The preview serves image, video and audio files only, judged by extension, and answers "wrong type" before it says whether a file exists                                                        | `src/server/routes/preview.js`, `isPreviewable`                                      |
+| The API reveals where the signing key is                                                                      | Project responses carry `signingConfigured` (true or false) and never the two paths. The settings form sends a path only to replace one                                                         | `src/server/lib/core/project-response.js`                                            |
+| A request overwrites fields the server owns (a file path, a hash, the project a row belongs to)               | Each update route accepts a named list of fields                                                                                                                                                | `src/server/lib/archival/fields.js` and the matching lists for the other asset kinds |
+| An import writes outside the project's storage, or deletes a file it did not import                           | The storage folder comes from a fixed list of module names. "Delete originals" removes a source only after the tracker has copied it; a duplicate and a file tracked in place are never deleted | `src/server/lib/core/import-rules.js`                                                |
+| The bundled database is reachable from the network                                                            | Docker publishes Postgres on `127.0.0.1` only                                                                                                                                                   | `docker-compose.yml`                                                                 |
+| A signature or public export leaks local paths                                                                | The stored manifest definition has the key paths removed; the public export holds file names, never paths                                                                                       | `src/server/lib/manifest/`                                                           |
+| A secret is committed                                                                                         | `.env` and `certs/` are gitignored; tests never touch them                                                                                                                                      | `.gitignore`                                                                         |
 
 ## What it does not defend against
 

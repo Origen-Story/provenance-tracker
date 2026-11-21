@@ -7,11 +7,12 @@
 // look up among the project's assets. The match is a suggestion: it links
 // with confidence 0.7 and the user can unlink it.
 
-const TOPAZ_VIDEO_TAIL = /_(?:prob|iris|amq|ghq|thm|nyx|thd|thf|ahq|alq|aaa|apo|apf|dione|gaia|artemis|proteus|rhea|rxl|hyperion|chronos|chf)[a-z]*-?\d*(?:_\d+x)?$/i;
+const TOPAZ_VIDEO_TAIL =
+	/_(?:prob|iris|amq|ghq|thm|nyx|thd|thf|ahq|alq|aaa|apo|apf|dione|gaia|artemis|proteus|rhea|rxl|hyperion|chronos|chf)[a-z]*-?\d*(?:_\d+x)?$/i;
 const GIGAPIXEL_TAIL = /-gigapixel-.*$/i;
 
 export function stripExtension(filename) {
-	return String(filename || '').replace(/\.[^./\\]+$/, '');
+	return String(filename || "").replace(/\.[^./\\]+$/, "");
 }
 
 /**
@@ -20,8 +21,8 @@ export function stripExtension(filename) {
  */
 export function topazSourceBasename(filename) {
 	const stem = stripExtension(filename);
-	if (GIGAPIXEL_TAIL.test(stem)) return stem.replace(GIGAPIXEL_TAIL, '').trim();
-	if (TOPAZ_VIDEO_TAIL.test(stem)) return stem.replace(TOPAZ_VIDEO_TAIL, '');
+	if (GIGAPIXEL_TAIL.test(stem)) return stem.replace(GIGAPIXEL_TAIL, "").trim();
+	if (TOPAZ_VIDEO_TAIL.test(stem)) return stem.replace(TOPAZ_VIDEO_TAIL, "");
 	return null;
 }
 
@@ -33,7 +34,7 @@ export function topazSourceBasename(filename) {
 export function findSourceCandidates(sourceStem, index, self = null) {
 	if (!sourceStem) return [];
 	const want = sourceStem.toLowerCase();
-	return (index || []).filter(entry => {
+	return (index || []).filter((entry) => {
 		if (self && entry.type === self.type && entry.id === self.id) return false;
 		return stripExtension(entry.filename).toLowerCase() === want;
 	});
@@ -47,6 +48,10 @@ export function findSourceCandidates(sourceStem, index, self = null) {
  * for SQL LIKE (`%`, `_` and `\` are literals) and wrapped in wildcards.
  */
 export function searchTerms(q, max = 6) {
-	return String(q || '').toLowerCase().split(/[\s_\-]+/).filter(Boolean).slice(0, max)
-		.map(t => `%${t.replace(/[\\%_]/g, '\\$&')}%`);
+	return String(q || "")
+		.toLowerCase()
+		.split(/[\s_-]+/)
+		.filter(Boolean)
+		.slice(0, max)
+		.map((t) => `%${t.replace(/[\\%_]/g, "\\$&")}%`);
 }

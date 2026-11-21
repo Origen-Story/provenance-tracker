@@ -1,4 +1,4 @@
-// The command line: init, roots, scan, extract and settings so far (roadmap Phase 4).
+// The command line (roadmap Phase 4): init, roots, scan, extract, verify, show, settings.
 // Everything it needs from outside (arguments, the folder it was started in,
 // the machine, where to print) is passed in, so tests run it in-process.
 
@@ -22,6 +22,8 @@ import {
 import { endExifTool } from "../extract/exiftool.ts";
 import { extractProject } from "../extract.ts";
 import { scanProject, type ScanReport } from "../scan.ts";
+import { describeFile } from "../show.ts";
+import { verifyProject } from "../verify.ts";
 import { readSettings, updateSettings } from "../settings.ts";
 import { TOOL } from "../tool.ts";
 
@@ -46,6 +48,8 @@ Usage: npm run cli -- <command> [options]
   roots rename <name> <new name>      Rename a root
   scan [--root <name>]                Record every file in the roots on this machine
   extract [--root <name>] [--again]   Read what each file says (ExifTool, C2PA, PNG text, sidecars)
+  verify [--hash] [--root <name>]    Check the catalog, and that every file is still as it was
+  show <file>                         Everything the catalog knows about one file
   settings                            Show this machine's settings
   settings person <name>              Set the name your edits are recorded under
 
@@ -64,6 +68,7 @@ const OPTIONS = {
 	by: { type: "string" },
 	root: { type: "string", multiple: true },
 	again: { type: "boolean" },
+	hash: { type: "boolean" },
 	help: { type: "boolean", short: "h" },
 } as const;
 
@@ -74,6 +79,7 @@ type Values = {
 	by?: string;
 	root?: string[];
 	again?: boolean;
+	hash?: boolean;
 	help?: boolean;
 };
 
@@ -355,6 +361,104 @@ async function extract(
 	});
 }
 
+async function verify(io: Io, args: string[], values: Values): Promise<number> {
+	if (args.length)
+		throw new UsageError(
+			"Usage: npm run cli -- verify [--hash] [--root <name>]",
+		);
+	return withProject(io, values, async (project) => {
+		io.out(
+			`Checking project "${project.name}"${values.hash ? ", reading every file" : ""}`,
+		);
+		let last = Date.now();
+		const report = await verifyProject(project, io.machine, {
+			hash: values.hash,
+			roots: values.root,
+			signal: io.signal,
+			onProgress: (p) => {
+				if (Date.now() - last < 2000) return;
+				last = Date.now();
+				io.out(`  ${p.done + 1} of ${p.total}: ${p.file}`);
+			},
+		});
+		io.out(
+			report.catalog.length
+				? `The catalog has ${report.catalog.length} problem(s):`
+				: "The catalog: sound (integrity, links, every edit in its history).",
+		);
+		for (const p of report.catalog.slice(0, LISTED))
+			io.out(
+				`  ${p.check}${p.table ? ` ${p.table}${p.key !== undefined ? ` ${p.key}` : ""}${p.field ? `.${p.field}` : ""}` : ""}: ${p.detail}`,
+			);
+		io.out(
+			`Files: ${report.checked} checked${values.hash ? ` (${report.hashed} read in full)` : " by size and time"}, ${report.files.length} with a problem.`,
+		);
+		for (const f of report.files.slice(0, LISTED))
+			io.out(
+				`  ${f.root}/${f.path}: ${f.problem}${f.detail ? ` (${f.detail})` : ""}`,
+			);
+		if (report.files.length > LISTED)
+			io.out(`  … and ${report.files.length - LISTED} more`);
+		for (const n of report.notChecked)
+			io.out(`  ${n.root}: ${n.files} file(s) not checked (${n.reason})`);
+		if (report.outcome === "cancelled") io.out("Stopped before the end.");
+		const clean =
+			report.catalog.length === 0 &&
+			report.files.length === 0 &&
+			report.outcome === "ok";
+		if (clean && !report.notChecked.length) io.out("All good.");
+		return clean ? 0 : 1;
+	});
+}
+
+function show(io: Io, args: string[], values: Values): Promise<number> {
+	needArgs(args, 1, "show <file>");
+	const file = resolveFrom(io, args[0]);
+	return withProject(
+		io,
+		{
+			...values,
+			project:
+				values.project ?? findProjectFolder(path.dirname(file)) ?? undefined,
+		},
+		(project) => {
+			const info = describeFile(project, io.machine, file);
+			io.out(`${info.root}/${info.path}`);
+			io.out(
+				`  asset ${info.asset.id}, kind ${info.asset.kind}, origin ${info.asset.originClass}${info.asset.title ? `, "${info.asset.title}"` : ""}`,
+			);
+			io.out(
+				`  ${formatBytes(info.size)}, SHA-256 ${info.sha256}${info.versions > 1 ? `; version of an asset with ${info.versions} versions` : ""}`,
+			);
+			for (const s of info.sameBytes)
+				io.out(`  same bytes at ${s.root}/${s.path}`);
+			const t = info.technical;
+			if (t) {
+				const parts = [
+					t.mime_type,
+					t.duration_seconds != null
+						? `${Number(t.duration_seconds).toFixed(2)} s`
+						: null,
+					t.width ? `${t.width}×${t.height}` : null,
+					t.frame_rate ? `${t.frame_rate} fps` : null,
+					t.video_codec ? `video ${t.video_codec}` : null,
+					t.audio_codec ? `audio ${t.audio_codec}` : null,
+					t.sample_rate ? `${t.sample_rate} Hz` : null,
+					t.channels ? `${t.channels} ch` : null,
+					t.bits_per_sample ? `${t.bits_per_sample}-bit` : null,
+				].filter(Boolean);
+				io.out(`  ${parts.join(", ")}`);
+			} else io.out("  no technical values yet (run extract)");
+			for (const r of info.readings)
+				io.out(
+					`  ${r.kind}: ${r.status}${r.validation ? ` (${r.validation})` : ""}, ${r.extractor} ${r.version}${r.from ? `, from ${r.from}` : ""}`,
+				);
+			for (const s of info.sidecars) io.out(`  sidecar ${s.root}/${s.path}`);
+			return 0;
+		},
+	);
+}
+
 /** Run one command. @returns the exit code */
 export async function run(argv: string[], io: Io): Promise<number> {
 	let parsed;
@@ -388,6 +492,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
 				return await scan(io, args, values);
 			case "extract":
 				return await extract(io, args, values);
+			case "verify":
+				return await verify(io, args, values);
+			case "show":
+				return await show(io, args, values);
 			case "settings":
 				settings(io, args);
 				return 0;

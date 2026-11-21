@@ -19,6 +19,7 @@
 *.mp3 binary
 *.pem binary
 *.c2pa binary
+*.sqlite binary
 
 # Timeline fixtures keep the bytes the NLE wrote (an exported XML may carry
 # CRLF or a BOM; the parser is tested against what Premiere really writes).

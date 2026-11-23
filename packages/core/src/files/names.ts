@@ -20,16 +20,28 @@ const MAX_STEM = 120;
  * path stays well inside Windows' limit. Letters with accents are kept.
  * @param fallback used when nothing is left ("file", "download")
  */
+/** Whether a character is one a name may not begin or end with: a dot or white space. */
+const isEdge = (c: string) => c === "." || /\s/.test(c);
+
+/**
+ * The name without dots or white space at either end, found by walking in
+ * from each end once (a pattern such as /[.\s]+$/ takes time growing with
+ * the square of a long run of spaces).
+ */
+function trimEdges(s: string): string {
+	let start = 0;
+	let end = s.length;
+	while (start < end && isEdge(s[start])) start++;
+	while (end > start && isEdge(s[end - 1])) end--;
+	return s.slice(start, end);
+}
+
 export function safeFileName(raw: string, fallback = "file"): string {
 	const last = String(raw ?? "")
 		.split(/[\\/]/)
 		.at(-1)!
 		.normalize("NFC");
-	let name = last
-		.replace(FORBIDDEN, "_")
-		.replace(/^[.\s]+/, "")
-		.replace(/[.\s]+$/, "")
-		.trim();
+	let name = trimEdges(last.replace(FORBIDDEN, "_"));
 	if (!name || /^_+$/.test(name)) name = fallback;
 	if (RESERVED.test(name)) name = `_${name}`;
 	const dot = name.lastIndexOf(".");
@@ -68,17 +80,33 @@ export function offeredFileName(
 	contentDisposition: string | null,
 	url: string,
 ): string {
-	const cd = contentDisposition ?? "";
-	const star = /filename\*\s*=\s*([^']*)'[^']*'([^;]+)/i.exec(cd);
+	// Read the header by splitting it into its parameters, not with a pattern:
+	// it comes from someone else's server.
+	const params = new Map<string, string>();
+	for (const part of (contentDisposition ?? "").split(";")) {
+		const eq = part.indexOf("=");
+		if (eq < 0) continue;
+		const key = part.slice(0, eq).trim().toLowerCase();
+		let value = part.slice(eq + 1).trim();
+		if (value.length >= 2 && value.startsWith('"') && value.endsWith('"'))
+			value = value.slice(1, -1);
+		if (!params.has(key)) params.set(key, value);
+	}
+	const star = params.get("filename*");
 	if (star) {
-		try {
-			return decodeURIComponent(star[2].trim().replace(/^"|"$/g, ""));
-		} catch {
-			/* fall through to the plain form */
+		// RFC 5987: charset'language'percent-encoded
+		const quote = star.indexOf("'");
+		const second = quote < 0 ? -1 : star.indexOf("'", quote + 1);
+		if (second > 0) {
+			try {
+				return decodeURIComponent(star.slice(second + 1));
+			} catch {
+				/* fall through to the plain form */
+			}
 		}
 	}
-	const plain = /filename\s*=\s*("([^"]*)"|([^;]+))/i.exec(cd);
-	if (plain) return (plain[2] ?? plain[3] ?? "").trim();
+	const plain = params.get("filename");
+	if (plain) return plain;
 	let last: string;
 	try {
 		last = new URL(url).pathname.split("/").filter(Boolean).at(-1) ?? "";

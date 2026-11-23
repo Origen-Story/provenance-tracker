@@ -34,6 +34,28 @@ describe("safeFileName", () => {
 	});
 });
 
+describe("names from outside, however long", () => {
+	it("are read in time linear in their length (CodeQL js/polynomial-redos)", () => {
+		const started = performance.now();
+		// Tabs become "_", and the name is cut to at most 120 characters (a
+		// trailing space then trimmed).
+		const cut = safeFileName(`a${" \t".repeat(50_000)}b`);
+		expect(cut.startsWith("a _")).toBe(true);
+		expect(cut.length).toBeLessThanOrEqual(120);
+		// Spaces and dots at the ends are trimmed, however many.
+		expect(safeFileName(`${" .".repeat(50_000)}x${" .".repeat(50_000)}`)).toBe(
+			"x",
+		);
+		expect(
+			offeredFileName(
+				`attachment; filename*=${" ".repeat(100_000)}`,
+				"https://x.test/y.jpg",
+			),
+		).toBe("y.jpg");
+		expect(performance.now() - started).toBeLessThan(500);
+	});
+});
+
 describe("freeName", () => {
 	it("gives the name if free, else the next numbered one", () => {
 		const taken = new Set(["clip.mp4", "clip (2).mp4", "notes"]);

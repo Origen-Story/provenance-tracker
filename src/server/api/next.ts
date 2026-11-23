@@ -801,8 +801,16 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 	api.post(
 		"/projects/:projectId/files",
 		(req: Request, _res: Response, next: NextFunction) => {
-			// Check the project, the person and the target before taking a byte.
+			// Check the project, the person, the target and that no other work is
+			// running before taking a byte: files placed while the project is busy
+			// would wait unimported, and sending them again would copy them twice.
 			person(machine);
+			const busy = jobs.running(String(req.params.projectId));
+			if (busy)
+				throw new HttpError(
+					409,
+					`This project is busy: a ${busy.kind} started at ${busy.startedAt} is still running. Add the files when it has finished.`,
+				);
 			withProject(machine, String(req.params.projectId), (project) => {
 				const t = target(project, req.query.root, req.query.folder);
 				Object.assign(req, {
@@ -826,9 +834,18 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 					placeFile(f.path, t, f.originalname, machine),
 				);
 				const projectId = String(req.params.projectId);
-				const job = startJob(projectId, "import", (project, ctx) =>
-					runImport(project, [t.root], ctx),
-				);
+				// Work that started while the files arrived leaves them placed but
+				// not imported: say so, rather than an error for files that are in.
+				let job = null;
+				let note = "";
+				try {
+					job = startJob(projectId, "import", (project, ctx) =>
+						runImport(project, [t.root], ctx),
+					);
+				} catch (err) {
+					if (!(err instanceof HttpError && err.status === 409)) throw err;
+					note = `The files are in, but other work started meanwhile. Run Import when it has finished. (${err.message})`;
+				}
 				res.status(202).json({
 					placed: placed.map(({ root, path, renamed }) => ({
 						root,
@@ -836,6 +853,7 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 						renamed,
 					})),
 					job,
+					...(note ? { note } : {}),
 				});
 			} finally {
 				for (const f of files) rmSync(f.path, { force: true });

@@ -28,7 +28,9 @@ import {
 	ApiError,
 	assets,
 	fileUrl,
+	media,
 	projects,
+	type Job,
 } from "../../../src/client/catalog/api.ts";
 
 const ME = { kind: "person" as const, name: "Test Person" };
@@ -57,14 +59,14 @@ async function world() {
 		settingsPath: path.join(dir, "settings.json"),
 	};
 	const folder = path.join(dir, "Demo");
-	const media = path.join(folder, "media");
-	mkdirSync(media, { recursive: true });
-	writeFileSync(path.join(media, "take.wav"), "sound");
-	writeFileSync(path.join(media, "still.png"), "picture");
+	const mediaDir = path.join(folder, "media");
+	mkdirSync(mediaDir, { recursive: true });
+	writeFileSync(path.join(mediaDir, "take.wav"), "sound");
+	writeFileSync(path.join(mediaDir, "still.png"), "picture");
 	const { projectId } = createProject(folder, { name: "Demo", machine });
 	const project = openProject(folder, { machine });
 	try {
-		addRoot(project, machine, { name: "media", folder: media, actor: ME });
+		addRoot(project, machine, { name: "media", folder: mediaDir, actor: ME });
 		await scanProject(project, machine);
 	} finally {
 		project.db.close();
@@ -72,7 +74,12 @@ async function world() {
 	updateSettings(machine.settingsPath, (s) => {
 		s.person = "Test Person";
 	});
-	server = createApp({ env: {}, machine }).listen(0, "127.0.0.1");
+	// No readers: this is about the calls, not what is read from the files.
+	server = createApp({
+		env: {},
+		machine,
+		catalog: { readers: async () => [] },
+	}).listen(0, "127.0.0.1");
 	await new Promise((r) => server!.once("listening", r));
 	const base = `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
 	// The pages call relative addresses; here they go to this server.
@@ -82,7 +89,14 @@ async function world() {
 	const list = await assets.list(projectId, {});
 	const id = (name: string) =>
 		list.assets.find((a) => a.file?.path === name)!.id;
-	return { projectId, take: id("take.wav"), still: id("still.png"), base };
+	return {
+		projectId,
+		take: id("take.wav"),
+		still: id("still.png"),
+		base,
+		folder,
+		mediaDir,
+	};
 }
 
 describe("the asset pages' API client", () => {
@@ -193,5 +207,53 @@ describe("the asset pages' API client", () => {
 		const refused = assets.edit(w.projectId, w.take, { owner: "x" });
 		await expect(refused).rejects.toBeInstanceOf(ApiError);
 		await expect(refused).rejects.toThrow(/owner/);
+	});
+
+	it("adds and edits a media folder, uploads into it as form data, and runs and lists work", async () => {
+		const w = await world();
+		const more = path.join(w.folder, "more");
+		mkdirSync(more);
+		const added = await media.addRoot(w.projectId, "more", more, "Second card");
+		expect(added.roots.map((r) => r.name)).toEqual(["media", "more"]);
+		const noted = await media.editRoot(w.projectId, "more", { note: "Card B" });
+		expect(noted.roots[1]).toMatchObject({ note: "Card B", inProject: true });
+		await expect(
+			media.locateRoot(w.projectId, "more", path.join(w.folder, "nowhere")),
+		).rejects.toBeInstanceOf(ApiError);
+
+		const sent = await media.upload(w.projectId, "more", "day 1", [
+			new File(["a new take"], "Plaça take.wav"),
+		]);
+		expect(sent.placed).toEqual([
+			{ root: "more", path: "day 1/Plaça take.wav", renamed: false },
+		]);
+		const settle = async (job: Job) => {
+			for (let i = 0; i < 200; i++) {
+				const now = (await media.jobs(w.projectId)).jobs.find(
+					(j) => j.id === job.id,
+				)!;
+				if (now.state !== "running") return now;
+				await new Promise((r) => setTimeout(r, 25));
+			}
+			throw new Error("the job did not finish");
+		};
+		expect(await settle(sent.job!)).toMatchObject({
+			kind: "import",
+			state: "done",
+		});
+		expect((await assets.list(w.projectId, { q: "Plaça" })).total).toBe(1);
+
+		const classify = await media.start(w.projectId, "classify");
+		expect(await settle(classify.job)).toMatchObject({ state: "done" });
+		const scan = await media.start(w.projectId, "scan", ["more"]);
+		await settle(scan.job);
+		expect((await media.jobs(w.projectId)).jobs.map((j) => j.kind)).toEqual([
+			"scan",
+			"classify",
+			"import",
+		]);
+		await expect(media.cancel(w.projectId, "no-such-job")).rejects.toThrow(
+			/no such job/,
+		);
 	});
 });

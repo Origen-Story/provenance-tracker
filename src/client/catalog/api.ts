@@ -17,10 +17,13 @@ export async function api<T>(
 	path: string,
 	body?: unknown,
 ): Promise<T> {
+	// Files go as form data, which sets its own content type; the rest as JSON.
+	const form = body instanceof FormData;
 	const res = await fetch(BASE + path, {
 		method,
-		headers: body === undefined ? {} : { "content-type": "application/json" },
-		body: body === undefined ? undefined : JSON.stringify(body),
+		headers:
+			body === undefined || form ? {} : { "content-type": "application/json" },
+		body: body === undefined ? undefined : form ? body : JSON.stringify(body),
 	});
 	const text = await res.text();
 	let json: unknown = null;
@@ -306,4 +309,83 @@ export const assets = {
 		),
 	reading: (projectId: string, id: number) =>
 		api<ReadingInFull>("GET", `/projects/${projectId}/observations/${id}`),
+};
+
+// --- Media folders, adding files, and the work on them (D39) ---
+
+export type JobKind =
+	"scan" | "extract" | "classify" | "import" | "download" | "sign";
+
+export interface Job {
+	id: string;
+	projectId: string;
+	kind: JobKind;
+	state: "running" | "done" | "failed" | "cancelled";
+	startedAt: string;
+	finishedAt: string | null;
+	progress: { step: string; done: number; total: number; file: string } | null;
+	/** What the job reported when it finished; its shape depends on the kind. */
+	result: unknown;
+	error: string | null;
+}
+
+export interface Placed {
+	root: string;
+	path: string;
+	/** Placed under another name, as one was already taken. */
+	renamed: boolean;
+}
+
+export const media = {
+	addRoot: (projectId: string, name: string, folder: string, note: string) =>
+		api<{ roots: Root[] }>("POST", `/projects/${projectId}/roots`, {
+			fields: { name, folder, note },
+		}),
+	editRoot: (
+		projectId: string,
+		root: string,
+		fields: { name?: string; note?: string },
+	) =>
+		api<{ roots: Root[] }>(
+			"PATCH",
+			`/projects/${projectId}/roots/${encodeURIComponent(root)}`,
+			{ fields },
+		),
+	locateRoot: (projectId: string, root: string, folder: string) =>
+		api<{ roots: Root[] }>(
+			"POST",
+			`/projects/${projectId}/roots/${encodeURIComponent(root)}/locate`,
+			{ fields: { folder } },
+		),
+	upload: (projectId: string, root: string, folder: string, files: File[]) => {
+		const form = new FormData();
+		for (const file of files) form.append("files", file, file.name);
+		const q = new URLSearchParams({ root, folder });
+		// job is null, with a note, when other work began while the files arrived.
+		return api<{ placed: Placed[]; job: Job | null; note?: string }>(
+			"POST",
+			`/projects/${projectId}/files?${q}`,
+			form,
+		);
+	},
+	download: (projectId: string, url: string, root: string, folder: string) =>
+		api<{ job: Job }>("POST", `/projects/${projectId}/downloads`, {
+			fields: { url, root, folder },
+		}),
+	start: (
+		projectId: string,
+		kind: "scan" | "extract" | "classify" | "import",
+		roots?: string[],
+	) =>
+		api<{ job: Job }>("POST", `/projects/${projectId}/jobs`, {
+			fields: roots?.length ? { kind, roots } : { kind },
+		}),
+	jobs: (projectId: string) =>
+		api<{ jobs: Job[] }>("GET", `/projects/${projectId}/jobs`),
+	cancel: (projectId: string, jobId: string) =>
+		api<{ job: Job }>(
+			"POST",
+			`/projects/${projectId}/jobs/${jobId}/cancel`,
+			{},
+		),
 };

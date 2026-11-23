@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { makeObservation } from "@provenancetracker/core/extraction/observation.ts";
@@ -9,10 +15,14 @@ import { computeBreakdown } from "@provenancetracker/core/timeline/breakdown.js"
 import type { Reader } from "../src/extract.ts";
 import {
 	dryRun,
+	migrate,
 	readLayout,
 	type MigrationLayout,
 } from "../src/legacy/migrate.ts";
-import { machinesForTests } from "./helpers/machine.ts";
+import { catalogPathOf, openProject, PROJECT_DIR } from "../src/project.ts";
+import { listRoots } from "../src/roots.ts";
+import { readSettings } from "../src/settings.ts";
+import { machinesForTests, peek } from "./helpers/machine.ts";
 
 const { tempDir, machine } = machinesForTests();
 const ME = { kind: "person" as const, name: "Test Person" };
@@ -301,13 +311,32 @@ function world(opts: { strayFile?: boolean } = {}) {
 		dumps,
 		projects: [{ legacy: "demo", folder, roots: { footage, archive } }],
 	};
+	/** The dump text of each dump file, by name; pg_restore stands in. */
+	const texts = new Map([[path.basename(dump), text]]);
 	return {
 		top,
 		folder,
+		footage,
+		archive,
 		dumps,
 		dump,
 		layout,
-		restore: async (_d: string, out: string) => writeFileSync(out, text),
+		text,
+		timelineSha: f("timeline").hash,
+		/** The layout naming the first dump as the backup of record. */
+		pinned: (): MigrationLayout => ({
+			...layout,
+			dump: { file: path.basename(dump), sha256: sha("a binary dump") },
+		}),
+		/** Another, newer dump in the folder, with the given text. */
+		newerDump: (name: string, dumpText: string) => {
+			const file = path.join(dumps, name);
+			writeFileSync(file, `dump ${name}`);
+			writeFileSync(`${file}.sha256`, `${sha(`dump ${name}`)}  ${name}\n`);
+			texts.set(name, dumpText);
+		},
+		restore: async (d: string, out: string) =>
+			writeFileSync(out, texts.get(path.basename(d))!),
 	};
 }
 
@@ -348,7 +377,9 @@ describe("the migration's dry run", () => {
 		expect(report.dump).toEqual({
 			file: "provenance-tracker_2026-11-21_223001.dump",
 			sha256: sha("a binary dump"),
+			pinned: false,
 		});
+		expect(report.sinceBackup).toBeNull();
 		expect(report.orphans).toEqual([]);
 		expect(report.notInLayout).toEqual([{ id: 2, name: "other" }]);
 		const [p] = report.projects;
@@ -445,6 +476,192 @@ describe("the migration's dry run", () => {
 	});
 });
 
+describe("the real run", () => {
+	const fileSha = (p: string) => sha(readFileSync(p, "latin1"));
+
+	it("puts each catalog in its project folder, with its timeline files, and the outside roots in this machine's settings", async () => {
+		const w = world();
+		const m = machine();
+		const report = await migrate({
+			layout: w.pinned(),
+			machine: m,
+			actor: ME,
+			exifReader: fakeExif,
+			restore: w.restore,
+		});
+		expect(report.refused).toBeNull();
+		expect(report.dump).toEqual({
+			file: path.basename(w.dump),
+			sha256: sha("a binary dump"),
+			pinned: true,
+		});
+		expect(report.sinceBackup).toBeNull();
+		expect(report.ok).toBe(true);
+		const [placed] = report.placed;
+		expect(placed).toMatchObject({
+			name: "demo",
+			folder: w.folder,
+			catalogPath: catalogPathOf(w.folder),
+			timelineFiles: 1,
+			verify: [],
+		});
+		expect(placed.roots).toEqual([
+			{ name: "footage", folder: w.footage, inProject: true, status: "ok" },
+			{ name: "archive", folder: w.archive, inProject: false, status: "ok" },
+		]);
+
+		const own = path.join(w.folder, PROJECT_DIR);
+		const inOwn = readdirSync(own);
+		expect(inOwn).toEqual(
+			expect.arrayContaining([".gitignore", "catalog.sqlite", "timelines"]),
+		);
+		// No temporary file is left behind.
+		expect(inOwn.filter((n) => n.endsWith(".new"))).toEqual([]);
+		expect(readdirSync(path.join(own, "timelines"))).toEqual([w.timelineSha]);
+		expect(fileSha(path.join(own, "timelines", w.timelineSha))).toBe(
+			w.timelineSha,
+		);
+
+		const settings = readSettings(m.settingsPath);
+		const [[projectId, entry]] = Object.entries(settings.projects);
+		expect(entry.folder).toBe(w.folder);
+		expect(Object.values(entry.roots)).toEqual([w.archive]);
+
+		// The placed catalog is the migration alone: the dry run's scan and reading stayed in the throwaway copy.
+		peek(placed.catalogPath, (db) => {
+			expect(db.prepare("SELECT kind FROM runs ORDER BY id").all()).toEqual([
+				{ kind: "create" },
+				{ kind: "migrate" },
+			]);
+			expect(db.prepare("SELECT count(*) AS n FROM assets").get()).toEqual({
+				n: 3,
+			});
+			const meta = db.prepare("SELECT value FROM meta WHERE key = ?");
+			expect((meta.get("project_id") as { value: string }).value).toBe(
+				projectId,
+			);
+			expect(
+				JSON.parse((meta.get("migrated_from") as { value: string }).value),
+			).toMatchObject({
+				dump_file: path.basename(w.dump),
+				dump_sha256: sha("a binary dump"),
+			});
+		});
+		const project = openProject(w.folder, { machine: m });
+		try {
+			expect(listRoots(project, m).map((r) => r.status)).toEqual(["ok", "ok"]);
+		} finally {
+			project.db.close();
+		}
+	});
+
+	it("never replaces a catalog: run again, it refuses and changes nothing", async () => {
+		const w = world();
+		const m = machine();
+		await migrate({
+			layout: w.pinned(),
+			machine: m,
+			actor: ME,
+			restore: w.restore,
+		});
+		const before = fileSha(catalogPathOf(w.folder));
+		await expect(
+			migrate({
+				layout: w.pinned(),
+				machine: m,
+				actor: ME,
+				restore: w.restore,
+			}),
+		).rejects.toThrow(/already has a catalog/);
+		expect(fileSha(catalogPathOf(w.folder))).toBe(before);
+	});
+
+	it("reads only the backup of record the layout names", async () => {
+		const w = world();
+		const run = (layout: MigrationLayout) =>
+			migrate({ layout, machine: machine(), actor: ME, restore: w.restore });
+		await expect(run(w.layout)).rejects.toThrow(
+			/reads only the backup of record/,
+		);
+		await expect(
+			run({
+				...w.layout,
+				dump: { file: path.basename(w.dump), sha256: "0".repeat(64) },
+			}),
+		).rejects.toThrow(
+			/is not the backup the layout names: its SHA-256 is [0-9a-f]{64}, the layout says 0{64}/,
+		);
+		await expect(
+			run({
+				...w.layout,
+				dump: {
+					file: "provenance-tracker_2026-01-01_000000.dump",
+					sha256: "0".repeat(64),
+				},
+			}),
+		).rejects.toThrow(/is not in .* \(with its \.sha256 beside it\)/);
+		expect(existsSync(path.join(w.folder, PROJECT_DIR))).toBe(false);
+	});
+
+	it("stops, placing nothing, when a newer dump's data differs from the backup", async () => {
+		const w = world();
+		w.newerDump(
+			"provenance-tracker_2026-11-23_113057.dump",
+			w.text.replaceAll("An Editor", "Someone Else"),
+		);
+		const report = await migrate({
+			layout: w.pinned(),
+			machine: machine(),
+			actor: ME,
+			restore: w.restore,
+		});
+		expect(report.sinceBackup).toEqual({
+			newest: "provenance-tracker_2026-11-23_113057.dump",
+			differences: ["public.creator_statements id 5 changed"],
+		});
+		expect(report.refused).toMatch(/^Postgres has changed since the backup/);
+		expect(report.placed).toEqual([]);
+		expect(report.ok).toBe(false);
+		expect(existsSync(path.join(w.folder, PROJECT_DIR))).toBe(false);
+	});
+
+	it("goes ahead when a newer dump holds the same data", async () => {
+		const w = world();
+		w.newerDump(
+			"provenance-tracker_2026-11-23_113057.dump",
+			w.text.replace(
+				"SET client_encoding",
+				"-- dumped again\nSET client_encoding",
+			),
+		);
+		const report = await migrate({
+			layout: w.pinned(),
+			machine: machine(),
+			actor: ME,
+			restore: w.restore,
+		});
+		expect(report.sinceBackup).toEqual({
+			newest: "provenance-tracker_2026-11-23_113057.dump",
+			differences: [],
+		});
+		expect(report.placed.map((p) => p.name)).toEqual(["demo"]);
+	});
+
+	it("places nothing when any check fails", async () => {
+		const w = world({ strayFile: true });
+		const report = await migrate({
+			layout: w.pinned(),
+			machine: machine(),
+			actor: ME,
+			restore: w.restore,
+		});
+		expect(report.refused).toBe(
+			"Not every check holds (see above). Nothing was placed.",
+		);
+		expect(report.placed).toEqual([]);
+		expect(existsSync(path.join(w.folder, PROJECT_DIR))).toBe(false);
+	});
+});
 describe("readLayout", () => {
 	it("reads a layout with full paths", () => {
 		const dir = tempDir();

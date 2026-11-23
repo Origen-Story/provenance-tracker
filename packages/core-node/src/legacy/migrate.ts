@@ -1,25 +1,34 @@
-// The Postgres migration's dry run (roadmap Phase 5, step 2): build each
-// project's catalog from the newest checked dump in a throwaway folder, run
-// every check on it, report, and delete it. The project folders and media
-// are only read; this machine's settings are not touched (the roots are
-// placed in a throwaway settings file).
+// The Postgres migration (roadmap Phase 5). The dry run builds each
+// project's catalog from a checked dump in a throwaway folder, runs every
+// check on it, reports and deletes it; the project folders and media are only
+// read, and this machine's settings are not touched (the roots are placed in
+// a throwaway settings file). The real run does the same and then, only if
+// every check of every project holds, puts each catalog in its project folder
+// beside its timeline files, never replacing a catalog already there.
 //
 // What a project's catalog is made from is a layout file kept outside the
 // repository, since it holds this machine's paths:
 //
 //   {
-//     "dumps": "D:\\backups\\postgres",
+//     "dumps": "D:/backups/postgres",
+//     "dump": { "file": "app_2026-11-21_223001.dump", "sha256": "<64 hex>" },
 //     "projects": [
-//       { "legacy": "demo-film", "folder": "D:\\demo-film",
-//         "roots": { "footage": "D:\\demo-film\\footage", "archive": "E:\\archive" } }
+//       { "legacy": "demo-film", "folder": "D:/demo-film",
+//         "roots": { "footage": "D:/demo-film/footage", "archive": "E:/archive" } }
 //     ]
 //   }
 //
-// "legacy" is the project's name in Postgres; each root is a name and its
-// folder (inside the project folder, it travels with it, D32).
+// "dump" names the backup of record: the dump whose off-machine copy was
+// restored and checked. The real run reads only that one, and stops if a
+// newer dump's data differs from it (Postgres changed since the backup).
+// Without it the dry run reads the newest dump. "legacy" is the project's
+// name in Postgres; each root is a name and its folder (inside the project
+// folder, it travels with it, D32).
 
 import { randomUUID } from "node:crypto";
 import {
+	constants,
+	copyFileSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -50,6 +59,7 @@ import {
 	legacyIds,
 	recomputeBreakdown,
 	signatureForExport,
+	tableDifferences,
 } from "@provenancetracker/core/legacy/checks.ts";
 import {
 	parseCopyText,
@@ -71,11 +81,27 @@ import {
 } from "@provenancetracker/core/legacy/write.ts";
 import { extractProject, type Reader } from "../extract.ts";
 import type { Machine } from "../machine.ts";
-import { realFolder, type OpenProject } from "../project.ts";
+import {
+	newProjectFolder,
+	openProject,
+	placeNewCatalog,
+	placeWithoutReplacing,
+	PROJECT_DIR,
+	realFolder,
+	TIMELINES_DIR,
+	type OpenProject,
+} from "../project.ts";
 import { addRoot, listRoots, type RootView } from "../roots.ts";
 import { scanProject } from "../scan.ts";
+import { projectEntry, updateSettings } from "../settings.ts";
 import { TOOL } from "../tool.ts";
-import { checkDump, listDumps, restoreToText, sha256OfFile } from "./dump.ts";
+import {
+	checkDump,
+	listDumps,
+	restoreToText,
+	sha256OfFile,
+	type DumpFile,
+} from "./dump.ts";
 
 export interface LayoutProject {
 	/** The project's name in Postgres. */
@@ -89,6 +115,8 @@ export interface LayoutProject {
 export interface MigrationLayout {
 	/** The folder of the backup task's dumps. */
 	dumps: string;
+	/** The backup of record: the one dump the real run reads. */
+	dump?: { file: string; sha256: string };
 	projects: LayoutProject[];
 }
 
@@ -113,6 +141,17 @@ export function readLayout(
 	};
 	const l = raw as Partial<MigrationLayout>;
 	full(l?.dumps, "dumps");
+	if (l?.dump !== undefined) {
+		const d = l.dump as Partial<{ file: unknown; sha256: unknown }> | null;
+		if (
+			typeof d?.file !== "string" ||
+			!d.file ||
+			path.basename(d.file) !== d.file
+		)
+			problems.push("dump.file must be a dump's file name, without a folder");
+		if (typeof d?.sha256 !== "string" || !/^[0-9a-fA-F]{64}$/.test(d.sha256))
+			problems.push("dump.sha256 must be the dump's SHA-256 (64 hex digits)");
+	}
 	if (!Array.isArray(l?.projects) || l.projects.length === 0)
 		problems.push("projects must list at least one project");
 	const seen = new Set<string>();
@@ -203,12 +242,33 @@ export interface ProjectDryRun {
 }
 
 export interface DryRunReport {
-	dump: { file: string; sha256: string };
+	dump: { file: string; sha256: string; pinned: boolean };
+	/**
+	 * The newest dump, when it is not the one read: whether its data differs
+	 * (Postgres changed since the backup). Null when the newest was read.
+	 */
+	sinceBackup: { newest: string; differences: string[] } | null;
 	orphans: string[];
 	/** Postgres projects the layout does not name: not migrated. */
 	notInLayout: Array<{ id: number; name: string }>;
 	projects: ProjectDryRun[];
 	ok: boolean;
+}
+
+export interface PlacedProject {
+	name: string;
+	folder: string;
+	catalogPath: string;
+	timelineFiles: number;
+	/** The placed catalog, opened and checked again. */
+	verify: Problem[];
+	roots: Array<Pick<RootView, "name" | "folder" | "inProject" | "status">>;
+}
+
+export interface MigrationReport extends DryRunReport {
+	/** Why nothing was placed, if it was not. */
+	refused: string | null;
+	placed: PlacedProject[];
 }
 
 export interface DryRunOptions {
@@ -230,64 +290,221 @@ const EXPORT_STAMP = {
 	generator: { name: "provenance-tracker", version: "dry-run" },
 };
 
-export async function dryRun(opts: DryRunOptions): Promise<DryRunReport> {
-	const say = opts.progress ?? (() => {});
-	const dumps = listDumps(opts.layout.dumps);
+/** The dump to read: the layout's backup of record, checked, or else the newest. */
+async function chooseDump(
+	layout: MigrationLayout,
+	say: (line: string) => void,
+): Promise<{ dump: DumpFile; sha256: string; newest: DumpFile }> {
+	const dumps = listDumps(layout.dumps);
 	if (!dumps.length)
 		throw new Error(
-			`There is no finished dump (with its .sha256) in ${opts.layout.dumps}`,
+			`There is no finished dump (with its .sha256) in ${layout.dumps}`,
 		);
-	const dump = dumps[0];
+	const newest = dumps[0];
+	const pinned = layout.dump;
+	const dump = pinned ? dumps.find((d) => d.name === pinned.file) : newest;
+	if (!dump)
+		throw new Error(
+			`The layout's dump ${pinned!.file} is not in ${layout.dumps} (with its .sha256 beside it)`,
+		);
 	say(`Checking ${dump.name} against its .sha256`);
 	const sha256 = await checkDump(dump.file);
+	if (pinned && sha256 !== pinned.sha256.toLowerCase())
+		throw new Error(
+			`${dump.name} is not the backup the layout names: its SHA-256 is ${sha256}, the layout says ${pinned.sha256.toLowerCase()}`,
+		);
+	return { dump, sha256, newest };
+}
+
+async function readDump(
+	file: string,
+	temp: string,
+	opts: DryRunOptions,
+): Promise<Map<string, CopyTable>> {
+	const text = path.join(temp, `${path.basename(file)}.sql`);
+	await (
+		opts.restore ??
+		((d, o) => restoreToText(d, o, { pgRestore: opts.pgRestore }))
+	)(file, text);
+	try {
+		return parseCopyText(readFileSync(text, "utf8"));
+	} finally {
+		rmSync(text, { force: true });
+	}
+}
+
+/** Build and check every project in `temp`; nothing outside it is written. */
+async function buildAll(
+	opts: DryRunOptions,
+	temp: string,
+): Promise<{ report: DryRunReport; builds: Build[] }> {
+	const say = opts.progress ?? (() => {});
+	const { dump, sha256, newest } = await chooseDump(opts.layout, say);
+	say("Reading it with pg_restore");
+	const tables = await readDump(dump.file, temp, opts);
+	let sinceBackup: DryRunReport["sinceBackup"] = null;
+	if (newest.name !== dump.name) {
+		say(`Comparing it with the newest dump, ${newest.name}`);
+		await checkDump(newest.file);
+		sinceBackup = {
+			newest: newest.name,
+			differences: tableDifferences(
+				tables,
+				await readDump(newest.file, temp, opts),
+			),
+		};
+	}
+	const inDump = legacyProjects(tables);
+	for (const p of opts.layout.projects)
+		if (!inDump.some((d) => d.name === p.legacy))
+			throw new Error(
+				`The layout names "${p.legacy}", which the dump does not have (it has: ${inDump.map((d) => d.name).join(", ")})`,
+			);
+	const report: DryRunReport = {
+		dump: { file: dump.name, sha256, pinned: !!opts.layout.dump },
+		sinceBackup,
+		orphans: findOrphans(tables),
+		notInLayout: inDump.filter(
+			(d) => !opts.layout.projects.some((p) => p.legacy === d.name),
+		),
+		projects: [],
+		ok: false,
+	};
+	const builds: Build[] = [];
+	for (const [i, p] of opts.layout.projects.entries()) {
+		const legacy = inDump.find((d) => d.name === p.legacy)!;
+		say(`Project ${legacy.name}`);
+		const build = await buildProject(
+			tables,
+			legacy,
+			p,
+			path.join(temp, String(i)),
+			{ name: dump.name, sha256 },
+			opts,
+			say,
+		);
+		builds.push(build);
+		report.projects.push(build.report);
+	}
+	report.ok =
+		report.orphans.length === 0 &&
+		(sinceBackup?.differences.length ?? 0) === 0 &&
+		report.projects.every((p) => p.ok);
+	return { report, builds };
+}
+
+/** Build and check every project's catalog in a throwaway folder; keep nothing. */
+export async function dryRun(opts: DryRunOptions): Promise<DryRunReport> {
 	const temp = mkdtempSync(path.join(tmpdir(), "pt-migrate-dry-run-"));
 	try {
-		const text = path.join(temp, "dump.sql");
-		say("Reading it with pg_restore");
-		await (
-			opts.restore ??
-			((d, o) => restoreToText(d, o, { pgRestore: opts.pgRestore }))
-		)(dump.file, text);
-		const tables = parseCopyText(readFileSync(text, "utf8"));
-		rmSync(text);
-		const inDump = legacyProjects(tables);
-		for (const p of opts.layout.projects)
-			if (!inDump.some((d) => d.name === p.legacy))
-				throw new Error(
-					`The layout names "${p.legacy}", which the dump does not have (it has: ${inDump.map((d) => d.name).join(", ")})`,
-				);
-		const report: DryRunReport = {
-			dump: { file: dump.name, sha256 },
-			orphans: findOrphans(tables),
-			notInLayout: inDump.filter(
-				(d) => !opts.layout.projects.some((p) => p.legacy === d.name),
-			),
-			projects: [],
-			ok: false,
-		};
-		for (const [i, p] of opts.layout.projects.entries()) {
-			const legacy = inDump.find((d) => d.name === p.legacy)!;
-			say(`Project ${legacy.name}`);
-			report.projects.push(
-				await dryRunProject(
-					tables,
-					legacy,
-					p,
-					path.join(temp, String(i)),
-					{ name: dump.name, sha256 },
-					opts,
-					say,
-				),
-			);
-		}
-		report.ok =
-			report.orphans.length === 0 && report.projects.every((p) => p.ok);
-		return report;
+		return (await buildAll(opts, temp)).report;
 	} finally {
 		rmSync(temp, { recursive: true, force: true });
 	}
 }
 
+/**
+ * The real run: the dry run's builds and checks, then, only if every check
+ * of every project holds and no project folder has a catalog yet, each
+ * catalog put in its project folder. It reads only the layout's backup of
+ * record, and stops if a newer dump's data differs from it.
+ */
+export async function migrate(opts: DryRunOptions): Promise<MigrationReport> {
+	if (!opts.layout.dump)
+		throw new Error(
+			'The real run reads only the backup of record: name it in the layout as "dump": { "file": "<dump file name>", "sha256": "<its SHA-256>" }',
+		);
+	const say = opts.progress ?? (() => {});
+	const temp = mkdtempSync(path.join(tmpdir(), "pt-migrate-"));
+	try {
+		const { report, builds } = await buildAll(opts, temp);
+		const out: MigrationReport = { ...report, refused: null, placed: [] };
+		if (report.sinceBackup?.differences.length) {
+			out.refused = `Postgres has changed since the backup: ${report.sinceBackup.newest} differs from ${report.dump.file}. Nothing was placed. A fresh dump has to go through a nightly off-machine backup and be checked first.`;
+			return out;
+		}
+		if (!report.ok) {
+			out.refused = "Not every check holds (see above). Nothing was placed.";
+			return out;
+		}
+		// Every target is checked before any is written.
+		const targets = opts.layout.projects.map((p) =>
+			newProjectFolder(p.folder, opts.machine),
+		);
+		for (const [i, build] of builds.entries()) {
+			say(`Placing ${build.report.legacy.name} in ${targets[i].folder}`);
+			out.placed.push(await place(build, targets[i], opts.machine));
+		}
+		out.ok = out.placed.every(
+			(p) => p.verify.length === 0 && p.roots.every((r) => r.status === "ok"),
+		);
+		return out;
+	} finally {
+		rmSync(temp, { recursive: true, force: true });
+	}
+}
+
+/**
+ * Put one built catalog in its project folder: the timeline files first
+ * (each copied under a temporary name, its hash checked, then given its
+ * name), then the catalog (placeNewCatalog: checked, never replacing one),
+ * then this machine's places for the roots outside the project folder. The
+ * placed catalog is opened and checked again.
+ */
+async function place(
+	build: Build,
+	target: { folder: string; catalogPath: string },
+	machine: Machine,
+): Promise<PlacedProject> {
+	if (!build.snapshot) throw new Error("Nothing was built to place");
+	const dir = path.join(target.folder, PROJECT_DIR, TIMELINES_DIR);
+	mkdirSync(dir, { recursive: true });
+	for (const [sha, source] of build.timelineFiles) {
+		const dest = path.join(dir, sha);
+		if (existsSync(dest)) {
+			if ((await sha256OfFile(dest)) !== sha)
+				throw new Error(`${dest} is there already, with other bytes`);
+			continue;
+		}
+		const temp = `${dest}.new`;
+		try {
+			copyFileSync(source, temp, constants.COPYFILE_EXCL);
+			if ((await sha256OfFile(temp)) !== sha)
+				throw new Error(`${source} changed while it was copied`);
+			placeWithoutReplacing(temp, dest);
+		} finally {
+			rmSync(temp, { force: true });
+		}
+	}
+	placeNewCatalog(target, build.projectId, machine, (temp) =>
+		copyFileSync(build.snapshot!, temp, constants.COPYFILE_EXCL),
+	);
+	if (build.outside.length)
+		updateSettings(machine.settingsPath, (s) => {
+			const roots = projectEntry(s, build.projectId).roots;
+			for (const o of build.outside) roots[String(o.id)] = o.folder;
+		});
+	const project = openProject(target.folder, { machine });
+	try {
+		return {
+			name: build.report.legacy.name,
+			folder: target.folder,
+			catalogPath: target.catalogPath,
+			timelineFiles: build.timelineFiles.size,
+			verify: verifyCatalog(project.db),
+			roots: listRoots(project, machine).map(
+				({ name, folder, inProject, status }) => ({
+					name,
+					folder,
+					inProject,
+					status,
+				}),
+			),
+		};
+	} finally {
+		project.db.close();
+	}
+}
 function groupUncarried(
 	plan: MigrationPlan,
 ): ProjectDryRun["plan"]["uncarried"] {
@@ -301,7 +518,19 @@ function groupUncarried(
 	return [...out.values()];
 }
 
-async function dryRunProject(
+/** One project's catalog, built and checked in the temp folder. */
+interface Build {
+	report: ProjectDryRun;
+	projectId: string;
+	/** The catalog as the migration left it, before the checks scanned and read files into it. */
+	snapshot: string | null;
+	/** Roots outside the project folder, to place in this machine's settings. */
+	outside: Array<{ id: number; folder: string }>;
+	/** Each timeline file to copy into the project: SHA-256 → where it is now. */
+	timelineFiles: Map<string, string>;
+}
+
+async function buildProject(
 	tables: Map<string, CopyTable>,
 	legacy: { id: number; name: string },
 	layout: LayoutProject,
@@ -309,7 +538,7 @@ async function dryRunProject(
 	dump: { name: string; sha256: string },
 	opts: DryRunOptions,
 	say: (line: string) => void,
-): Promise<ProjectDryRun> {
+): Promise<Build> {
 	const platform = opts.machine.platform;
 	const folder = realFolder(layout.folder);
 	const plan = planProject(tables, legacy.id);
@@ -345,6 +574,13 @@ async function dryRunProject(
 	const catalogPath = path.join(temp, "catalog.sqlite");
 	const db = new DatabaseSync(catalogPath);
 	const projectId = randomUUID();
+	const build: Build = {
+		report: out,
+		projectId,
+		snapshot: null,
+		outside: [],
+		timelineFiles: new Map(),
+	};
 	const project: OpenProject = {
 		db,
 		folder,
@@ -368,6 +604,9 @@ async function dryRunProject(
 			}
 		}
 		const roots = listRoots(project, machine);
+		build.outside = roots
+			.filter((r) => !r.inProject && r.folder !== null)
+			.map((r) => ({ id: r.id, folder: r.folder! }));
 		out.roots = roots.map(
 			({ name, folder: f, inProject, status, warnings }) => ({
 				name,
@@ -409,10 +648,13 @@ async function dryRunProject(
 				out.problems.push(
 					`timeline ${t.evidence.id}: its file ${t.file.path} holds other bytes than Postgres recorded`,
 				);
-			else timelineFiles.add(t.file.sha256!);
+			else {
+				timelineFiles.add(t.file.sha256!);
+				build.timelineFiles.set(t.file.sha256!, p);
+			}
 		}
 
-		if (plan.blocking.length || out.problems.length) return out;
+		if (plan.blocking.length || out.problems.length) return build;
 
 		say("  writing the catalog");
 		const result = writeMigration(db, plan, {
@@ -424,6 +666,12 @@ async function dryRunProject(
 		out.written = result.counts;
 		out.notFound = result.notFound;
 		out.verify = verifyCatalog(db);
+		if (out.verify.length === 0) {
+			// What the real run places: the catalog as the migration wrote it.
+			// The checks below then scan and read files into this working copy.
+			build.snapshot = path.join(temp, "migrated.sqlite");
+			db.exec(`VACUUM INTO '${build.snapshot.replaceAll("'", "''")}'`);
+		}
 
 		for (const [id, e] of legacyIds(db, "timelines", result.runId)) {
 			const stored = cachedBreakdown(
@@ -508,7 +756,7 @@ async function dryRunProject(
 			out.scan.gone === 0 &&
 			out.scan.unchanged === (out.written.locations ?? 0);
 	}
-	return out;
+	return build;
 }
 
 async function findFile(

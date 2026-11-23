@@ -21,7 +21,13 @@ import {
 } from "../roots.ts";
 import { endExifTool } from "../extract/exiftool.ts";
 import { extractProject, machineReaders } from "../extract.ts";
-import { dryRun, readLayout, type DryRunReport } from "../legacy/migrate.ts";
+import {
+	dryRun,
+	migrate as migrateCatalogs,
+	readLayout,
+	type DryRunReport,
+	type MigrationReport,
+} from "../legacy/migrate.ts";
 import { writeFileSync } from "node:fs";
 import { scanProject, type ScanReport } from "../scan.ts";
 import { describeFile } from "../show.ts";
@@ -54,8 +60,10 @@ Usage: npm run cli -- <command> [options]
   show <file>                         Everything the catalog knows about one file
   settings                            Show this machine's settings
   settings person <name>              Set the name your edits are recorded under
-  migrate --dry-run --layout <file>   Build the catalogs from the newest Postgres dump in a
-                                      throwaway folder, check them, and report [--report <file>]
+  migrate --dry-run --layout <file>   Build the catalogs from a Postgres dump in a throwaway
+                                      folder, check them, and report [--report <file>]
+  migrate --write --layout <file>     The same, then put each catalog in its project folder,
+                                      only if every check holds [--report <file>]
 
 Commands that work on a project use the one in the current folder (or a
 folder above it), or --project <folder>. Edits are recorded under the name
@@ -75,6 +83,7 @@ const OPTIONS = {
 	hash: { type: "boolean" },
 	help: { type: "boolean", short: "h" },
 	"dry-run": { type: "boolean" },
+	write: { type: "boolean" },
 	layout: { type: "string" },
 	report: { type: "string" },
 } as const;
@@ -89,6 +98,7 @@ type Values = {
 	hash?: boolean;
 	help?: boolean;
 	"dry-run"?: boolean;
+	write?: boolean;
 	layout?: string;
 	report?: string;
 };
@@ -477,7 +487,15 @@ function show(io: Io, args: string[], values: Values): Promise<number> {
 
 function printDryRun(io: Io, report: DryRunReport): void {
 	io.out("");
-	io.out(`Dump: ${report.dump.file} (matches its .sha256)`);
+	io.out(
+		`Dump: ${report.dump.file} (matches its .sha256${report.dump.pinned ? "; the backup the layout names" : ""})`,
+	);
+	if (report.sinceBackup)
+		io.out(
+			report.sinceBackup.differences.length
+				? `The newest dump, ${report.sinceBackup.newest}, has other data: Postgres has changed since the backup.\n${report.sinceBackup.differences.map((d) => `  ${d}`).join("\n")}`
+				: `The newest dump, ${report.sinceBackup.newest}, has the same data: nothing has changed since the backup.`,
+		);
 	if (report.orphans.length) {
 		io.out(`${report.orphans.length} Postgres row(s) belong to nothing:`);
 		for (const o of report.orphans) io.out(`  ${o}`);
@@ -552,11 +570,31 @@ function printDryRun(io: Io, report: DryRunReport): void {
 		}
 	}
 	io.out("");
-	io.out(
-		report.ok
-			? "Dry run: everything checked is sound. Nothing was kept."
-			: "Dry run: something above needs fixing before the real run. Nothing was kept.",
-	);
+	if (!("placed" in report)) {
+		io.out(
+			report.ok
+				? "Dry run: everything checked is sound. Nothing was kept."
+				: "Dry run: something above needs fixing before the real run. Nothing was kept.",
+		);
+		return;
+	}
+	const real = report as MigrationReport;
+	if (real.refused) io.out(real.refused);
+	for (const p of real.placed) {
+		io.out(
+			`Placed ${p.name}: ${p.catalogPath}, with ${p.timelineFiles} timeline file(s). verifyCatalog: ${p.verify.length ? `${p.verify.length} problem(s)` : "clean"}.`,
+		);
+		for (const r of p.roots)
+			io.out(
+				`  root ${r.name}: ${r.folder ?? "-"} (${r.status}${r.inProject ? ", inside the project folder" : ""})`,
+			);
+	}
+	if (real.placed.length)
+		io.out(
+			real.ok
+				? "Migrated. Next, in each project: scan, extract, verify --hash."
+				: "Placed, but the check above found a problem.",
+		);
 }
 
 async function migrate(
@@ -564,13 +602,9 @@ async function migrate(
 	args: string[],
 	values: Values,
 ): Promise<number> {
-	if (args.length || !values.layout)
+	if (args.length || !values.layout || !values["dry-run"] === !values.write)
 		throw new UsageError(
-			"Usage: npm run cli -- migrate --dry-run --layout <file> [--report <file>]",
-		);
-	if (!values["dry-run"])
-		throw new UsageError(
-			"Only the dry run exists so far (Phase 5, step 2): add --dry-run.",
+			"Usage: npm run cli -- migrate (--dry-run | --write) --layout <file> [--report <file>]",
 		);
 	const layout = readLayout(
 		resolveFrom(io, values.layout),
@@ -585,7 +619,7 @@ async function migrate(
 		);
 	let last = 0;
 	try {
-		const report = await dryRun({
+		const report = await (values.write ? migrateCatalogs : dryRun)({
 			layout,
 			machine: io.machine,
 			actor,

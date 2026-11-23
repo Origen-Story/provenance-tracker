@@ -277,6 +277,8 @@ npm run cli -- roots --project "D:\Projects\Film"        # the roots, and where 
 npm run cli -- scan --project "D:\Projects\Film"         # record every file: hashes, moves, new versions, duplicates
 npm run cli -- extract --project "D:\Projects\Film"      # read what each file says: ExifTool, C2PA, PNG text, .xmp and .c2pa sidecars
 npm run cli -- classify --dry-run --project "D:\Projects\Film"  # what each asset is, from what its file said; without --dry-run, record it
+npm run cli -- signing --certificate "D:\keys\cert.pem" --key "D:\keys\key.pem"  # which certificate and key sign this project on this machine
+npm run cli -- sign 12 --project "D:\Projects\Film"         # sign output 12: a new signed copy beside its file
 npm run cli -- verify --hash --project "D:\Projects\Film"  # the catalog is sound and every file's bytes are unchanged
 npm run cli -- show "E:\Footage\day 1\clip.mov"             # everything known about one file
 ```

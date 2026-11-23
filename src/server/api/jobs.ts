@@ -6,7 +6,8 @@
 
 import { randomUUID } from "node:crypto";
 
-export type JobKind = "scan" | "extract" | "classify" | "import" | "download";
+export type JobKind =
+	"scan" | "extract" | "classify" | "import" | "download" | "sign";
 export type JobState = "running" | "done" | "failed" | "cancelled";
 
 export interface JobProgress {

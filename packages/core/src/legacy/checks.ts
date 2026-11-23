@@ -10,6 +10,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 import { withLegacyLayerRefs } from "../asset-ref.ts";
+import { signatureForExport } from "../catalog/signatures.ts";
 import { breakdownOf } from "../catalog/timelines.ts";
 import type { CopyTable } from "./copy-text.ts";
 import {
@@ -192,43 +193,8 @@ export function cachedBreakdown(json: string | null): {
 	}
 	return { breakdown, oldShape };
 }
-/**
- * A signing as buildPublicExport reads it (the app's signatures row): the
- * statement and report as signed, and the signed copy's file name, hash,
- * size, version and time, from the catalog.
- */
-export function signatureForExport(db: DatabaseSync, signatureId: number) {
-	const s = db
-		.prepare(
-			`SELECT s.kind, s.version, s.statement, s.report, s.signed_sha256, s.signed_at, c.size,
-			        (SELECT l.path FROM locations l WHERE l.content_sha256 = s.signed_sha256
-			         ORDER BY l.gone_run_id IS NOT NULL, l.id LIMIT 1) AS path
-			 FROM signatures s JOIN contents c ON c.sha256 = s.signed_sha256 WHERE s.id = ?`,
-		)
-		.get(signatureId) as
-		| {
-				kind: string;
-				version: number;
-				statement: string | null;
-				report: string | null;
-				signed_sha256: string;
-				signed_at: string;
-				size: number;
-				path: string | null;
-		  }
-		| undefined;
-	if (!s) throw new Error(`No signature ${signatureId}`);
-	return {
-		kind: s.kind,
-		version: s.version,
-		statementJson: s.statement,
-		reportJson: s.report,
-		signedPath: s.path ?? "",
-		signedHash: s.signed_sha256,
-		signedSize: s.size,
-		createdAt: s.signed_at,
-	};
-}
+/** One signing as the export builder reads it (moved to catalog/signatures.ts). */
+export { signatureForExport };
 
 /**
  * Where two JSON values differ, as paths ("primary.byClass.unknown.frames"),

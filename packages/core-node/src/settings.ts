@@ -23,6 +23,12 @@ export interface ProjectSettings {
 	folder?: string;
 	/** Root id (as text) → that root's folder on this machine. */
 	roots: Record<string, string>;
+	/**
+	 * Where this project's signing certificate and private key are on this
+	 * machine. Paths only, never in a catalog (catalogs travel) and never
+	 * returned by the API.
+	 */
+	signing?: { certificate: string; privateKey: string };
 }
 
 export interface Settings {
@@ -85,6 +91,18 @@ export function readSettings(file: string): Settings {
 				throw damaged(file, `root ${rootId} folder is not text`);
 		}
 		project.roots = roots;
+		if (project.signing !== undefined) {
+			const s = project.signing as Record<string, unknown>;
+			if (
+				!isPlainObject(s) ||
+				typeof s.certificate !== "string" ||
+				typeof s.privateKey !== "string"
+			)
+				throw damaged(
+					file,
+					`project ${id} signing is not a certificate and a key`,
+				);
+		}
 	}
 	return { ...data, format: data.format, projects } as Settings;
 }

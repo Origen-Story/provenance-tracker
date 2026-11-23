@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { verifyCatalog } from "@provenancetracker/core/catalog/verify.ts";
 import { run, type Io } from "../src/cli/run.ts";
@@ -171,5 +171,28 @@ describe("migrate", () => {
 		);
 		expect(missing.code).toBe(1);
 		expect(missing.err).toContain("is not readable JSON");
+	});
+});
+
+describe("classify", () => {
+	it("says what it would change on a dry run, then what it changed", async () => {
+		const m = t.machine();
+		const work = t.tempDir();
+		const c = cli(m, work);
+		await c.run("init", "Demo");
+		await c.run("settings", "person", "A. Maker");
+		mkdirSync(path.join(work, "Demo", "media"));
+		writeFileSync(path.join(work, "Demo", "media", "note.txt"), "words");
+		const inside = cli(m, path.join(work, "Demo"));
+		await inside.run("roots", "add", "media", "media");
+		await inside.run("scan");
+		const dry = await inside.run("classify", "--dry-run");
+		expect(dry).toMatchObject({ code: 0, err: "" });
+		// Nothing has been read from the file, so there is nothing to say about it.
+		expect(dry.out).toContain("1 asset(s) looked at; 0 would change.");
+		expect(dry.out).toContain("Dry run: nothing was written.");
+		const real = await inside.run("classify");
+		expect(real.out).toContain("1 asset(s) looked at; 0 changed.");
+		expect((await inside.run("classify", "extra")).code).toBe(2);
 	});
 });

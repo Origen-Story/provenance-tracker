@@ -276,6 +276,7 @@ npm run cli -- roots add footage "E:\Footage" --project "D:\Projects\Film"
 npm run cli -- roots --project "D:\Projects\Film"        # the roots, and where each is on this machine
 npm run cli -- scan --project "D:\Projects\Film"         # record every file: hashes, moves, new versions, duplicates
 npm run cli -- extract --project "D:\Projects\Film"      # read what each file says: ExifTool, C2PA, PNG text, .xmp and .c2pa sidecars
+npm run cli -- classify --dry-run --project "D:\Projects\Film"  # what each asset is, from what its file said; without --dry-run, record it
 npm run cli -- verify --hash --project "D:\Projects\Film"  # the catalog is sound and every file's bytes are unchanged
 npm run cli -- show "E:\Footage\day 1\clip.mov"             # everything known about one file
 ```

@@ -9,13 +9,13 @@
 //   changed without the size or time changing (a failing disk, a tool that
 //   restores the time).
 
-import { createHash } from "node:crypto";
-import { createReadStream, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import path from "node:path";
 import {
 	verifyCatalog,
 	type Problem,
 } from "@provenancetracker/core/catalog/verify.ts";
+import { sha256OfFile } from "./hash.ts";
 import type { Machine } from "./machine.ts";
 import type { OpenProject } from "./project.ts";
 import { listRoots } from "./roots.ts";
@@ -40,13 +40,6 @@ export interface VerifyReport {
 	/** Roots whose files could not be checked here, and why. */
 	notChecked: Array<{ root: string; reason: string; files: number }>;
 	outcome: "ok" | "cancelled";
-}
-
-async function sha256Of(file: string): Promise<string> {
-	const hash = createHash("sha256");
-	for await (const chunk of createReadStream(file, { highWaterMark: 1 << 20 }))
-		hash.update(chunk as Buffer);
-	return hash.digest("hex");
 }
 
 export async function verifyProject(
@@ -142,7 +135,7 @@ export async function verifyProject(
 		}
 		let sha: string;
 		try {
-			sha = await sha256Of(job.abs);
+			sha = await sha256OfFile(job.abs);
 		} catch (err) {
 			report.files.push({
 				root: job.root,

@@ -20,12 +20,11 @@ import {
 } from "./edit.ts";
 import { EDITABLE, EDITABLE_META } from "./fields.ts";
 import { inTransaction } from "./format.ts";
+import { refreshTimelines, timelinesUsing } from "./timelines.ts";
 
-/** A mistake in what was asked: the caller's to fix (HTTP 400). */
-export class EditError extends Error {}
+import { EditError, NotFoundError } from "./errors.ts";
 
-/** A row that is not there (HTTP 404). */
-export class NotFoundError extends Error {}
+export { EditError, NotFoundError };
 
 export const ASSET_KINDS: readonly string[] = [
 	"unsorted",
@@ -174,6 +173,12 @@ export function editAsset(
 	try {
 		return inTransaction(db, () => {
 			const done = editRow(db, "assets", id, fields, change(opts));
+			// What is on screen changed for the timelines that use it.
+			if (done.includes("origin_class") || done.includes("ai_assisted"))
+				refreshTimelines(db, timelinesUsing(db, id), {
+					tool: opts.tool,
+					now: opts.now,
+				});
 			if (done.includes("origin_class")) {
 				const children = derivedChildren(db, id);
 				if (children.length)

@@ -3,8 +3,7 @@
 // walks, hashes and writes). One run per scan; each file's change is written
 // in its own transaction, so an interrupted scan keeps what it finished.
 
-import { createHash } from "node:crypto";
-import { createReadStream, readdirSync, statSync, type Stats } from "node:fs";
+import { readdirSync, statSync, type Stats } from "node:fs";
 import path from "node:path";
 import { createRow, type Actor } from "@provenancetracker/core/catalog/edit.ts";
 import { inTransaction } from "@provenancetracker/core/catalog/format.ts";
@@ -17,6 +16,7 @@ import {
 	type SeenFile,
 } from "@provenancetracker/core/catalog/rescan.ts";
 import { finishRun, startRun } from "@provenancetracker/core/catalog/runs.ts";
+import { sha256OfFile } from "./hash.ts";
 import type { Machine } from "./machine.ts";
 import type { OpenProject } from "./project.ts";
 import { listRoots } from "./roots.ts";
@@ -145,13 +145,6 @@ function listRoot(rootId: number, rootName: string, folder: string): Listing {
 		}
 	}
 	return out;
-}
-
-async function sha256Of(file: string): Promise<string> {
-	const hash = createHash("sha256");
-	for await (const chunk of createReadStream(file, { highWaterMark: 1 << 20 }))
-		hash.update(chunk as Buffer);
-	return hash.digest("hex");
 }
 
 function knownLocations(project: OpenProject): KnownLocation[] {
@@ -288,7 +281,7 @@ export async function scanProject(
 			}
 			let sha256: string;
 			try {
-				sha256 = await sha256Of(abs);
+				sha256 = await sha256OfFile(abs);
 				const after = statSync(abs);
 				if (after.size !== file.size || modifiedMs(after) !== file.modifiedMs) {
 					report.skipped.push({

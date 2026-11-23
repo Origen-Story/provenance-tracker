@@ -24,9 +24,12 @@ import { c2paSummaryOf } from "../extraction/c2pa-summary.ts";
 import { detectAndParse } from "../extraction/detect.js";
 import type { Observation } from "../extraction/observation.ts";
 import { proposeOriginClass } from "../origin/classify.js";
+import { compositeClassFor } from "../origin-vocabulary.js";
+import { positionsIn } from "../timeline/compose.js";
 import type { Tool } from "./create.ts";
 import { createRow, editRow, type Actor } from "./edit.ts";
 import { inTransaction } from "./format.ts";
+import { refreshTimelines, timelinesUsing } from "./timelines.ts";
 import { finishRun, startRun } from "./runs.ts";
 
 /** One field an asset's classification would change. */
@@ -179,6 +182,31 @@ function parentClass(db: DatabaseSync, assetId: number): string | null {
 	return row?.origin_class ?? null;
 }
 
+/**
+ * The class a cut's newest timeline gives it: a composite of what is on
+ * screen and heard (compositeClassFor). Null without a timeline, or when
+ * nothing in it is known yet.
+ */
+function compositionClass(db: DatabaseSync, sha256: string): string | null {
+	const row = db
+		.prepare(
+			"SELECT breakdown FROM timelines WHERE content_sha256 = ? AND breakdown IS NOT NULL ORDER BY id DESC LIMIT 1",
+		)
+		.get(sha256) as { breakdown: string } | undefined;
+	if (!row) return null;
+	let composition: unknown;
+	try {
+		composition = (JSON.parse(row.breakdown) as { composition?: unknown })
+			?.composition;
+	} catch {
+		return null;
+	}
+	const positions = (positionsIn(composition) as string[]).filter(
+		(p) => p !== "unknown",
+	);
+	return positions.length ? compositeClassFor(positions) : null;
+}
+
 /** What classify would do to one asset. Reads only. */
 export function classifyAsset(
 	db: DatabaseSync,
@@ -240,6 +268,15 @@ export function classifyAsset(
 		table: LEGACY_TABLE[kind],
 		...signals,
 	});
+	// A finished edit is a composite, and which kind follows from what is on
+	// screen in its newest timeline (the app's timeline_composition rule).
+	// Who signed the file still comes from the file.
+	const composed =
+		asset.is_output === 1 && sha ? compositionClass(db, sha) : null;
+	if (composed) {
+		proposal.originClass = composed;
+		proposal.source = "timeline_composition";
+	}
 
 	const out: AssetClassification = {
 		assetId,
@@ -402,5 +439,13 @@ export function classifyCatalog(
 		});
 		throw err;
 	}
+	// What is on screen changed for the timelines that use an asset whose
+	// class changed: refresh them, and classify their outputs in turn. This
+	// stops when a run changes no class.
+	const touched = plans
+		.filter((p) => p.changes.some((c) => c.field === "origin_class"))
+		.flatMap((p) => timelinesUsing(db, p.assetId));
+	if (touched.length)
+		refreshTimelines(db, [...new Set(touched)], { tool: opts.tool });
 	return report;
 }

@@ -247,6 +247,9 @@ describe("the catalog API", () => {
 			folder: path.join(dir, "nothing here"),
 		});
 		expect(missing.status).toBe(409);
+		expect(missing.body.error).toMatch(
+			/^There is no catalog in .* use "Make a new project".$/,
+		);
 	});
 
 	it("makes a new project in a folder, and refuses one without a name, an unknown field, or a folder that already has one", async () => {

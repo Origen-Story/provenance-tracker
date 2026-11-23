@@ -90,6 +90,7 @@ import type { Machine } from "@provenancetracker/core-node/machine.ts";
 import { TOOL } from "@provenancetracker/core-node/tool.ts";
 import {
 	createProject,
+	NoCatalogError,
 	openProject,
 	type OpenProject,
 } from "@provenancetracker/core-node/project.ts";
@@ -333,7 +334,12 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 		try {
 			project = openProject(folder, { machine });
 		} catch (err) {
-			throw new HttpError(409, (err as Error).message);
+			throw new HttpError(
+				409,
+				err instanceof NoCatalogError
+					? `${err.message} To start a project there, use "Make a new project".`
+					: (err as Error).message,
+			);
 		}
 		try {
 			res.json({

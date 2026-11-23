@@ -9,6 +9,7 @@ import type { Machine } from "../machine.ts";
 import {
 	createProject,
 	findProjectFolder,
+	NoCatalogError,
 	openProject,
 	type OpenProject,
 } from "../project.ts";
@@ -149,7 +150,17 @@ async function withProject<T>(
 		throw new Error(
 			`There is no project in ${io.cwd} or any folder above it. Pass --project <folder>, or make one with init.`,
 		);
-	const project = openProject(folder, { machine: io.machine });
+	let project: OpenProject;
+	try {
+		project = openProject(folder, { machine: io.machine });
+	} catch (err) {
+		if (err instanceof NoCatalogError)
+			throw new Error(
+				`${err.message} To make one there: npm run cli -- init "${err.folder}"`,
+				{ cause: err },
+			);
+		throw err;
+	}
 	try {
 		if (project.upgraded)
 			io.out(

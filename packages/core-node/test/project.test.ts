@@ -17,6 +17,7 @@ import {
 	createProject,
 	findProjectFolder,
 	GITIGNORE_TEXT,
+	NoCatalogError,
 	openProject,
 	PROJECT_DIR,
 	realFolder,
@@ -164,7 +165,10 @@ describe("openProject", () => {
 	it("says how to make a catalog when there is none, and makes nothing", () => {
 		const folder = t.folder("empty");
 		expect(() => openProject(folder, { machine: t.machine() })).toThrow(
-			`There is no catalog in ${folder}`,
+			new NoCatalogError(folder),
+		);
+		expect(() => openProject(folder, { machine: t.machine() })).toThrow(
+			`There is no catalog in ${folder}.`,
 		);
 		expect(readdirSync(folder)).toEqual([]);
 	});

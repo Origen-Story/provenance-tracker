@@ -8,6 +8,7 @@
 
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { EDITABLE, EDITABLE_META } from "./fields.ts";
+import { ORIGIN_CLASS_DEFS, POSITIONS } from "../origin-vocabulary.js";
 
 type Row = Record<string, unknown>;
 
@@ -122,11 +123,17 @@ export interface AssetSummary {
 export interface AssetFilter {
 	kind?: string;
 	originClass?: string;
+	/**
+	 * A spectrum position (origin-vocabulary.js POSITIONS): every class in it,
+	 * with a digital class marked AI-assisted counted as assisted, as the
+	 * badges show it.
+	 */
+	position?: string;
 	outputs?: boolean;
 	/** Words to find in titles, notes, captions, credits or file paths. */
 	q?: string;
-	/** Include removed assets (default: only those not removed). */
-	removed?: boolean;
+	/** Include removed assets, or show only them (default: only those not removed). */
+	removed?: boolean | "only";
 	limit?: number;
 	offset?: number;
 }
@@ -160,13 +167,50 @@ const CURRENT_FILE = `
 	ORDER BY signed_copy, c.created_at DESC, c.rowid DESC, l.path
 	LIMIT 1`;
 
+const codesAt = (position: string): string[] =>
+	(ORIGIN_CLASS_DEFS as Array<{ code: string; position: string }>)
+		.filter((d) => d.position === position)
+		.map((d) => d.code);
+const list = (codes: string[]) => codes.map(() => "?").join(", ");
+
+/** The assets at one spectrum position, by the rule spectrumPosition applies. */
+function positionClause(position: string): { sql: string; params: string[] } {
+	if (!(POSITIONS as Array<{ id: string }>).some((p) => p.id === position))
+		return { sql: "0", params: [] };
+	const digital = codesAt("digital");
+	if (position === "digital")
+		return {
+			sql: `(a.origin_class IN (${list(digital)}) AND a.ai_assisted = 0)`,
+			params: digital,
+		};
+	if (position === "assisted") {
+		const own = codesAt("assisted");
+		return {
+			sql: `(a.origin_class IN (${list(own)}) OR (a.origin_class IN (${list(digital)}) AND a.ai_assisted = 1))`,
+			params: [...own, ...digital],
+		};
+	}
+	// A class the vocabulary does not know reads as unknown (originClassDef).
+	if (position === "unknown") {
+		const placed = (
+			ORIGIN_CLASS_DEFS as Array<{ code: string; position: string }>
+		)
+			.filter((d) => d.position !== "unknown")
+			.map((d) => d.code);
+		return { sql: `a.origin_class NOT IN (${list(placed)})`, params: placed };
+	}
+	const codes = codesAt(position);
+	return { sql: `a.origin_class IN (${list(codes)})`, params: codes };
+}
+
 export function listAssets(
 	db: DatabaseSync,
 	filter: AssetFilter = {},
 ): { total: number; assets: AssetSummary[] } {
 	const where: string[] = [];
 	const params: SQLInputValue[] = [];
-	if (!filter.removed) where.push("a.removed_at IS NULL");
+	if (filter.removed === "only") where.push("a.removed_at IS NOT NULL");
+	else if (!filter.removed) where.push("a.removed_at IS NULL");
 	if (filter.kind) {
 		where.push("a.kind = ?");
 		params.push(filter.kind);
@@ -174,6 +218,11 @@ export function listAssets(
 	if (filter.originClass) {
 		where.push("a.origin_class = ?");
 		params.push(filter.originClass);
+	}
+	if (filter.position) {
+		const { sql, params: p } = positionClause(filter.position);
+		where.push(sql);
+		params.push(...p);
 	}
 	if (filter.outputs) where.push("a.is_output = 1");
 	const q = filter.q?.trim();

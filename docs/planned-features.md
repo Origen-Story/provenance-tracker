@@ -71,4 +71,6 @@ Note: Origen Story's projects currently use only the high-priority set. Deferred
 
 - **License URL on archival imports** — both archival import forms (`ArchivalIngest.jsx` and the archival form in `ImportHub.jsx`) send a `licenseUrl` that no input lets anyone enter, so it is always saved empty. Found by the linter on 2026-11-21; deferred to the app cutover, when the import pages are rebuilt. Rights information on archival material matters, so it should not wait longer than that.
 
+- **A design pass on the app's pages, after the cutover** — the pages on the catalogs (Phase 6, slice 6) are built to work first; what is visible at once, the layout and the order of sections are decided once every page exists, from getting files in to signing. Anything that makes a mistake easy (a buried save, a dangerous button among everyday ones) is fixed as it is found rather than waiting for this. Noted so far, on 2026-11-23: the asset page is one long column of sections, and an AI-generated asset's view is fine for now but should be reviewed with the rest.
+
 _(Add more as they come up.)_

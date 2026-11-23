@@ -397,6 +397,12 @@ describe("editing through the catalog API", () => {
 		).not.toBeNull();
 		expect((await api.get(`${base}/assets`)).body.total).toBe(1);
 		expect(
+			(await api.get(`${base}/assets?removed=only`)).body.assets.map(
+				(x: { id: number }) => x.id,
+			),
+		).toEqual([2]);
+		expect((await api.get(`${base}/assets?removed=1`)).body.total).toBe(2);
+		expect(
 			(await api.post(`${base}/assets/2/restore`)).body.asset.fields.removed_at,
 		).toBeNull();
 

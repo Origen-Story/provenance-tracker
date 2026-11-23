@@ -409,9 +409,10 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 		const filter: AssetFilter = {
 			kind: queryText(q.kind),
 			originClass: queryText(q.class),
+			position: queryText(q.position),
 			outputs: queryFlag(q.outputs),
 			q: queryText(q.q),
-			removed: queryFlag(q.removed),
+			removed: q.removed === "only" ? "only" : queryFlag(q.removed),
 			limit: queryNumber(q.limit),
 			offset: queryNumber(q.offset),
 		};

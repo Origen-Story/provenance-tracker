@@ -129,3 +129,180 @@ export function when(iso: string | null): string {
 		timeStyle: "short",
 	});
 }
+
+export function TextArea({
+	label,
+	value,
+	onChange,
+	rows = 3,
+	hint,
+}: {
+	label: string;
+	value: string;
+	onChange: (v: string) => void;
+	rows?: number;
+	hint?: string;
+}) {
+	return (
+		<label className="block">
+			<span className="block text-sm text-text-primary mb-1">{label}</span>
+			<textarea
+				value={value}
+				rows={rows}
+				onChange={(e) => onChange(e.target.value)}
+				className="w-full bg-app-bg border border-border rounded px-3 py-1.5 text-sm text-text-primary"
+			/>
+			{hint && (
+				<span className="block text-xs text-text-secondary mt-1">{hint}</span>
+			)}
+		</label>
+	);
+}
+
+export function Select({
+	label,
+	value,
+	onChange,
+	options,
+}: {
+	label: string;
+	value: string;
+	onChange: (v: string) => void;
+	options: Array<{ value: string; label: string; group?: string }>;
+}) {
+	const groups = [...new Set(options.map((o) => o.group ?? ""))];
+	const item = (o: { value: string; label: string }) => (
+		<option key={o.value} value={o.value}>
+			{o.label}
+		</option>
+	);
+	return (
+		<label className="block">
+			<span className="block text-sm text-text-primary mb-1">{label}</span>
+			<select
+				value={value}
+				onChange={(e) => onChange(e.target.value)}
+				className="w-full bg-app-bg border border-border rounded px-3 py-1.5 text-sm text-text-primary"
+			>
+				{groups.length === 1
+					? options.map(item)
+					: groups.map((g) => (
+							<optgroup key={g} label={g}>
+								{options.filter((o) => (o.group ?? "") === g).map(item)}
+							</optgroup>
+						))}
+			</select>
+		</label>
+	);
+}
+
+export function Checkbox({
+	label,
+	checked,
+	onChange,
+	hint,
+}: {
+	label: string;
+	checked: boolean;
+	onChange: (v: boolean) => void;
+	hint?: string;
+}) {
+	return (
+		<label className="flex items-start gap-2 text-sm text-text-primary">
+			<input
+				type="checkbox"
+				checked={checked}
+				onChange={(e) => onChange(e.target.checked)}
+				className="mt-0.5"
+			/>
+			<span>
+				{label}
+				{hint && (
+					<span className="block text-xs text-text-secondary">{hint}</span>
+				)}
+			</span>
+		</label>
+	);
+}
+
+/** A titled part of a page. */
+export function Section({
+	title,
+	children,
+	aside,
+}: {
+	title: string;
+	children: ReactNode;
+	aside?: ReactNode;
+}) {
+	return (
+		<section>
+			<div className="flex items-center justify-between mb-2">
+				<h3 className="font-medium text-text-primary">{title}</h3>
+				{aside}
+			</div>
+			{children}
+		</section>
+	);
+}
+
+/**
+ * A form's save controls, kept in view at the top of the window while the
+ * form is scrolled through: what is unsaved, an optional reason, Save, Undo.
+ * It sits first in a Card and spans its width.
+ */
+export function SaveBar({
+	count,
+	saving,
+	onSave,
+	onUndo,
+	error,
+	note,
+	onNote,
+	saveLabel = "Save",
+	blocked,
+}: {
+	count: number;
+	saving: boolean;
+	onSave: () => void;
+	onUndo: () => void;
+	error?: unknown;
+	note?: string;
+	onNote?: (v: string) => void;
+	saveLabel?: string;
+	/** Something in the form must be put right before it can be saved. */
+	blocked?: boolean;
+}) {
+	return (
+		<div className="sticky top-0 z-10 -mx-4 -mt-4 mb-4 px-4 py-2 bg-card-bg border-b border-border rounded-t-lg space-y-2">
+			<div className="flex flex-wrap items-center gap-2">
+				<span
+					className={`text-xs ${count ? "text-warning" : "text-text-secondary"}`}
+				>
+					{count
+						? `${count} unsaved change${count > 1 ? "s" : ""}`
+						: "No unsaved changes"}
+				</span>
+				{onNote && count > 0 && (
+					<input
+						value={note ?? ""}
+						onChange={(e) => onNote(e.target.value)}
+						placeholder="Why (optional, kept in the history)"
+						className="flex-1 min-w-48 bg-app-bg border border-border rounded px-2 py-1 text-xs text-text-primary"
+					/>
+				)}
+				<span className="ml-auto flex gap-2">
+					{count > 0 && (
+						<Button quiet onClick={onUndo} disabled={saving}>
+							Undo
+						</Button>
+					)}
+					<Button onClick={onSave} disabled={!count || saving || blocked}>
+						{saving ? "Saving…" : saveLabel}
+					</Button>
+				</span>
+			</div>
+			<Problem error={error} />
+		</div>
+	);
+}

@@ -392,6 +392,15 @@ export function editSettings(
 			throw new EditError(`The project setting ${k} takes text`);
 	if ("name" in fields && !(fields.name as string).trim())
 		throw new EditError("A project needs a name");
+	// Signed into every file as where the creator's identity is published: a
+	// web address anyone can open, never a script or a local file.
+	if ("cawg_identity_url" in fields) {
+		const url = (fields.cawg_identity_url as string).trim();
+		if (url && !isHttpsAddress(url))
+			throw new EditError(
+				"The identity link must be a full web address starting https://",
+			);
+	}
 	const current = (key: string) =>
 		(
 			db.prepare("SELECT value FROM meta WHERE key = ?").get(key) as
@@ -403,5 +412,17 @@ export function editSettings(
 			.filter(([k, v]) => (v as string).trim() !== current(k))
 			.filter(([k, v]) => setMeta(db, k, (v as string).trim(), change(opts)))
 			.map(([k]) => k),
+	);
+}
+
+/** A whole https:// address with a host, as a browser would open it. */
+function isHttpsAddress(value: string): boolean {
+	if (!URL.canParse(value)) return false;
+	const url = new URL(value);
+	return (
+		url.protocol === "https:" &&
+		!!url.hostname &&
+		!url.username &&
+		!url.password
 	);
 }

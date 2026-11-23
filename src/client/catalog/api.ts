@@ -104,6 +104,31 @@ export const projects = {
 		),
 	summary: (projectId: string) =>
 		api<ProjectSummary>("GET", `/projects/${projectId}`),
+	/** Change the project's settings (packages/core/src/catalog/fields.ts EDITABLE_META). */
+	editSettings: (
+		projectId: string,
+		fields: Record<string, string>,
+		note = "",
+	) =>
+		api<{ changed: string[]; settings: Record<string, string> }>(
+			"PATCH",
+			`/projects/${projectId}/settings`,
+			{ fields, note },
+		),
+	/** Forget the project on this machine; its folder is not touched. */
+	forget: (projectId: string) =>
+		api<{ forgotten: string; projects: KnownProject[] }>(
+			"DELETE",
+			`/projects/${projectId}`,
+		),
+};
+
+// --- This machine (packages/core-node/src/settings.ts) ---
+
+export const machine = {
+	get: () => api<{ person: string | null }>("GET", "/machine"),
+	setPerson: (person: string) =>
+		api<{ person: string }>("PATCH", "/machine", { fields: { person } }),
 };
 
 // --- Assets (packages/core/src/catalog/read.ts, edits.ts) ---

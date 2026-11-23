@@ -38,6 +38,7 @@ import AssetDetail from "./catalog/AssetDetail.tsx";
 import MediaPage from "./catalog/MediaPage.tsx";
 import CatalogOutputs from "./catalog/OutputsList.tsx";
 import CatalogOutput from "./catalog/OutputPage.tsx";
+import CatalogSettings from "./catalog/ProjectSettings.tsx";
 
 function RequireProject({ children }) {
 	const {
@@ -78,6 +79,7 @@ export default function App() {
 					<Route path="media" element={<MediaPage />} />
 					<Route path="outputs" element={<CatalogOutputs />} />
 					<Route path="outputs/:assetId" element={<CatalogOutput />} />
+					<Route path="settings" element={<CatalogSettings />} />
 				</Route>
 
 				{/* Main app — requires active project */}

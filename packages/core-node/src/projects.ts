@@ -1,6 +1,7 @@
 // The projects this machine knows (its settings), and whether each is still
-// where it was. Reads only: each catalog is opened read-only, so listing never
-// upgrades, moves or writes anything.
+// where it was. Listing reads only: each catalog is opened read-only, so it
+// never upgrades, moves or writes anything. Forgetting a project changes this
+// machine's settings and nothing in the project.
 
 import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
@@ -10,7 +11,7 @@ import {
 } from "@provenancetracker/core/catalog/format.ts";
 import type { Machine } from "./machine.ts";
 import { catalogPathOf } from "./project.ts";
-import { readSettings } from "./settings.ts";
+import { isProjectId, readSettings, updateSettings } from "./settings.ts";
 
 export interface KnownProject {
 	projectId: string;
@@ -75,4 +76,23 @@ export function knownProjects(machine: Machine): KnownProject[] {
 	return out.sort((a, b) =>
 		(a.name ?? a.folder).localeCompare(b.name ?? b.folder),
 	);
+}
+
+/**
+ * Forget a project on this machine: its folder, where its media folders are
+ * here and its signing files are dropped from this machine's settings. The
+ * project folder, its catalog and its media are not touched; opening the
+ * folder again brings the project back, and media folders outside it are
+ * located again.
+ * @returns whether this machine knew the project
+ */
+export function forgetProject(machine: Machine, projectId: string): boolean {
+	// Only a project id is ever a key (settings.ts), so "__proto__" is simply not known.
+	if (!isProjectId(projectId)) return false;
+	if (!Object.hasOwn(readSettings(machine.settingsPath).projects, projectId))
+		return false;
+	updateSettings(machine.settingsPath, (s) => {
+		delete s.projects[projectId];
+	});
+	return true;
 }

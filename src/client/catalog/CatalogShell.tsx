@@ -38,6 +38,9 @@ export default function CatalogShell() {
 							<NavLink to={`/catalog/${projectId}/outputs`} className={tab}>
 								Finished edits
 							</NavLink>
+							<NavLink to={`/catalog/${projectId}/settings`} className={tab}>
+								Settings
+							</NavLink>
 						</nav>
 						<WorkingNote projectId={projectId} />
 					</>

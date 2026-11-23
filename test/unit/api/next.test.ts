@@ -17,13 +17,18 @@ import path from "node:path";
 import { editRow } from "@provenancetracker/core/catalog/edit.ts";
 import type { Machine } from "@provenancetracker/core-node/machine.ts";
 import {
+	catalogPathOf,
 	createProject,
 	openProject,
 } from "@provenancetracker/core-node/project.ts";
 import { addRoot } from "@provenancetracker/core-node/roots.ts";
 import { scanProject } from "@provenancetracker/core-node/scan.ts";
-import { updateSettings } from "@provenancetracker/core-node/settings.ts";
+import {
+	readSettings,
+	updateSettings,
+} from "@provenancetracker/core-node/settings.ts";
 import { createApp } from "../../../src/server/app.ts";
+import { JobRunner } from "../../../src/server/api/jobs.ts";
 
 const ME = { kind: "person" as const, name: "Test Person" };
 const temps: string[] = [];
@@ -387,7 +392,73 @@ describe("editing through the catalog API", () => {
 			fields: { title: "x" },
 		});
 		expect(r.status).toBe(409);
-		expect(r.body.error).toMatch(/settings person/);
+		expect(r.body.error).toMatch(/Your name on this machine/);
+
+		// The name is this machine's, set from the Projects page.
+		expect((await api.get("/api/next/machine")).body).toEqual({ person: null });
+		for (const fields of [
+			{ person: "  " },
+			{ person: 5 },
+			{ person: "Two\nlines" },
+			{ person: "x".repeat(201) },
+			{ person: "A. Person", projects: {} },
+		])
+			expect((await api.patch("/api/next/machine", { fields })).status).toBe(
+				400,
+			);
+		expect(
+			(
+				await api.patch("/api/next/machine", {
+					fields: { person: " A. Person " },
+				})
+			).body,
+		).toEqual({ person: "A. Person" });
+		expect(readSettings(m.settingsPath).person).toBe("A. Person");
+		const again = await api.patch(`/api/next/projects/${projectId}/assets/1`, {
+			fields: { title: "x" },
+		});
+		expect(again.status).toBe(200);
+		expect(again.body.asset.history[0]).toMatchObject({
+			actorKind: "person",
+			actor: "A. Person",
+		});
+	});
+
+	it("forgets a project on this machine, leaving its folder, and not while work runs on it", async () => {
+		const dir = tempDir();
+		const m = machineIn(dir);
+		const { projectId, folder } = await demoProject(m, dir);
+		const jobs = new JobRunner();
+		const server = createApp({ env: {}, machine: m, catalog: { jobs } }).listen(
+			0,
+			"127.0.0.1",
+		);
+		servers.push(server);
+		await new Promise((r) => server.once("listening", r));
+		const at = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/next/projects`;
+		const forget = (id: string) => fetch(`${at}/${id}`, { method: "DELETE" });
+
+		let finish = () => {};
+		const job = jobs.start(
+			projectId,
+			"scan",
+			() => new Promise<void>((r) => (finish = r)),
+		);
+		const busy = await forget(projectId);
+		expect(busy.status).toBe(409);
+		expect(((await busy.json()) as { error: string }).error).toMatch(
+			/Work is running/,
+		);
+		finish();
+		await jobs.settled(job.id);
+
+		const gone = await forget(projectId);
+		expect(gone.status).toBe(200);
+		expect(await gone.json()).toEqual({ forgotten: projectId, projects: [] });
+		expect(existsSync(catalogPathOf(folder))).toBe(true);
+		expect((await fetch(`${at}/${projectId}`)).status).toBe(404);
+		expect((await forget(projectId)).status).toBe(404);
+		expect((await forget("__proto__")).status).toBe(404);
 	});
 
 	it("removes and restores an asset, and edits its credits and generation details", async () => {

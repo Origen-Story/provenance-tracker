@@ -324,4 +324,31 @@ describe("editSettings", () => {
 		expect(() => editSettings(db, { name: "  " }, ME)).toThrow(/needs a name/);
 		expect(() => editSettings(db, { author: 5 }, ME)).toThrow(/takes text/);
 	});
+
+	it("takes the identity link only as an https address, or empty", () => {
+		const { db } = withAsset();
+		expect(
+			editSettings(
+				db,
+				{ cawg_identity_url: " https://example.org/.well-known/id.json " },
+				ME,
+			),
+		).toEqual(["cawg_identity_url"]);
+		expect(row(db, "meta", "cawg_identity_url", "key").value).toBe(
+			"https://example.org/.well-known/id.json",
+		);
+		for (const bad of [
+			"example.org/id",
+			"http://example.org/id",
+			"javascript:alert(1)",
+			"file:///C:/id.json",
+			"https://user:secret@example.org/",
+		])
+			expect(() => editSettings(db, { cawg_identity_url: bad }, ME)).toThrow(
+				/https:\/\//,
+			);
+		expect(editSettings(db, { cawg_identity_url: "" }, ME)).toEqual([
+			"cawg_identity_url",
+		]);
+	});
 });

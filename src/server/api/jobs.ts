@@ -105,7 +105,6 @@ export class JobRunner {
 		return job && job.projectId === projectId ? view(job) : null;
 	}
 
-	/** This project's jobs, newest first. */
 	/** The job of this project running now, if any. */
 	running(projectId: string): JobView | null {
 		const job = [...this.jobs.values()].find(
@@ -114,6 +113,7 @@ export class JobRunner {
 		return job ? view(job) : null;
 	}
 
+	/** This project's jobs, newest first. */
 	list(projectId: string): JobView[] {
 		return [...this.jobs.values()]
 			.filter((j) => j.projectId === projectId)

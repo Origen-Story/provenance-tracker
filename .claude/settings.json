@@ -34,7 +34,6 @@
       "Edit(.env*)",
       "Edit(**/.env*)",
       "Edit(certs/**)",
-      "Edit(src/server/db/migrations/**)",
       "Bash(git push --force*)",
       "Bash(git push -f*)",
       "Bash(git push * --force*)",
@@ -47,8 +46,6 @@
       "Bash(git reset --hard*)",
       "Bash(git rebase*)",
       "Bash(git filter-repo*)",
-      "Bash(npm run db:push*)",
-      "Bash(npx drizzle-kit push*)",
       "Bash(rm -rf*)",
       "PowerShell(git push --force*)",
       "PowerShell(git push -f*)",
@@ -61,8 +58,6 @@
       "PowerShell(git add .)",
       "PowerShell(git reset --hard*)",
       "PowerShell(git rebase*)",
-      "PowerShell(npm run db:push*)",
-      "PowerShell(npx drizzle-kit push*)",
       "PowerShell(Remove-Item * -Recurse*)"
     ]
   },

@@ -561,6 +561,7 @@ export const outputs = {
 				sources: number;
 				matched: number;
 				clips: number;
+				carriedClasses: number;
 			};
 			timeline: Timeline;
 		}>("POST", `/projects/${projectId}/assets/${assetId}/timelines`, form);

@@ -1,0 +1,356 @@
+// Signing a finished edit: the certificate this machine signs the project
+// with, signing a new copy (a job: c2patool reads the film and each source),
+// and the signed copies so far.
+
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { fileUrl, outputs, projects, type AssetRecord } from "../api.ts";
+import { SIGNED_STATUS } from "../labels.ts";
+import { jobsKey, useJobs } from "../media/Jobs.tsx";
+import {
+	Button,
+	Card,
+	Checkbox,
+	Problem,
+	Section,
+	Status,
+	TextField,
+	when,
+} from "../ui.tsx";
+import { previewKey } from "./shared.tsx";
+
+export const signingKey = (projectId: string) => [
+	"catalog",
+	projectId,
+	"signing",
+];
+
+export function useSigning(projectId: string) {
+	return useQuery({
+		queryKey: signingKey(projectId),
+		queryFn: () => outputs.signing(projectId),
+	});
+}
+
+export default function SigningTab({
+	projectId,
+	asset,
+}: {
+	projectId: string;
+	asset: AssetRecord;
+}) {
+	return (
+		<div className="max-w-4xl space-y-8">
+			<Section title="Sign this edit">
+				<SignOutput projectId={projectId} asset={asset} />
+			</Section>
+			<Section title="Signed copies">
+				<SignedCopies projectId={projectId} asset={asset} />
+			</Section>
+			<Section title="What signs this project on this machine">
+				<SigningSetUp projectId={projectId} />
+			</Section>
+		</div>
+	);
+}
+
+/** Start signing, and follow it while it runs. Shared with a source asset's sidecar. */
+export function useSignJob(projectId: string, assetId: number) {
+	const qc = useQueryClient();
+	const jobs = useJobs(projectId);
+	const [jobId, setJobId] = useState<string | null>(null);
+	const start = useMutation({
+		mutationFn: (fields: Record<string, unknown>) =>
+			outputs.sign(projectId, assetId, fields),
+		onSuccess: (r) => {
+			setJobId(r.job.id);
+			qc.invalidateQueries({ queryKey: jobsKey(projectId) });
+		},
+	});
+	const job = jobs.data?.jobs.find((j) => j.id === jobId) ?? null;
+	const busy = jobs.data?.jobs.find((j) => j.state === "running") ?? null;
+	return { start, job, busy };
+}
+
+function SignOutput({
+	projectId,
+	asset,
+}: {
+	projectId: string;
+	asset: AssetRecord;
+}) {
+	const [timestamp, setTimestamp] = useState(true);
+	const signing = useSigning(projectId);
+	const preview = useQuery({
+		queryKey: previewKey(projectId, asset.id),
+		queryFn: () => outputs.preview(projectId, asset.id),
+	});
+	const { start, job, busy } = useSignJob(projectId, asset.id);
+	const next =
+		Math.max(
+			0,
+			...asset.signatures
+				.filter((s) => s.kind === "output")
+				.map((s) => s.version),
+		) + 1;
+	const blockers = [
+		...(signing.data && signing.data.problem ? [signing.data.problem] : []),
+		...(preview.data?.blockers ?? []),
+	];
+	const running = job?.state === "running";
+	return (
+		<Card className="space-y-3">
+			<p className="text-sm text-text-secondary">
+				Writes a new file beside the cut, <code>…signed.v{next}</code>, with
+				Content Credentials: the cut as parent, each asset the timeline uses
+				placed as an ingredient with its class, and the saved statement. The cut
+				itself is not changed. Ingredients that carry credentials of their own
+				keep them inside the new file.
+			</p>
+			<Checkbox
+				label="Add a trusted time stamp"
+				checked={timestamp}
+				onChange={setTimestamp}
+				hint="Sends a hash of the credentials, not the film, to DigiCert's time-stamp server."
+			/>
+			{blockers.length > 0 && (
+				<div className="text-xs text-warning space-y-0.5">
+					{blockers.map((b) => (
+						<p key={b}>{b}</p>
+					))}
+				</div>
+			)}
+			<div className="flex items-center gap-3">
+				<Button
+					onClick={() => start.mutate({ timestamp })}
+					disabled={blockers.length > 0 || start.isPending || running || !!busy}
+				>
+					{running ? "Signing…" : `Sign a new copy (v${next})`}
+				</Button>
+				{busy && !running && (
+					<span className="text-xs text-text-secondary">
+						Waiting for other work to finish.
+					</span>
+				)}
+			</div>
+			<Problem error={start.error} />
+			{job?.state === "failed" && <Problem error={job.error} />}
+			{job?.state === "done" && (
+				<p className="text-sm text-accent">
+					Signed. The new copy is listed below.
+				</p>
+			)}
+		</Card>
+	);
+}
+
+function SignedCopies({
+	projectId,
+	asset,
+}: {
+	projectId: string;
+	asset: AssetRecord;
+}) {
+	const summary = useQuery({
+		queryKey: ["catalog", projectId, "summary"],
+		queryFn: () => projects.summary(projectId),
+	});
+	const folders = new Map(
+		(summary.data?.roots ?? []).map((r) => [r.name, r.folder]),
+	);
+	const signed = asset.signatures
+		.filter((s) => s.kind === "output")
+		.slice()
+		.reverse();
+	if (signed.length === 0)
+		return (
+			<Card>
+				<p className="text-sm text-text-secondary">Not signed yet.</p>
+			</Card>
+		);
+	return (
+		<div className="space-y-2">
+			{signed.map((s) => {
+				const content = asset.contents.find((c) => c.sha256 === s.signedSha256);
+				const place =
+					content?.places.find((p) => p.live) ?? content?.places[0] ?? null;
+				const folder = place ? folders.get(place.root) : null;
+				const full = place && folder ? joinPath(folder, place.path) : null;
+				const ok = s.status === "valid" || s.status === "unrecognised_issuer";
+				return (
+					<Card key={s.id} className="space-y-1.5">
+						<div className="flex flex-wrap items-center gap-2">
+							<span className="text-sm font-medium text-text-primary">
+								v{s.version}
+							</span>
+							<span className="text-sm text-text-primary truncate">
+								{place ? `${place.root} / ${place.path}` : "file not found"}
+							</span>
+							<Status ok={ok}>
+								{SIGNED_STATUS[s.status] ?? (s.status || "not read back")}
+							</Status>
+							<span className="ml-auto text-xs text-text-secondary">
+								{when(s.signedAt)}
+							</span>
+						</div>
+						<p className="text-xs text-text-secondary">
+							Signed by {s.signerName || "an unnamed signer"} with {s.engine}
+							{s.timestamped ? ", time-stamped" : ", no trusted time stamp"}
+							{place &&
+								!place.live &&
+								". The file is not where it was last seen"}
+						</p>
+						<div className="flex flex-wrap gap-3 text-xs">
+							{place?.live && (
+								<a
+									href={fileUrl(projectId, s.signedSha256)}
+									download
+									className="text-accent hover:underline"
+								>
+									Download the signed copy
+								</a>
+							)}
+						</div>
+						{full && (
+							<p className="text-xs text-text-secondary break-all">
+								Check it yourself, from the tracker's folder:{" "}
+								<code className="bg-border/40 px-1 rounded select-all">
+									tools\c2patool\c2patool.exe "{full}"
+								</code>
+							</p>
+						)}
+					</Card>
+				);
+			})}
+		</div>
+	);
+}
+
+/** A root's folder and a catalog path (always /), in the folder's own style. */
+function joinPath(folder: string, rel: string) {
+	const sep = folder.includes("\\") ? "\\" : "/";
+	return `${folder.replace(/[\\/]+$/, "")}${sep}${rel.split("/").join(sep)}`;
+}
+
+export function SigningSetUp({ projectId }: { projectId: string }) {
+	const qc = useQueryClient();
+	const status = useSigning(projectId);
+	const [certificate, setCertificate] = useState("");
+	const [key, setKey] = useState("");
+	const [editing, setEditing] = useState(false);
+	const take = (s: Awaited<ReturnType<typeof outputs.signing>>) => {
+		qc.setQueryData(signingKey(projectId), s);
+		qc.invalidateQueries({ queryKey: ["catalog", projectId, "asset"] });
+		setEditing(false);
+		setCertificate("");
+		setKey("");
+	};
+	const save = useMutation({
+		mutationFn: () =>
+			outputs.setSigning(projectId, certificate.trim(), key.trim()),
+		onSuccess: take,
+	});
+	const forget = useMutation({
+		mutationFn: () => outputs.clearSigning(projectId),
+		onSuccess: take,
+	});
+	const s = status.data;
+	const c = s?.certificate;
+	return (
+		<Card className="space-y-3">
+			<Problem error={status.error} />
+			{s && (
+				<div className="space-y-1 text-sm">
+					<div className="flex items-center gap-2">
+						<Status ok={s.configured && !s.problem}>
+							{!s.configured
+								? "not set up"
+								: s.problem
+									? "needs attention"
+									: "ready"}
+						</Status>
+						{s.problem && (
+							<span className="text-warning text-xs">{s.problem}</span>
+						)}
+					</div>
+					{c && (
+						<p className="text-xs text-text-secondary">
+							Certificate for{" "}
+							<span className="text-text-primary">{c.commonName}</span>, issued
+							by {c.issuer}, valid until {c.validTo.slice(0, 10)}. Fingerprint{" "}
+							<span className="font-mono">{c.fingerprint.slice(0, 16)}…</span>
+						</p>
+					)}
+					<p className="text-xs text-text-secondary">
+						Kept in this machine's settings, never in the project: a copy of the
+						project elsewhere is set up there. The files' paths are not shown
+						again.
+					</p>
+				</div>
+			)}
+			{editing || (s && !s.configured) ? (
+				<form
+					className="space-y-3"
+					onSubmit={(e) => {
+						e.preventDefault();
+						if (certificate.trim() && key.trim()) save.mutate();
+					}}
+				>
+					<div className="grid md:grid-cols-2 gap-3">
+						<TextField
+							label="Certificate file"
+							value={certificate}
+							onChange={setCertificate}
+							placeholder="C:\Certificates\signer.pem"
+							hint="Its full path. A PEM file with the certificate chain."
+						/>
+						<TextField
+							label="Private key file"
+							value={key}
+							onChange={setKey}
+							placeholder="C:\Certificates\signer.key"
+							hint="Its full path. Read only when signing; never sent back."
+						/>
+					</div>
+					<div className="flex gap-2">
+						<Button
+							type="submit"
+							disabled={!certificate.trim() || !key.trim() || save.isPending}
+						>
+							{save.isPending ? "Checking…" : "Use these files"}
+						</Button>
+						{editing && (
+							<Button quiet onClick={() => setEditing(false)}>
+								Cancel
+							</Button>
+						)}
+					</div>
+					<Problem error={save.error} />
+				</form>
+			) : (
+				s?.configured && (
+					<div className="flex gap-2">
+						<Button quiet onClick={() => setEditing(true)}>
+							Use other files
+						</Button>
+						<Button
+							quiet
+							disabled={forget.isPending}
+							onClick={() => {
+								if (
+									confirm(
+										"Forget the certificate and key for this project on this machine? The files are not touched.",
+									)
+								)
+									forget.mutate();
+							}}
+						>
+							Forget them here
+						</Button>
+					</div>
+				)
+			)}
+			<Problem error={forget.error} />
+		</Card>
+	);
+}

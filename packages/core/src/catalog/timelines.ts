@@ -679,7 +679,9 @@ export function timelineRecord(db: DatabaseSync, id: number) {
 			db
 				.prepare(
 					`SELECT s.id, s.source_key, s.kind, s.name, s.path, s.asset_id, s.match_method, s.match_confidence,
-					        a.title AS asset_title, (SELECT count(*) FROM timeline_clips c WHERE c.source_id = s.id) AS clips
+					        a.title AS asset_title, a.origin_class AS asset_class,
+					        a.origin_class_confirmed AS asset_confirmed, a.ai_assisted AS asset_ai,
+					        (SELECT count(*) FROM timeline_clips c WHERE c.source_id = s.id) AS clips
 					 FROM timeline_sources s LEFT JOIN assets a ON a.id = s.asset_id
 					 WHERE s.timeline_id = ? ORDER BY s.id`,
 				)
@@ -692,6 +694,10 @@ export function timelineRecord(db: DatabaseSync, id: number) {
 			path: s.path as string,
 			assetId: (s.asset_id as number | null) ?? null,
 			assetTitle: (s.asset_title as string | null) ?? null,
+			/** The matched asset's class, which the source's clips follow unless a clip has its own. */
+			assetClass: (s.asset_class as string | null) ?? null,
+			assetClassConfirmed: s.asset_confirmed === 1,
+			assetAiAssisted: s.asset_ai === 1,
 			matchMethod: s.match_method as string,
 			matchConfidence: s.match_confidence as number,
 			clips: s.clips as number,

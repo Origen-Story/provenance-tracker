@@ -25,6 +25,7 @@ import { certificateInfo } from "../src/sign/c2patool-sign.ts";
 import { signAsset } from "../src/sign/sign-asset.ts";
 import {
 	NotReadyError,
+	previewOutputStatement,
 	signOutput,
 	type SigningEngine,
 } from "../src/sign/sign-output.ts";
@@ -266,6 +267,87 @@ describe.skipIf(!haveOpenssl)("signing settings", () => {
 		);
 		clearSigning(w.m, w.p.projectId);
 		expect((await signingStatus(w.m, w.p.projectId)).configured).toBe(false);
+	});
+});
+
+describe("previewOutputStatement", () => {
+	const fixedNow = () => "2026-01-02T03:04:05.000Z";
+	it("builds the statement signing would, and writes nothing", async () => {
+		const w = await world({ signing: false });
+		const before = JSON.stringify([
+			w.p.db.prepare("SELECT * FROM timelines").all(),
+			w.p.db.prepare("SELECT count(*) AS n FROM history").get(),
+			w.p.db.prepare("SELECT count(*) AS n FROM runs").get(),
+		]);
+		const r = previewOutputStatement(w.p, w.m, {
+			assetId: w.film.id,
+			now: fixedNow,
+		});
+		expect(r.blockers).toEqual([]);
+		expect(r.ingredientAssetIds).toEqual([
+			w.id("still.png").id,
+			w.id("tone.wav").id,
+		]);
+		expect(r.statement).toMatchObject({
+			statedAt: "2026-01-02T03:04:05.000Z",
+			text: "A still and a tone.",
+			author: "A. Maker",
+			output: { title: "export.png" },
+			ingredients: [
+				{ ref: "ing-1", title: "still.png" },
+				{ ref: "ing-2", title: "tone.wav" },
+			],
+			unresolved: [],
+		});
+		expect(
+			JSON.stringify([
+				w.p.db.prepare("SELECT * FROM timelines").all(),
+				w.p.db.prepare("SELECT count(*) AS n FROM history").get(),
+				w.p.db.prepare("SELECT count(*) AS n FROM runs").get(),
+			]),
+		).toBe(before);
+	});
+
+	it("says what stops signing: no statement, a placed file not here", async () => {
+		const w = await world({ signing: false, statement: false });
+		rmSync(path.join(w.media, "tone.wav"));
+		const r = previewOutputStatement(w.p, w.m, { assetId: w.film.id });
+		expect(r.blockers).toEqual([
+			"Write and save the creator statement before signing.",
+			expect.stringMatching(
+				/files the timeline places are not on this machine/,
+			),
+		]);
+		// The missing file is still listed, named from where it was last seen.
+		expect(r.statement).toMatchObject({
+			text: "",
+			ingredients: [{ title: "still.png" }, { title: "tone.wav" }],
+		});
+	});
+
+	it("needs a timeline, and is only for an output", async () => {
+		const w = await world({ signing: false });
+		w.p.db.prepare("DELETE FROM timeline_clips").run();
+		expect(() =>
+			previewOutputStatement(w.p, w.m, { assetId: w.id("still.png").id }),
+		).toThrow(NotReadyError);
+	});
+});
+
+describe.skipIf(!haveOpenssl)("previewOutputStatement and signOutput", () => {
+	it("preview and signing build the same statement", async () => {
+		const w = await world();
+		const now = () => "2026-01-02T03:04:05.000Z";
+		const preview = previewOutputStatement(w.p, w.m, {
+			assetId: w.film.id,
+			now,
+		});
+		const { engine } = stubEngine();
+		const r = await signOutput(w.p, w.m, { assetId: w.film.id, engine, now });
+		const signed = w.p.db
+			.prepare("SELECT statement FROM signatures WHERE id = ?")
+			.get(r.signatureId) as { statement: string };
+		expect(JSON.parse(signed.statement)).toEqual(preview.statement);
 	});
 });
 

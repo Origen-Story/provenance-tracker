@@ -53,7 +53,10 @@ import { showable, streamFile } from "./stream.ts";
 import { signAsset } from "@provenancetracker/core-node/sign/sign-asset.ts";
 import {
 	c2patoolEngine,
+	NotReadyError,
+	previewOutputStatement,
 	signOutput,
+	TIMESTAMP_URL,
 	type SigningEngine,
 } from "@provenancetracker/core-node/sign/sign-output.ts";
 import {
@@ -1152,6 +1155,27 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 		},
 	);
 
+	// What an output would be signed with now, from the same builder signing
+	// uses, and what stops it being signed here. Reads only.
+	api.get(
+		"/projects/:projectId/assets/:assetId/statement-preview",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.assetId, "asset");
+			withProject(machine, String(req.params.projectId), (project) => {
+				try {
+					res.json(previewOutputStatement(project, machine, { assetId: id }));
+				} catch (err) {
+					if (err instanceof NotReadyError)
+						throw new HttpError(
+							err.message === "There is no such asset" ? 404 : 400,
+							err.message,
+						);
+					throw err;
+				}
+			});
+		},
+	);
+
 	// --- Signing, the public export and previews (D41) ---
 
 	// Whether this project can be signed here, and with which certificate. Never a path.
@@ -1216,7 +1240,9 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 		(req: Request, res: Response) => {
 			const id = idParam(req.params.assetId, "asset");
 			const { fields } = editBody(req);
-			// An output takes only a time-stamp address; a source asset also who made it and how.
+			// An output takes only whether to time-stamp; a source asset also who
+			// made it and how. The time-stamp server is the tracker's own
+			// (docs/network.md), never an address from the request.
 			const ASSET_FIELDS = [
 				"creator_name",
 				"organization",
@@ -1225,14 +1251,17 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 				"training_mining_opt_out",
 			];
 			const unknown = Object.keys(fields).filter(
-				(k) => k !== "timestamp_url" && !ASSET_FIELDS.includes(k),
+				(k) => k !== "timestamp" && !ASSET_FIELDS.includes(k),
 			);
 			if (unknown.length)
 				throw new HttpError(400, `Signing has no field ${unknown.join(", ")}`);
+			if (
+				fields.timestamp !== undefined &&
+				typeof fields.timestamp !== "boolean"
+			)
+				throw new HttpError(400, "timestamp is true or false");
 			const timestampUrl =
-				typeof fields.timestamp_url === "string"
-					? fields.timestamp_url
-					: undefined;
+				fields.timestamp === true ? TIMESTAMP_URL : undefined;
 			const text = (k: string) =>
 				typeof fields[k] === "string" ? (fields[k] as string) : undefined;
 			person(machine);

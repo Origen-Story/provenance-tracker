@@ -57,3 +57,12 @@ export function bytes(n: number): string {
 	}
 	return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`;
 }
+
+/** How a signed copy read back (manifest/verify.js STATUS_LABELS). */
+export const SIGNED_STATUS: Record<string, string> = {
+	valid: "Valid",
+	unrecognised_issuer: "Valid, unrecognised issuer",
+	hash_mismatch: "Content does not match the signature",
+	invalid: "Invalid",
+	absent: "No Content Credentials",
+};

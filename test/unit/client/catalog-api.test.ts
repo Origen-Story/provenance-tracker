@@ -9,6 +9,7 @@ import type { AddressInfo } from "node:net";
 import {
 	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	realpathSync,
 	rmSync,
 	writeFileSync,
@@ -29,6 +30,7 @@ import {
 	assets,
 	fileUrl,
 	media,
+	outputs,
 	projects,
 	type Job,
 } from "../../../src/client/catalog/api.ts";
@@ -97,6 +99,18 @@ async function world() {
 		folder,
 		mediaDir,
 	};
+}
+
+/** Wait for a job to end, asking as the page does. */
+async function settle(projectId: string, job: Job) {
+	for (let i = 0; i < 200; i++) {
+		const now = (await media.jobs(projectId)).jobs.find(
+			(j) => j.id === job.id,
+		)!;
+		if (now.state !== "running") return now;
+		await new Promise((r) => setTimeout(r, 25));
+	}
+	throw new Error("the job did not finish");
 }
 
 describe("the asset pages' API client", () => {
@@ -254,6 +268,121 @@ describe("the asset pages' API client", () => {
 		]);
 		await expect(media.cancel(w.projectId, "no-such-job")).rejects.toThrow(
 			/no such job/,
+		);
+	});
+});
+
+describe("the finished edit pages' API client", () => {
+	it("imports a timeline, fixes a match and a clip, previews and saves the statement, and refuses to sign unset", async () => {
+		const w = await world();
+		// The committed sample timeline names these files; its paths are another machine's.
+		writeFileSync(path.join(w.mediaDir, "Clip 01.mp4"), "clip one");
+		writeFileSync(path.join(w.mediaDir, "Still 02.png"), "still two");
+		mkdirSync(path.join(w.mediaDir, "exports"));
+		writeFileSync(path.join(w.mediaDir, "exports", "film.mp4"), "the cut");
+		await settle(w.projectId, (await media.start(w.projectId, "scan")).job);
+		const film = (await assets.list(w.projectId, { q: "film" })).assets[0].id;
+		await assets.edit(w.projectId, film, { is_output: true });
+		expect(
+			(await assets.list(w.projectId, { outputs: true })).assets.map(
+				(a) => a.id,
+			),
+		).toEqual([film]);
+
+		const sample = readFileSync(
+			path.resolve("packages/core/test/fixtures/timeline/sample.xmeml.xml"),
+		);
+		const imported = await outputs.importTimeline(
+			w.projectId,
+			film,
+			new File([sample], "sample.xml"),
+		);
+		expect(imported.import.clips).toBeGreaterThan(0);
+		const t = await outputs.timeline(w.projectId, imported.timeline.id);
+		expect(t.outputAssetId).toBe(film);
+		expect(t.breakdown?.composition?.picture?.intervals.length).toBeGreaterThan(
+			0,
+		);
+		const file = t.sources.find((s) => s.kind === "file" && s.assetId)!;
+		expect(file).toMatchObject({
+			assetClass: expect.any(String),
+			assetClassConfirmed: false,
+		});
+
+		// A person says a source is another asset, then that it is none.
+		const picked = await outputs.matchSource(
+			w.projectId,
+			t.id,
+			file.id,
+			w.still,
+		);
+		expect(picked.timeline.sources.find((s) => s.id === file.id)).toMatchObject(
+			{ assetId: w.still, matchMethod: "manual" },
+		);
+		const none = await outputs.matchSource(w.projectId, t.id, file.id, null);
+		expect(none.timeline.sources.find((s) => s.id === file.id)?.assetId).toBe(
+			null,
+		);
+		const clip = t.clips[0];
+		const set = await outputs.setClipClass(
+			w.projectId,
+			t.id,
+			clip.id,
+			"digitalCreation",
+		);
+		expect(set.timeline.clips[0].originClass).toBe("digitalCreation");
+		const back = await outputs.setClipClass(w.projectId, t.id, clip.id, null);
+		expect(back.timeline.clips[0].originClass).toBe(null);
+
+		// The preview says what stops signing until the statement is saved.
+		const before = await outputs.preview(w.projectId, film);
+		expect(before.blockers).toContain(
+			"Write and save the creator statement before signing.",
+		);
+		const saved = await outputs.saveStatement(w.projectId, film, {
+			text: "A cut of two clips.",
+			author: "A. Maker",
+			organization: "",
+			edited_with: "An editor",
+		});
+		expect(saved.asset.statements[0]).toMatchObject({
+			text: "A cut of two clips.",
+			editedWith: "An editor",
+		});
+		const after = await outputs.preview(w.projectId, film);
+		expect(after.blockers).toEqual([]);
+		expect(after.statement).toMatchObject({
+			text: "A cut of two clips.",
+			output: { title: "film.mp4" },
+		});
+		expect(after.ingredientAssetIds).toHaveLength(
+			after.statement!.ingredients.length,
+		);
+
+		// Nothing signs here yet: the set-up says so, a wrong path is refused, and signing fails in words.
+		expect(await outputs.signing(w.projectId)).toMatchObject({
+			configured: false,
+			certificate: null,
+		});
+		await expect(
+			outputs.setSigning(w.projectId, "cert.pem", "key.pem"),
+		).rejects.toThrow(/full path/);
+		const sign = await outputs.sign(w.projectId, film, {
+			timestamp: true,
+		});
+		expect(await settle(w.projectId, sign.job)).toMatchObject({
+			kind: "sign",
+			state: "failed",
+			error: expect.stringMatching(/certificate and key/),
+		});
+		expect(await outputs.clearSigning(w.projectId)).toMatchObject({
+			configured: false,
+		});
+
+		await outputs.removeTimeline(w.projectId, t.id);
+		expect((await assets.get(w.projectId, film)).timelines).toEqual([]);
+		await expect(outputs.publicExport(w.projectId, 999)).rejects.toBeInstanceOf(
+			ApiError,
 		);
 	});
 });

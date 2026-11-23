@@ -1,6 +1,6 @@
 /**
  * Timeline format registry, mirroring the platform-parser registry in
- * src/server/lib/extraction/parsers/index.js.
+ * packages/core/src/extraction/parsers/index.js.
  *
  * Each module exports `id`, `label`, `detect(xmlText)` and `parse(xmlText)`
  * returning the normalised timeline shape documented in ./xmeml.js. To add a

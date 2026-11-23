@@ -12,7 +12,6 @@ export default tseslint.config(
 			".claude/**",
 			"dist/**",
 			"coverage/**",
-			"src/server/db/migrations/**",
 			"packages/*/test/fixtures/**",
 			"test-fixtures/**",
 			"tools/**",

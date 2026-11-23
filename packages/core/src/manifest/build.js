@@ -11,7 +11,7 @@
 // or `c2pa.opened` on its own manifest when it already has one.
 //
 // The definitions are what c2patool takes with `-m` (see
-// src/server/lib/manifest/c2patool.js). Signer fields (key, certificate,
+// packages/core-node/src/sign/c2patool-sign.ts). Signer fields (key, certificate,
 // timestamp URL) and ingredient file paths are added by that IO wrapper, so
 // nothing here touches the disk or knows where a key lives. No absolute path
 // goes into a manifest: titles are file names only.

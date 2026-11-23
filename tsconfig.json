@@ -30,5 +30,5 @@
 		"scripts/**/*",
 		"test/**/*"
 	],
-	"exclude": ["src/server/db/migrations/**", "packages/*/test/fixtures/**"]
+	"exclude": ["packages/*/test/fixtures/**"]
 }

@@ -9,7 +9,7 @@ import {
 
 const IPTC = "http://cv.iptc.org/newscodes/digitalsourcetype/";
 
-// Summaries shaped like src/server/lib/extraction/c2pa.js buildSummary(),
+// Summaries shaped like the C2PA reader's summary (the old app's buildSummary()),
 // taken from real files: a Pixel 10 Pro clip, a Firefly clip, an ElevenLabs
 // voice line, and a Premiere 2026 export with placed ingredients.
 const pixel = {

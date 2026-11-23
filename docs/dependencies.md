@@ -10,17 +10,9 @@ A tool that signs files is worth attacking through its dependencies: a tampered 
 4. **Helper programs are pinned and checksummed.** Programs the app runs that do not come from npm are downloaded by `npm run tools:fetch` at the version in [`scripts/lib/pinned-tools.mjs`](../scripts/lib/pinned-tools.mjs), and each download must match the SHA-256 recorded there. A bump changes the version and every checksum in one commit. ExifTool arrives through the `exiftool-vendored` npm package, so rule 2 covers it.
 5. **GitHub Actions are pinned to commits**, with the version in a comment; Renovate updates both together.
 
-## What is due to go
+## Removed with the app cutover
 
-These are already recorded and leave as the roadmap reaches them, not in a clean-up pass:
-
-| Package                            | Why it goes                                                                                                                                              | When          |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| `pg`, `drizzle-orm`, `drizzle-kit` | The catalog moves to SQLite on Node's built-in `node:sqlite` with plain SQL (D14)                                                                        | App cutover   |
-| `@notionhq/client`                 | Notion sync is parked at `v0.2.0`                                                                                                                        | App cutover   |
-| `c2pa-node` 0.5.26                 | Replaced by `@contentauth/c2pa-node` (D15); it also brings the `sharp` advisories allowed in `scripts/audit.mjs` and a runtime copy of `@changesets/cli` | Signing seams |
-
-`png-chunk-text` and `png-chunks-extract` were removed with this policy: nothing imported them (`src/server/lib/extraction/png-chunks.js` reads PNG chunks itself).
+`pg`, `drizzle-orm` and `drizzle-kit` went when the app moved onto the project catalogs, which use SQLite through Node's built-in `node:sqlite` with plain SQL (D14, D49). `@notionhq/client` went with the parked Notion sync, and `c2pa-node` 0.5.26 with the old reader, taking the `sharp` advisories that `scripts/audit.mjs` allowed with it: reading and signing are c2patool's. `png-chunk-text` and `png-chunks-extract` went earlier: nothing imported them (`packages/core-node/src/extract/png-text.ts` reads PNG chunks itself).
 
 ## When adding the C2PA library
 

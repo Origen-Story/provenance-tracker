@@ -107,7 +107,7 @@ async function world(pages: Parameters<typeof web>[0] = {}) {
 	}).listen(0, "127.0.0.1");
 	servers.push(server);
 	await new Promise((r) => server.once("listening", r));
-	const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/next/projects/${projectId}`;
+	const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/projects/${projectId}`;
 	const call = async (method: string, url: string, body?: unknown) => {
 		const res = await fetch(base + url, {
 			method,

@@ -1,145 +1,91 @@
 # Architecture notes
 
-Explanations that used to live in `CLAUDE.md`. `CLAUDE.md` is rules only; this file is the why and the how.
+Explanations that used to live in `CLAUDE.md`. `CLAUDE.md` is rules only; this file is the why and the how. The decisions behind each part are numbered in `docs/decisions.md`.
 
 ## Tech stack
 
-- **Frontend:** React 19, React Router v8, TanStack Query v5, Tailwind CSS v4 (dark theme in `src/client/app.css`)
-- **Backend:** Express 5 (Node 24)
-- **Database:** PostgreSQL via Drizzle ORM + `pg`
-- **Build:** Vite with `@vitejs/plugin-react`
-- **Dev:** `concurrently` runs Express (port 3001) and the Vite dev server (port 5173, proxies `/api` to Express)
-- **Extraction:** `exiftool-vendored` (EXIF and container tags, including video duration, frame rate and codec), `c2pa-node` (C2PA read, optional) with the bundled `c2patool` as the fallback reader and the only signer (installed by `npm run tools:fetch`), and a small PNG chunk reader of its own (`packages/core/src/extraction/png-text.ts`). The ExifTool, c2patool and PNG readers live in `packages/core-node/src/extract/`; the app's `src/server/lib/extraction/` wraps them and keeps the `c2pa-node` fast path until the cutover (D30). Each reader returns an observation (`packages/core/src/extraction/observation.ts`): reader and version, status, the full data made JSON-safe (binary fields reduced to size and SHA-256, location tags left out) and, for C2PA, the validation; see D21. The current app stores only the summaries it stored before, with `validation` added to `c2paJson`. The pure modules name an asset by an opaque `ref` (`packages/core/src/asset-ref.ts`); the old app makes refs from its table and row id at its edges (D23).
+- **Runtime:** Node 24, with its built-in SQLite (`node:sqlite`). TypeScript with erasable syntax only (D16), run directly by Node; older modules stay JavaScript until converted.
+- **Frontend:** React 19, React Router 8, TanStack Query 5, Tailwind CSS 4 (dark theme in `src/client/app.css`), built by Vite.
+- **Backend:** Express 5, the local API on `/api`.
+- **Dev:** `concurrently` runs the server (port 3001) and the Vite dev server (port 5173, proxying `/api` to the server).
+- **Helper programs:** ExifTool (through `exiftool-vendored`) and `c2patool`, which reads and signs C2PA credentials (installed by `npm run tools:fetch`, pinned and checksummed). c2patool rather than a native binding, because Windows Smart App Control can block the binding.
 
-## Project structure
+## The shape of it
+
+A project is a folder. Its catalog is one SQLite file, `<project>/.provenancetracker/catalog.sqlite`, with the timeline files it imported kept beside it in `timelines/`. The catalog records files as a named media folder (a root) plus a path inside it, so the project can be copied, archived or moved whole. Which folder each project and each root outside it is in on this machine, the person's name, and the signing certificate and key live in this machine's settings, which never travel with a project (D28). Moving to another machine is: copy the folder, open it, locate any root outside it.
 
 ```
 packages/
-  core/                    # @provenancetracker/core: pure logic, no IO (D24)
+  core/          # @provenancetracker/core: pure logic, no file access (D24; lint enforces it)
     src/
-      origin-vocabulary.js # Origin classes (IPTC digital source types), shared with the client
-      asset-ref.ts         # The opaque asset reference (D23)
-      extraction/          # Observation shape, platform parsers + their dispatch, video tags
-      manifest/            # Manifest builder, public export, verification report
-      origin/              # Origin classifier
-      relationships/       # Enhancer-output auto-link
-      timeline/            # Timeline formats, matching, composition, breakdown
-    test/                  # Its unit tests and their fixtures
-src/                       # The app (moves to packages/app in the cutover)
-  client/                  # React frontend (Vite root)
-    components/layout/     # AppShell, Sidebar, PageHeader
-    pages/                 # Route pages (Dashboard, ImportHub, Settings, ...)
-      ai-assets/           # AI asset list + detail
-      archival/            # Archival list + detail
-      produced/            # Produced asset list + detail
-      outputs/             # Finished edits: composition view, clip list (D10)
-      projects/            # Project list + creation
-    App.jsx                # React Router config
-    main.jsx               # Entry point
-  server/
-    db/                    # Drizzle schema, migrations, connection
-    lib/                   # The app's logic per area: database, files, child processes
-      archival/            # Archival CRUD, Notion sync, URL extraction
-      assets/              # AI asset CRUD
-      core/                # Shared constants, file utilities (hash, MIME)
-      extraction/          # EXIF, C2PA, PNG chunk extraction + platform parsers
-      produced/            # Produced asset CRUD
-      search/              # Wikimedia search, job queue, rate limiter
-      dashboard.js         # Dashboard stats + enrichment conditions
-      integrity.js         # File integrity checks (orphans, missing)
-      projects.js          # Project CRUD + storage folder management
-    routes/                # Express route handlers (IO lives here)
-    index.js               # Express entry point
+      catalog/   # the catalog format (schema-v1.ts, spec/catalog/), reading, edits with history, timelines, signatures, rescan
+      extraction/# observations, platform parsers and their dispatch
+      origin/    # the origin classifier; origin-vocabulary.js holds the classes
+      timeline/  # timeline formats, matching, composition, breakdown
+      manifest/  # manifest and creator statement builder, public export, verification report
+      legacy/    # reading the old Postgres app's dumps, for the migration (D33-D35)
+  core-node/     # @provenancetracker/core-node: what touches the machine (D28)
+    src/         # project folders, this machine's settings, roots, scan, extract (ExifTool, c2patool, PNG), timeline import,
+                 # signing (sign/), the migration (legacy/), the command line (cli/)
+src/
+  server/        # index.js starts the server; app.ts is the app (tests run it on a port of their own);
+                 # api/catalog.ts is every route; api/jobs.ts runs long work
+  client/        # main.jsx and App.jsx; the pages in catalog/, the composition strip in components/timeline/
+public-viewer/   # the static public page section for a signed film's record (plain JavaScript, no build step)
+spec/            # the catalog format, the creator statement and the public export, with their schemas
 ```
 
-## Database
+Core runs SQL on a catalog it is handed and never opens a file; core-node opens catalogs, reads folders and runs ExifTool and c2patool; the server's routes are thin: each request opens the project's catalog by the id in the URL, runs the work in a transaction, and closes it. There is no global "active project" and no database server.
 
-Schema in `src/server/db/schema.js`; committed migrations in `src/server/db/migrations/`. Connection via `DATABASE_URL` in `.env`.
+## The catalog
 
-Workflow for any schema change: edit `schema.js`, run `npm run db:generate`, review the SQL, make it idempotent (`IF NOT EXISTS` on every `CREATE TABLE` and `ADD COLUMN`), commit the SQL with its `meta/` snapshot, run `npm run db:migrate`. `db:push` is not used: it bypasses migration tracking and can silently drop columns.
+Tables (spec/catalog/catalog.v1.sql): `meta` (the project's settings), `runs` (each scan, read, classify, import or signing, with its tool and outcome), `roots`, `assets` with `credits` and `generation`, `contents` (each distinct file by SHA-256, a version of an asset), `locations` (where each content is), `observations` (what a reader said about a file, in full), `relationships`, `timelines` with `timeline_sources` and `timeline_clips`, `statements` (each save a new row), `signatures`, and `history`.
 
-Why idempotent: a private downstream fork of this repo carries its own migrations against the same tables. When it merges public `main`, public migrations run against a database that may already have some of those columns. `IF NOT EXISTS` makes that merge survivable. See `docs/decisions.md` D6.
+A human-editable field (catalog/fields.ts) changes only through catalog/edit.ts, which writes a `history` row in the same transaction: who (a person, the tool with its run, or `legacy` for values carried from Postgres), when, the old and new value, a note and the evidence. A tool never overwrites what a person set or confirmed.
 
-### Tables
+A rescan reads only new or changed files. The same bytes at a new path are the same content (a move); other bytes at a known path are a new version of the same asset (a re-render), unless those bytes are already known; a folder that is not there says nothing about its files.
 
-- `projects`: multi-project support with per-project module toggles
-- `assets` + `generation_params` + `asset_metadata`: AI-generated assets
-- `archival_assets`: archival images (museums, archives, historical sources)
-- `produced_assets`: original recordings (audio, video, photos)
-- `asset_relationships`: links between any two assets as `(type, id)` pairs across the three asset tables (D4), with `relationship_type` (`ingredient`, `derived_from`, `output_of`), `match_method` and `confidence`. No foreign keys; each table's delete function removes its rows.
-- `manifests`: legacy, unused (empty); superseded by `signatures`
-- `creator_statements`: the creator statement for an output (words and author; the numbers are built at sign time)
-- `in_place` on `assets`, `archival_assets`, `produced_assets` (D12): the row's `file_path` is the file where it already lived, not a managed copy
-- Public export (phase 4d): `packages/core/src/manifest/public-export.js` (pure) builds it from one `signatures` row of kind `output`; schema `spec/public-export.v1.schema.json`; `GET /api/outputs/:id/public-export?signature=<id>&download=1`. c2patool does not keep our ingredient labels in its read-back (it renames them `c2pa.ingredient.v3`, `__1`, ... in the order given), so read-back entries are paired with statement ingredients by position and file name
-- `public_title` on the same three tables: the name the public viewer shows, empty for the file name. Signed into the creator statement (v2) as `publicTitle` on the output and each ingredient; the C2PA ingredient `title` stays the file name. Statement v3 adds `originClass` and `position` to each `unresolved` clip (a nested sequence or unmatched clip classed by hand), so the public viewer can list it under its kind; the export still leaves clip names out
-- `signatures`: every signed copy of an asset or output: the new file, its hash, the manifest definition without key paths, the c2patool read-back and its status
-- `search_groups`, `search_jobs`, `search_candidates`: Wikimedia archive search
-- `project_config`: legacy single-project config (kept for migration)
+## Origin classes
 
-### Origin classes
+Every asset has an origin class, an IPTC Digital Source Type code or `unknown` (D11; definitions in `docs/vocabulary.md`), whether it is confirmed, where the proposal came from, a note, and whether AI assisted. The vocabulary lives in `packages/core/src/origin-vocabulary.js`, shared with the client: labels, the picker's short list, each class's spectrum position (captured, digital, assisted, hybrid, synthetic, unknown), and the class of a composite.
 
-Every asset row carries `origin_class`, `origin_class_confirmed`, `origin_class_source` and `origin_class_note`. The class is an IPTC Digital Source Type code or `unknown` (D11; definitions in `docs/vocabulary.md`). The vocabulary lives in `packages/core/src/origin-vocabulary.js`, pure data and functions imported by both the server and the client: labels, the picker's short list, the spectrum position of each class, `normalizeSourceType` (URIs, bare codes, retired codes), `spectrumPosition`, and `compositeClassFor`.
+The classifier (`packages/core/src/origin/classify.js`, run on the catalog by catalog/classify.ts) proposes a class from what the file said, in order: a C2PA manifest (component ingredients make a composite; otherwise its declared source type, with known tool quirks corrected), an enhancer following its `derived_from` parent, unsigned XMP or IPTC hints, then the asset's kind. Enhancer outputs (Topaz) are linked to a same-stem parent by `relationships/auto-link.js`.
 
-Beside the class sit three attributes: `signed_by` and `signer_name` (who vouches for the file's credentials: the capture device, the tool that made it, or the creator at ingest), `ai_assisted` (an AI wrote the instructions and an ordinary program made the pixels), and archive origin, which is simply the asset's table.
+Colour belongs to the spectrum position, not the class: six CSS custom properties, `--pt-origin-captured`, `-digital`, `-assisted`, `-hybrid`, `-synthetic` and `-unknown`, in `src/client/app.css`. Badges, the composition strip and the public viewer read only those.
 
-The pure classifier in `packages/core/src/origin/classify.js` proposes a class at import from the stored signals, in this order: a C2PA manifest (component ingredients make a composite; otherwise the declared source type is kept, with the known tool quirks corrected), an enhancer tool following its `derived_from` parent, unsigned XMP/IPTC hints (`DigitalSourceType`, an AI credit line), then the table the row lives in. `origin_class_source` records which rule fired so the UI can explain the proposal. Only `unknown` counts as a missing enrichment field. `src/server/lib/origin/origin.js` is the IO wrapper: it gathers the signals (AI assets keep theirs in `asset_metadata`), writes proposals, never overwrites a confirmed class unless forced but always keeps the signer current, and re-proposes unconfirmed `derived_from` children when a parent changes.
+## Timelines and the composition
 
-Colour belongs to the spectrum position, not the class: six CSS custom properties, `--pt-origin-captured`, `-digital`, `-assisted`, `-hybrid`, `-synthetic` and `-unknown`, defined in `src/client/app.css`. Badges, the composition strip and legends read only those, so a theme or the public viewer overrides the palette in one place.
+A finished edit is an asset marked as an output (D10). Importing its timeline (core-node/timeline-import.ts) keeps the file's exact bytes under `timelines/<sha256>`, parses it through the format registry (`packages/core/src/timeline/formats/`, xmeml first, D2), matches each source to an asset (by path, then bytes, then file name and size, then name only), and writes a timeline for the cut it belongs to. The newest import of the output's newest cut is the one the page and signing use; earlier ones stay in the record. A clip can have a class of its own, which carries to the next import of the edit (D48).
 
-Enhancer outputs (Topaz Video AI, Topaz Gigapixel) are modifiers, not generators. On import, `packages/core/src/relationships/auto-link.js` strips the Topaz suffix from the filename and looks for a same-stem asset in the project; one hit links it as `derived_from` with confidence 0.7, several are returned as suggestions. Routes: `/api/origin/*` and `/api/relationships/*`.
+`compose.js` builds the headline view: two lanes, picture and audio, each a list of intervals covering the sequence, `single` where everything playing sits at one spectrum position, `mixed` where positions overlap, `gap` where nothing plays, with the numbers derived from the same intervals. `breakdown.js` keeps the per-track tallies and embeds the composition. The breakdown is a cache, recomputed from the clips when a match or a class changes.
 
-### Timelines and screen time
+Real-world notes from a Premiere Pro export: file definitions live in the master-clip list and are back-referenced by id; stereo audio is split into two linked tracks; stills carry a large source duration with in and out points; `pathurl` percent-encodes the drive colon; clip ids are renumbered on every export.
 
-`timelines` holds one imported NLE sequence per produced output (format, fps, duration, settings, cached breakdown, path of the raw file kept under `<storage>/timelines/<producedId>/`); `timeline_segments` holds one row per clip per track with its match (`matched_asset_type`/`id`, `match_method`, `match_confidence`) and an optional per-clip `origin_class` override.
+## Signing and the public export
 
-Pure modules under `packages/core/src/timeline/` (the IO, `timelines.js`, stays in `src/server/lib/timeline/`): `formats/` is the registry (xmeml first, D2; a module exports `detect` and `parse` to one normalised shape), `match.js` matches each distinct source file to a tracked asset by path (including a signed copy's original path), SHA-256, filename plus size, then filename only, and reconciles a manual pick with that evidence (`reconcileManualMatch`); `compose.js` builds the headline view (D10): two lanes, picture and audio, each a list of intervals tiling the sequence, `single` when every playing layer sits at one spectrum position, `mixed` when positions overlap (layers listed top track first), `gap` when nothing plays, with per-position, mixed-combination and gap numbers derived from those same intervals, and the real tracks kept for the expanded view; `breakdown.js` keeps the per-track tallies (primary track, overlay sweep, audio with stereo pairs collapsed) and embeds the composition as `breakdown.composition`. `timelines.js` is the IO wrapper: it parses, stores, matches with real file stats and hashes, persists, caches the breakdown (recomputing a cached one that predates the composition on first read), flags the produced asset as an output, proposes the output's class from what is in it, and links every matched asset to the output as `output_of`. Fixing a segment's match applies to every clip of the same source; an asset's origin-class change recomputes every timeline that counts it.
+Signing runs as a job. A finished edit is signed into a new file beside the cut, `<name>.signed.v<N>.<ext>` (D13, D41): the cut as parent, each asset the newest timeline places as an ingredient with its class, and the newest saved statement as the `org.provenancetracker.creator_statement` assertion. An ingredient with credentials of its own, embedded or in a sidecar, keeps them inside the new file. Any other asset is signed into a `.c2pa` sidecar beside it (D42). The original is never changed. What would be signed is shown before signing, built by the same code (D46).
 
-### Outputs
+After signing, c2patool reads the file back and the report becomes a status (`verify.js`; `unrecognised_issuer` is expected for a test certificate). The public export (`manifest/public-export.js`, schema `spec/public-export.v1.schema.json`) is built from a signature's record, never the live timeline, so it always matches its file. c2patool renames ingredient labels in its read-back, so read-back entries are paired with the statement's ingredients by position and file name.
 
-`produced_assets.is_output` marks a finished edit (D10); `output_source` says who set it (`timeline`, `c2pa_ingredients`, `user`). `/api/outputs` lists them with their latest composition and toggles the flag. The client's Outputs section (`src/client/pages/outputs/`) opens straight onto the composition: the render playing in `<video>` (served by `/api/preview`, which honours Range requests so seeking works) above the two lanes (`components/timeline/LaneStrip.jsx`, mixed stretches as stripes of the component colours), a readout of what is on screen and audible at the playhead, the numbers, and the clip list. Setting a class from a clip row writes the asset (`components/origin/InlineClassSetter.jsx`), never the timeline row, with an optional `origin_class_note` for the manifest. Statement, Credentials and Export are tabs on the same page, filled in by later phases.
+## Long work
 
-Real-world notes from a Premiere Pro 2026 export: file definitions live in the master-clip list and are back-referenced by id; stereo audio is exploded into two linked tracks; stills carry a large source duration with in/out offsets near frame 107892; `pathurl` percent-encodes the drive colon; assets imported into managed storage match by hash rather than path.
-
-## Multi-project architecture
-
-Each project has a `modules` JSON field (`["ai_assets", "archival"]`) controlling which features are available. Sidebar navigation adapts to the active project's modules. All asset tables have a `projectId` FK.
-
-## Archive search queue
-
-Approved candidates are downloaded by a background worker (`src/server/lib/search/queue.js`), not inline in the request, so bulk approves of hundreds of items survive rate limits without losing work.
-
-- Poll interval is 5 s, deliberately slow to stay under Wikimedia's per-IP limits on full-resolution fetches. Shortening it causes 429 storms.
-- Retries use exponential backoff (15 s, 45 s, 2 m, 5 m, 10 m), max 5 attempts.
-- When Wikimedia returns `Retry-After` on a 429, `src/server/lib/archival/extraction.js` surfaces it in the error as `[retry-after:N]` and the queue uses `max(server_ask, default_backoff)`.
-- Claim/lease pattern (60 s lease) means a crashed process does not double-process work on restart. `releaseStaleLeases()` runs at server start.
-
-## Environment
-
-Copy `.env.example` to `.env`:
-
-- `DATABASE_URL`: PostgreSQL connection string
-- `PORT`: Express port (default 3001)
-- `HOST`: address the server listens on (default `127.0.0.1`). `ALLOWED_HOSTS`: comma-separated host names the API answers to beside the loopback ones.
-- `NOTION_API_KEY`: optional, for Notion sync (archival module)
-- `APP_CONTACT`: email or URL sent in the User-Agent on outbound HTTP. Wikimedia's policy requires identification; unidentified clients are throttled. Centralised in `src/server/lib/user-agent.js`.
+Scan, read, classify, import and signing run as jobs (`src/server/api/jobs.ts`): one at a time per project, with progress, a way to stop at the next safe point, and the result or the error in words. The pages ask for a running job's state every second and refresh what it changed when it ends (D39, D45).
 
 ## Local-only API
 
-There is no login, so reach is the access control. Two layers, both in `src/server/lib/core/local-only.js` (pure, unit-tested) and wired in `src/server/index.js`:
+There is no login, so reach is the access control. `src/server/lib/core/local-only.js` (pure, unit-tested), wired in `src/server/app.ts`:
 
-- **Bind.** `app.listen(PORT, HOST)` with `HOST` defaulting to `127.0.0.1`. Other devices get a refused connection.
-- **Request check.** `localOnly` is the first middleware on `/api`, before any body is parsed. It refuses a `Host` header that is not a loopback name (DNS rebinding), an `Origin` that is not the same host and port as `Host` (another site's form post, which needs no CORS preflight), and anything the browser marks `Sec-Fetch-Site: cross-site`.
+- **Bind.** The server listens on `HOST`, default `127.0.0.1`. Other devices get a refused connection.
+- **Request check.** `localOnly` is the first middleware on `/api`, before any body is parsed. It refuses a `Host` that is not this machine (DNS rebinding), an `Origin` that is not the same host and port as `Host` (another site's form post, which needs no CORS preflight), and anything the browser marks `Sec-Fetch-Site: cross-site`.
 
-The Vite proxy must forward the browser's `Host` unchanged for the second rule to pass in development, which is why `vite.config.js` uses the long proxy form with `changeOrigin: false` (the short string form sets it to `true`).
+The Vite proxy must forward the browser's `Host` unchanged for the second rule to pass in development, which is why `vite.config.js` uses the long proxy form with `changeOrigin: false`.
 
-Three smaller rules live beside it: `/api/preview` serves image, video and audio only (`isPreviewable`); a project leaves the API through `toProjectResponse`, which drops the signing paths; and update and import routes take request fields from named lists (`archival/fields.js`, `core/import-rules.js`). The reasoning and the limits are in `docs/threat-model.md`; what leaves the machine is in `docs/network.md`.
+Smaller rules beside it: files are served by their hash, and only pictures, video and sound (`isPreviewable`); routes take request fields from named lists and answer with named fields, so signing paths never leave the API; a folder or file taken from the request is one the person names on purpose (docs/threat-model.md). What leaves the machine is in `docs/network.md`.
 
-## External integrations
+## Environment
 
-- **Notion** (optional): syncs archival assets to a Notion database, configured per project. API key is global in `.env`.
-- **ExifTool**: vendored via `exiftool-vendored`.
-- **C2PA**: reading tries `c2pa-node` and falls back to `c2patool`. Signing (phase 4c) is c2patool only: `packages/core/src/manifest/build.js` builds the manifest definition (pure), `c2patool.js` signs an output into a new `<name>.signed.v<N>.<ext>` (embedded) and a source asset into a `<name>.c2pa` sidecar (D13), then reads it back, `verify.js` turns the report into a status (`unrecognised_issuer` is the expected status for the dev certificate). Ingredients go in through `c2patool -i` records, with a sidecar attached as the record's manifest store when the file has one (`-i` reads embedded credentials only), so an ingredient with its own credentials keeps them inside the signed file. The asset row is never repointed at a signed copy; signed copies are rows in `signatures`.
+All optional (`.env` or the environment): `PORT` (default 3001), `HOST` and `ALLOWED_HOSTS` (see the README's deployment notes), `APP_CONTACT` (the contact in the User-Agent when downloading a file the person asked for, `src/server/lib/user-agent.js`), `NODE_ENV=production` to serve the built pages, `LOG_LEVEL`.
 
 ## Testing
 
-`npm test` runs vitest inside a repo guard (`scripts/test.mjs`) that fails if a test changes the checkout or the suite takes over 60 s. Tests are pure functions over fixtures or write to temp directories only. Large media samples stay in `test-fixtures/` (gitignored); small committed fixtures go under `test/fixtures/`. vitest 4 on Windows needs `pool: 'forks'` (`vitest.config.js` says why).
+`npm test` runs vitest inside a repo guard (`scripts/test.mjs`) that fails if a test changes the checkout or the suite takes over 60 s. Tests use temp folders and throwaway machines only; the API is tested over real HTTP against temporary projects (`test/unit/api/`), and the pages' API client against the real routes (`test/unit/client/`). Signing for real uses a throwaway certificate made in the test's folder. Large media samples stay in `test-fixtures/` (gitignored); small fixtures are committed beside their tests. vitest on Windows needs `pool: 'forks'` (`vitest.config.js` says why).

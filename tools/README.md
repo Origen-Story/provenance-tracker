@@ -12,7 +12,7 @@ This downloads each tool at the version pinned in [`scripts/lib/pinned-tools.mjs
 
 ## c2patool
 
-The C2PA command-line tool (`tools/c2patool/c2patool`, `.exe` on Windows). The tracker signs with it (`src/server/lib/manifest/c2patool.js`) and uses it as the fallback reader when `c2pa-node` cannot load or cannot decode a manifest (`src/server/lib/extraction/c2pa.js`).
+The C2PA command-line tool (`tools/c2patool/c2patool`, `.exe` on Windows). The tracker reads credentials with it (`packages/core-node/src/extract/c2patool.ts`) and signs with it (`packages/core-node/src/sign/c2patool-sign.ts`).
 
 Every c2patool release up to 0.27.23 misreads genuine Pixel video as invalid (`assertion.bmffHash.mismatch`), because it is built on an older version of the C2PA library than the fix for that (decision D15). So c2patool's verdict on a camera file is not to be trusted until a release built on c2pa-rs 0.91 or later exists; its reading of the tracker's own signed outputs is fine.
 

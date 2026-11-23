@@ -10,7 +10,7 @@ import express, {
 	type Response,
 } from "express";
 import type { Machine } from "@provenancetracker/core-node/machine.ts";
-import { catalogApi, type CatalogApiOptions } from "./api/next.ts";
+import { catalogApi, type CatalogApiOptions } from "./api/catalog.ts";
 import { allowedHostnames, localOnly } from "./lib/core/local-only.js";
 import { createLogger } from "./lib/logger.js";
 
@@ -19,7 +19,7 @@ const log = createLogger("server");
 export function createApp(opts: {
 	env: NodeJS.ProcessEnv;
 	machine: Machine;
-	/** The routes still on Postgres, mounted after the catalog API (until the cutover). */
+	/** More routes, mounted after the catalog API: the health probe and, in production, the built pages. */
 	mount?: (app: Express) => void;
 	/** The catalog API's jobs, readers and network (tests give their own). */
 	catalog?: Omit<CatalogApiOptions, "machine">;
@@ -47,7 +47,7 @@ export function createApp(opts: {
 		next();
 	});
 
-	app.use("/api/next", catalogApi({ ...opts.catalog, machine: opts.machine }));
+	app.use("/api", catalogApi({ ...opts.catalog, machine: opts.machine }));
 	opts.mount?.(app);
 
 	// Express 5 forwards rejected promises from async routes here. Answer in JSON

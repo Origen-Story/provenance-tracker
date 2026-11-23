@@ -1,1 +1,0 @@
-ALTER TABLE "assets" ADD COLUMN "extraction_coverage" integer;

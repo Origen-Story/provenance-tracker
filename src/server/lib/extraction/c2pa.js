@@ -36,6 +36,8 @@ import {
 	makeObservation,
 	c2paValidation,
 } from "@provenancetracker/core/extraction/observation.ts";
+// The summary shape, shared with classify in the catalog (one implementation).
+import { c2paSummary as buildSummary } from "@provenancetracker/core/extraction/c2pa-summary.ts";
 
 const log = createLogger("c2pa");
 
@@ -61,46 +63,6 @@ export function resolveC2patoolPath() {
 }
 
 export { parseToolVersion, activeManifestOf, c2patoolObservation };
-
-// ---------- summary builder (shared shape for both readers) ----------
-
-function buildSummary(active) {
-	const summary = {
-		title: active.title || null,
-		format: active.format || null,
-		claimGenerator:
-			active.claim_generator ||
-			(active.claim_generator_info &&
-				active.claim_generator_info[0] &&
-				active.claim_generator_info[0].name) ||
-			null,
-		assertions: [],
-		ingredients: [],
-		signatureInfo: null,
-	};
-	if (active.assertions) {
-		for (const a of active.assertions)
-			summary.assertions.push({ label: a.label, data: a.data });
-	}
-	if (active.ingredients) {
-		for (const ing of active.ingredients) {
-			summary.ingredients.push({
-				title: ing.title,
-				format: ing.format,
-				relationship: ing.relationship,
-			});
-		}
-	}
-	if (active.signature_info) {
-		summary.signatureInfo = {
-			issuer: active.signature_info.issuer || null,
-			commonName: active.signature_info.common_name || null,
-			time: active.signature_info.time || null,
-			alg: active.signature_info.alg || null,
-		};
-	}
-	return summary;
-}
 
 // ---------- readers: file -> observation ----------
 

@@ -34,6 +34,8 @@ import { describeFile } from "../show.ts";
 import { verifyProject } from "../verify.ts";
 import { readSettings, updateSettings } from "../settings.ts";
 import { TOOL } from "../tool.ts";
+import { classifyCatalog } from "@provenancetracker/core/catalog/classify.ts";
+import { listAssets } from "@provenancetracker/core/catalog/read.ts";
 
 export interface Io {
 	machine: Machine;
@@ -56,6 +58,8 @@ Usage: npm run cli -- <command> [options]
   roots rename <name> <new name>      Rename a root
   scan [--root <name>]                Record every file in the roots on this machine
   extract [--root <name>] [--again]   Read what each file says (ExifTool, C2PA, PNG text, sidecars)
+  classify [--dry-run]                Say what each asset is, from what its file said (kind for
+                                      unsorted assets, origin class, AI generation details)
   verify [--hash] [--root <name>]    Check the catalog, and that every file is still as it was
   show <file>                         Everything the catalog knows about one file
   settings                            Show this machine's settings
@@ -387,6 +391,50 @@ async function extract(
 	});
 }
 
+async function classify(
+	io: Io,
+	args: string[],
+	values: Values,
+): Promise<number> {
+	if (args.length)
+		throw new UsageError("Usage: npm run cli -- classify [--dry-run]");
+	return withProject(io, values, (project) => {
+		const dry = !!values["dry-run"];
+		const report = classifyCatalog(project.db, { tool: TOOL, dryRun: dry });
+		const names = new Map(
+			listAssets(project.db, { limit: 1000 }).assets.map((a) => [
+				a.id,
+				a.file ? `${a.file.root}/${a.file.path}` : a.displayTitle,
+			]),
+		);
+		const shown = (v: unknown) => (v === "" ? '""' : String(v));
+		for (const a of report.assets) {
+			if (!a.changes.length && !a.generation) continue;
+			io.out(`${names.get(a.assetId) ?? `asset ${a.assetId}`}  (${a.rule})`);
+			for (const c of a.changes)
+				io.out(`  ${c.field}: ${shown(c.from)} -> ${shown(c.to)}`);
+			if (a.generation)
+				io.out(
+					`  generation details from ${a.platform}${a.generation.model_name ? `, model ${String(a.generation.model_name)}` : ""}`,
+				);
+		}
+		const kept = report.assets.flatMap((a) => a.kept);
+		const byWho = (by: string) => kept.filter((k) => k.by === by).length;
+		io.out(
+			`${report.examined} asset(s) looked at; ${report.changed} ${dry ? "would change" : "changed"}` +
+				(report.generationAdded
+					? `, ${report.generationAdded} with generation details added`
+					: "") +
+				".",
+		);
+		if (kept.length)
+			io.out(
+				`Left as they are: ${byWho("person")} value(s) a person set, ${byWho("legacy")} carried from Postgres, ${byWho("confirmed")} confirmed class(es) that the file would now put otherwise.`,
+			);
+		if (dry) io.out("Dry run: nothing was written.");
+		return 0;
+	});
+}
 async function verify(io: Io, args: string[], values: Values): Promise<number> {
 	if (args.length)
 		throw new UsageError(
@@ -678,6 +726,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
 				return await scan(io, args, values);
 			case "extract":
 				return await extract(io, args, values);
+			case "classify":
+				return await classify(io, args, values);
 			case "verify":
 				return await verify(io, args, values);
 			case "show":

@@ -204,11 +204,11 @@ function fromManifest(sig) {
 
 /**
  * @param {object} input
- * @param {'ai'|'archival'|'produced'} input.table
+ * @param {'ai'|'archival'|'produced'} [input.table] which kind of asset it is (the old app's table); absent for one not sorted yet, which then gets no default class
  * @param {object|null} input.c2paSummary  stored c2paJson, parsed
  * @param {string} [input.platform]        parser id for AI assets
- * @param {object} [input.platformData]    parsed platform blob (parser output)
- * @param {object} [input.exifTags]        stored exifJson, parsed
+ * @param {object|null} [input.platformData] parsed platform blob (parser output)
+ * @param {object|null} [input.exifTags] stored exifJson, parsed
  * @param {string|null} [input.parentClass] origin class of a derived_from parent
  * @param {string[]} [input.ownSignerNames] certificate names that mean "the creator signed this"
  * @returns {{ originClass: string, source: string, signedBy: string, signerName: string, captureSigned: boolean }}

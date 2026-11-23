@@ -28,6 +28,9 @@ export default function CatalogShell() {
 							<NavLink to={`/catalog/${projectId}`} end className={tab}>
 								Overview
 							</NavLink>
+							<NavLink to={`/catalog/${projectId}/assets`} className={tab}>
+								Assets
+							</NavLink>
 						</nav>
 					</>
 				)}

@@ -33,6 +33,8 @@ import GroupsManager from "./pages/search/GroupsManager.jsx";
 import CatalogShell from "./catalog/CatalogShell.tsx";
 import ProjectPicker from "./catalog/ProjectPicker.tsx";
 import ProjectHome from "./catalog/ProjectHome.tsx";
+import AssetsList from "./catalog/AssetsList.tsx";
+import AssetDetail from "./catalog/AssetDetail.tsx";
 
 function RequireProject({ children }) {
 	const {
@@ -68,6 +70,8 @@ export default function App() {
 				</Route>
 				<Route path="/catalog/:projectId" element={<CatalogShell />}>
 					<Route index element={<ProjectHome />} />
+					<Route path="assets" element={<AssetsList />} />
+					<Route path="assets/:assetId" element={<AssetDetail />} />
 				</Route>
 
 				{/* Main app — requires active project */}

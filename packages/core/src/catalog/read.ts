@@ -125,8 +125,8 @@ export interface AssetFilter {
 	outputs?: boolean;
 	/** Words to find in titles, notes, captions, credits or file paths. */
 	q?: string;
-	/** Include removed assets (default: only those not removed). */
-	removed?: boolean;
+	/** Include removed assets, or show only them (default: only those not removed). */
+	removed?: boolean | "only";
 	limit?: number;
 	offset?: number;
 }
@@ -166,7 +166,8 @@ export function listAssets(
 ): { total: number; assets: AssetSummary[] } {
 	const where: string[] = [];
 	const params: SQLInputValue[] = [];
-	if (!filter.removed) where.push("a.removed_at IS NULL");
+	if (filter.removed === "only") where.push("a.removed_at IS NOT NULL");
+	else if (!filter.removed) where.push("a.removed_at IS NULL");
 	if (filter.kind) {
 		where.push("a.kind = ?");
 		params.push(filter.kind);

@@ -129,3 +129,119 @@ export function when(iso: string | null): string {
 		timeStyle: "short",
 	});
 }
+
+export function TextArea({
+	label,
+	value,
+	onChange,
+	rows = 3,
+	hint,
+}: {
+	label: string;
+	value: string;
+	onChange: (v: string) => void;
+	rows?: number;
+	hint?: string;
+}) {
+	return (
+		<label className="block">
+			<span className="block text-sm text-text-primary mb-1">{label}</span>
+			<textarea
+				value={value}
+				rows={rows}
+				onChange={(e) => onChange(e.target.value)}
+				className="w-full bg-app-bg border border-border rounded px-3 py-1.5 text-sm text-text-primary"
+			/>
+			{hint && (
+				<span className="block text-xs text-text-secondary mt-1">{hint}</span>
+			)}
+		</label>
+	);
+}
+
+export function Select({
+	label,
+	value,
+	onChange,
+	options,
+}: {
+	label: string;
+	value: string;
+	onChange: (v: string) => void;
+	options: Array<{ value: string; label: string; group?: string }>;
+}) {
+	const groups = [...new Set(options.map((o) => o.group ?? ""))];
+	const item = (o: { value: string; label: string }) => (
+		<option key={o.value} value={o.value}>
+			{o.label}
+		</option>
+	);
+	return (
+		<label className="block">
+			<span className="block text-sm text-text-primary mb-1">{label}</span>
+			<select
+				value={value}
+				onChange={(e) => onChange(e.target.value)}
+				className="w-full bg-app-bg border border-border rounded px-3 py-1.5 text-sm text-text-primary"
+			>
+				{groups.length === 1
+					? options.map(item)
+					: groups.map((g) => (
+							<optgroup key={g} label={g}>
+								{options.filter((o) => (o.group ?? "") === g).map(item)}
+							</optgroup>
+						))}
+			</select>
+		</label>
+	);
+}
+
+export function Checkbox({
+	label,
+	checked,
+	onChange,
+	hint,
+}: {
+	label: string;
+	checked: boolean;
+	onChange: (v: boolean) => void;
+	hint?: string;
+}) {
+	return (
+		<label className="flex items-start gap-2 text-sm text-text-primary">
+			<input
+				type="checkbox"
+				checked={checked}
+				onChange={(e) => onChange(e.target.checked)}
+				className="mt-0.5"
+			/>
+			<span>
+				{label}
+				{hint && (
+					<span className="block text-xs text-text-secondary">{hint}</span>
+				)}
+			</span>
+		</label>
+	);
+}
+
+/** A titled part of a page. */
+export function Section({
+	title,
+	children,
+	aside,
+}: {
+	title: string;
+	children: ReactNode;
+	aside?: ReactNode;
+}) {
+	return (
+		<section>
+			<div className="flex items-center justify-between mb-2">
+				<h3 className="font-medium text-text-primary">{title}</h3>
+				{aside}
+			</div>
+			{children}
+		</section>
+	);
+}

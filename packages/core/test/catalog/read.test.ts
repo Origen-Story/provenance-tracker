@@ -92,6 +92,7 @@ describe("listAssets", () => {
 		);
 		expect(ids({})).toEqual([2, 3, 4]);
 		expect(ids({ removed: true })).toEqual([1, 2, 3, 4]);
+		expect(ids({ removed: "only" })).toEqual([1]);
 	});
 
 	it("finds words in titles and credits whatever their accents, and parts of file paths and codes", () => {

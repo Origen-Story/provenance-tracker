@@ -2,17 +2,10 @@
 // and when each kind of work last ran.
 
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { projects, type Root } from "./api.ts";
+import { KIND_LABEL } from "./labels.ts";
 import { Card, Loading, PageTitle, Problem, Status, when } from "./ui.tsx";
-
-const KIND_LABEL: Record<string, string> = {
-	produced: "Recorded or made",
-	archival: "Archival",
-	generated: "AI-generated",
-	unsorted: "Not sorted yet",
-	sidecar: "Sidecar files",
-};
 
 const RUN_LABEL: Record<string, string> = {
 	create: "Made",
@@ -39,10 +32,22 @@ export default function ProjectHome() {
 			<PageTitle title={data.name} description={s.description || data.folder} />
 
 			<section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-				<Count label="Assets" value={data.counts.assets} />
-				<Count label="Finished edits" value={data.counts.outputs} />
-				<Count label="Not sorted yet" value={data.counts.unsorted} />
-				<Count label="Removed" value={data.counts.removed} />
+				<Count label="Assets" value={data.counts.assets} to="assets" />
+				<Count
+					label="Finished edits"
+					value={data.counts.outputs}
+					to="assets?outputs=1"
+				/>
+				<Count
+					label="Not sorted yet"
+					value={data.counts.unsorted}
+					to="assets?kind=unsorted"
+				/>
+				<Count
+					label="Removed"
+					value={data.counts.removed}
+					to="assets?removed=only"
+				/>
 			</section>
 
 			<section>
@@ -52,7 +57,12 @@ export default function ProjectHome() {
 						{Object.entries(data.counts.byKind).map(([kind, n]) => (
 							<div key={kind} className="contents">
 								<dt className="text-text-secondary">
-									{KIND_LABEL[kind] ?? kind}
+									<Link
+										to={`assets?kind=${kind}`}
+										className="hover:text-text-primary"
+									>
+										{KIND_LABEL[kind] ?? kind}
+									</Link>
 								</dt>
 								<dd className="text-text-primary">{n}</dd>
 							</div>
@@ -103,12 +113,22 @@ export default function ProjectHome() {
 	);
 }
 
-function Count({ label, value }: { label: string; value: number }) {
+function Count({
+	label,
+	value,
+	to,
+}: {
+	label: string;
+	value: number;
+	to: string;
+}) {
 	return (
-		<Card>
-			<div className="text-2xl font-semibold text-text-primary">{value}</div>
-			<div className="text-xs text-text-secondary">{label}</div>
-		</Card>
+		<Link to={to} className="block hover:opacity-80">
+			<Card>
+				<div className="text-2xl font-semibold text-text-primary">{value}</div>
+				<div className="text-xs text-text-secondary">{label}</div>
+			</Card>
+		</Link>
 	);
 }
 

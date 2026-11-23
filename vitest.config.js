@@ -31,5 +31,10 @@ export default defineConfig({
 		// Parallel file execution also flaked on Windows. The suite is small; serial
 		// adds well under a second.
 		fileParallelism: false,
+		// Some tests run the whole pipeline on real disk: temporary catalogs, scans,
+		// reads, child processes. On a GitHub Windows runner that took 8.6 s for one
+		// test (virus scanning of new files is the likely cost) against the 5 s
+		// default. 30 s still stops a hang; the repo guard keeps the suite under 60 s.
+		testTimeout: 30_000,
 	},
 });

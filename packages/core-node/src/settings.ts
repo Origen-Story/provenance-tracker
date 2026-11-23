@@ -135,11 +135,19 @@ export function updateSettings(
 	return settings;
 }
 
-/** This machine's entry for a project, created empty if missing. */
+/**
+ * This machine's entry for a project, created empty if missing. Only a
+ * project id (a UUID) is ever a key: anything else, such as "__proto__" from
+ * a request, is refused here rather than trusted to every caller, so writing
+ * settings can never reach the object prototype.
+ */
 export function projectEntry(
 	settings: Settings,
 	projectId: string,
 ): ProjectSettings {
-	settings.projects[projectId] ??= { roots: {} };
+	if (!UUID.test(projectId))
+		throw new Error(`${JSON.stringify(projectId)} is not a project id`);
+	if (!Object.hasOwn(settings.projects, projectId))
+		settings.projects[projectId] = { roots: {} };
 	return settings.projects[projectId];
 }

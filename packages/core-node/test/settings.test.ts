@@ -3,6 +3,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { defaultSettingsPath, SETTINGS_ENV } from "../src/machine.ts";
 import {
+	projectEntry,
 	readSettings,
 	SETTINGS_FORMAT,
 	updateSettings,
@@ -137,5 +138,18 @@ describe("readSettings and writeSettings", () => {
 			"format 2, written by a newer Provenance Tracker",
 		);
 		expect(readFileSync(file, "utf8")).toBe('{"format": 2, "projects": {}}');
+	});
+});
+
+describe("projectEntry", () => {
+	it("takes only a project id as a key, so a request's __proto__ can never reach the object prototype", () => {
+		const settings = readSettings(path.join(t.tempDir(), "settings.json"));
+		expect(projectEntry(settings, ID)).toEqual({ roots: {} });
+		for (const bad of ["__proto__", "constructor", "x"])
+			expect(() => projectEntry(settings, bad), bad).toThrow(
+				/is not a project id/,
+			);
+		expect(({} as Record<string, unknown>).roots).toBeUndefined();
+		expect(Object.keys(settings.projects)).toEqual([ID]);
 	});
 });

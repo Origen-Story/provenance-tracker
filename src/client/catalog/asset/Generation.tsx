@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { assets, type AssetRecord } from "../api.ts";
-import { Button, Card, Problem, TextArea, TextField } from "../ui.tsx";
+import { Card, SaveBar, TextArea, TextField } from "../ui.tsx";
 import { changedFields, str, useTakeAnswer } from "./shared.ts";
 
 const TEXT: Array<{ key: string; label: string; long?: boolean }> = [
@@ -77,6 +77,15 @@ export default function Generation({
 	const count = Object.keys(changed).length;
 	return (
 		<Card className="space-y-3">
+			<SaveBar
+				count={count}
+				saving={save.isPending}
+				onSave={() => save.mutate()}
+				onUndo={() => setDraft(recorded)}
+				error={save.error}
+				blocked={bad.length > 0}
+				saveLabel="Save the generation details"
+			/>
 			{!asset.generation && (
 				<p className="text-sm text-text-secondary">
 					Nothing recorded yet. Fill in what you know and save.
@@ -117,13 +126,6 @@ export default function Generation({
 					{bad.join(", ")}: a whole number, or nothing.
 				</p>
 			)}
-			<Button
-				onClick={() => save.mutate()}
-				disabled={!count || bad.length > 0 || save.isPending}
-			>
-				{save.isPending ? "Saving…" : "Save the generation details"}
-			</Button>
-			<Problem error={save.error} />
 		</Card>
 	);
 }

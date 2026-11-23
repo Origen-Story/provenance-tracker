@@ -6,10 +6,9 @@ import { useMutation } from "@tanstack/react-query";
 import { assets, type AssetRecord } from "../api.ts";
 import { KIND_LABEL, KINDS } from "../labels.ts";
 import {
-	Button,
 	Card,
 	Checkbox,
-	Problem,
+	SaveBar,
 	Select,
 	TextArea,
 	TextField,
@@ -122,6 +121,16 @@ export default function DetailsForm({
 
 	return (
 		<Card className="space-y-6">
+			<SaveBar
+				count={count}
+				saving={save.isPending}
+				onSave={() => save.mutate()}
+				onUndo={() => setDraft(initial)}
+				error={save.error}
+				note={note}
+				onNote={setNote}
+				saveLabel="Save details"
+			/>
 			<div className="grid md:grid-cols-2 gap-3">
 				<Select
 					label="Kind"
@@ -167,32 +176,6 @@ export default function DetailsForm({
 					</div>
 				</div>
 			))}
-			<div className="border-t border-border pt-4 space-y-3">
-				<TextField
-					label="Why (optional)"
-					value={note}
-					onChange={setNote}
-					hint="Kept with the change in the asset's history."
-				/>
-				<div className="flex gap-2">
-					<Button
-						onClick={() => save.mutate()}
-						disabled={!count || save.isPending}
-					>
-						{save.isPending
-							? "Saving…"
-							: count
-								? `Save ${count} change${count > 1 ? "s" : ""}`
-								: "No changes"}
-					</Button>
-					{count > 0 && (
-						<Button quiet onClick={() => setDraft(initial)}>
-							Undo changes
-						</Button>
-					)}
-				</div>
-				<Problem error={save.error} />
-			</div>
 		</Card>
 	);
 }

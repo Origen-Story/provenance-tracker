@@ -28,12 +28,26 @@ export const CLASS_OPTIONS = (
 	group: positionLabel(c.position),
 }));
 
+/** The class filter: each spectrum position as a whole, then its classes. */
+const FILTER_OPTIONS = [
+	{ value: "", label: "All classes", group: "Any" },
+	...(POSITIONS as Array<{ id: string; label: string }>).flatMap((p) => [
+		{
+			value: `position:${p.id}`,
+			label: `All ${p.label.toLowerCase()}`,
+			group: p.label,
+		},
+		...CLASS_OPTIONS.filter((c) => c.group === p.label),
+	]),
+];
+
 export default function AssetsList() {
 	const { projectId } = useParams();
 	const [params, setParams] = useSearchParams();
 	const filter: AssetFilter = {
 		kind: params.get("kind") ?? undefined,
 		class: params.get("class") ?? undefined,
+		position: params.get("position") ?? undefined,
 		outputs: params.get("outputs") === "1",
 		q: params.get("q") ?? undefined,
 		removed:
@@ -93,12 +107,22 @@ export default function AssetsList() {
 				/>
 				<Select
 					label="Origin class"
-					value={filter.class ?? ""}
-					onChange={(v) => set("class", v || null)}
-					options={[
-						{ value: "", label: "All classes", group: "" },
-						...CLASS_OPTIONS,
-					]}
+					value={
+						filter.position
+							? `position:${filter.position}`
+							: (filter.class ?? "")
+					}
+					onChange={(v) => {
+						// A whole position or one class: choosing one clears the other.
+						const next = new URLSearchParams(params);
+						next.delete("class");
+						next.delete("position");
+						next.delete("offset");
+						if (v.startsWith("position:")) next.set("position", v.slice(9));
+						else if (v) next.set("class", v);
+						setParams(next);
+					}}
+					options={FILTER_OPTIONS}
 				/>
 				<div className="space-y-1 pb-1">
 					<Checkbox

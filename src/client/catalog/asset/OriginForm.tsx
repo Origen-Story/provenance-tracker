@@ -8,15 +8,7 @@ import { originClassDef } from "@provenancetracker/core/origin-vocabulary.js";
 import { assets, type AssetRecord } from "../api.ts";
 import { CLASS_OPTIONS } from "../AssetsList.tsx";
 import { OriginBadge } from "../badge.tsx";
-import {
-	Button,
-	Card,
-	Checkbox,
-	Problem,
-	Select,
-	TextArea,
-	TextField,
-} from "../ui.tsx";
+import { Card, Checkbox, SaveBar, Select, TextArea } from "../ui.tsx";
 import { changedFields, str, useTakeAnswer } from "./shared.ts";
 
 const SOURCE: Record<string, string> = {
@@ -76,6 +68,16 @@ export default function OriginForm({
 
 	return (
 		<Card className="space-y-3">
+			<SaveBar
+				count={count}
+				saving={save.isPending}
+				onSave={() => save.mutate()}
+				onUndo={() => setDraft(recorded)}
+				error={save.error}
+				note={note}
+				onNote={setNote}
+				saveLabel="Save the class"
+			/>
 			<div className="flex items-center gap-2 text-sm">
 				<OriginBadge
 					originClass={recorded.origin_class}
@@ -125,25 +127,6 @@ export default function OriginForm({
 					Made from material of these classes: {ingredients.join(", ")}
 				</p>
 			)}
-			<TextField
-				label="Why this change (optional)"
-				value={note}
-				onChange={setNote}
-			/>
-			<div className="flex gap-2">
-				<Button
-					onClick={() => save.mutate()}
-					disabled={!count || save.isPending}
-				>
-					{save.isPending ? "Saving…" : "Save the class"}
-				</Button>
-				{count > 0 && (
-					<Button quiet onClick={() => setDraft(recorded)}>
-						Undo changes
-					</Button>
-				)}
-			</div>
-			<Problem error={save.error} />
 		</Card>
 	);
 }

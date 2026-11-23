@@ -130,6 +130,7 @@ export interface AssetSummary {
 export interface AssetFilter {
 	kind?: string;
 	class?: string;
+	position?: string;
 	outputs?: boolean;
 	q?: string;
 	removed?: boolean | "only";

@@ -245,3 +245,64 @@ export function Section({
 		</section>
 	);
 }
+
+/**
+ * A form's save controls, kept in view at the top of the window while the
+ * form is scrolled through: what is unsaved, an optional reason, Save, Undo.
+ * It sits first in a Card and spans its width.
+ */
+export function SaveBar({
+	count,
+	saving,
+	onSave,
+	onUndo,
+	error,
+	note,
+	onNote,
+	saveLabel = "Save",
+	blocked,
+}: {
+	count: number;
+	saving: boolean;
+	onSave: () => void;
+	onUndo: () => void;
+	error?: unknown;
+	note?: string;
+	onNote?: (v: string) => void;
+	saveLabel?: string;
+	/** Something in the form must be put right before it can be saved. */
+	blocked?: boolean;
+}) {
+	return (
+		<div className="sticky top-0 z-10 -mx-4 -mt-4 mb-4 px-4 py-2 bg-card-bg border-b border-border rounded-t-lg space-y-2">
+			<div className="flex flex-wrap items-center gap-2">
+				<span
+					className={`text-xs ${count ? "text-warning" : "text-text-secondary"}`}
+				>
+					{count
+						? `${count} unsaved change${count > 1 ? "s" : ""}`
+						: "No unsaved changes"}
+				</span>
+				{onNote && count > 0 && (
+					<input
+						value={note ?? ""}
+						onChange={(e) => onNote(e.target.value)}
+						placeholder="Why (optional, kept in the history)"
+						className="flex-1 min-w-48 bg-app-bg border border-border rounded px-2 py-1 text-xs text-text-primary"
+					/>
+				)}
+				<span className="ml-auto flex gap-2">
+					{count > 0 && (
+						<Button quiet onClick={onUndo} disabled={saving}>
+							Undo
+						</Button>
+					)}
+					<Button onClick={onSave} disabled={!count || saving || blocked}>
+						{saving ? "Saving…" : saveLabel}
+					</Button>
+				</span>
+			</div>
+			<Problem error={error} />
+		</div>
+	);
+}

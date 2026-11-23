@@ -74,7 +74,7 @@ export default function AssetDetail() {
 						</span>
 					}
 				/>
-				<Removal projectId={p} asset={asset} />
+				{!!f.removed_at && <Removal projectId={p} asset={asset} />}
 			</div>
 
 			<Preview projectId={p} asset={asset} />
@@ -109,13 +109,21 @@ export default function AssetDetail() {
 			<Section title="History">
 				<History asset={asset} />
 			</Section>
+			{!f.removed_at && (
+				<Section title="Remove from the project">
+					<Card>
+						<Removal projectId={p} asset={asset} />
+					</Card>
+				</Section>
+			)}
 		</div>
 	);
 }
 
 /**
  * Removing hides an asset from lists; restoring undoes it. Its files stay
- * where they are.
+ * where they are. Remove sits at the foot of the page, away from the edits;
+ * once removed, the notice and Restore show at the top.
  */
 function Removal({
 	projectId,
@@ -135,6 +143,12 @@ function Removal({
 	});
 	return (
 		<div className="space-y-2">
+			{!removed && (
+				<p className="text-sm text-text-secondary">
+					Removing hides this asset from lists and from new timeline matches.
+					Its files are not touched, and it can be restored at any time.
+				</p>
+			)}
 			{removed && (
 				<p className="text-sm text-danger">
 					Removed {when(str(asset.fields.removed_at))}. It is hidden from lists;

@@ -76,6 +76,25 @@ describe("listAssets", () => {
 		expect(listAssets(db).assets[2].displayTitle).toBe("title.mp4");
 	});
 
+	it("filters by spectrum position, counting a digital class marked AI-assisted as assisted", () => {
+		const db = sample();
+		const ids = (position: string) =>
+			listAssets(db, { position }).assets.map((a) => a.id);
+		expect(ids("captured")).toEqual([1, 2]);
+		expect(ids("synthetic")).toEqual([3]);
+		expect(ids("hybrid")).toEqual([4]);
+		expect(ids("digital")).toEqual([]);
+		editRow(db, "assets", 3, { origin_class: "digitalCreation" }, PERSON);
+		expect(ids("digital")).toEqual([3]);
+		editRow(db, "assets", 3, { ai_assisted: true }, PERSON);
+		expect(ids("assisted")).toEqual([3]);
+		expect(ids("digital")).toEqual([]);
+		editRow(db, "assets", 2, { origin_class: "unknown" }, PERSON);
+		editRow(db, "assets", 1, { origin_class: "notAClass" }, PERSON);
+		expect(ids("unknown")).toEqual([1, 2]);
+		expect(ids("nowhere")).toEqual([]);
+	});
+
 	it("filters by kind, class, outputs and removal", () => {
 		const db = sample();
 		const ids = (f: Parameters<typeof listAssets>[1]) =>

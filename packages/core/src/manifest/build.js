@@ -206,6 +206,10 @@ function softwareAgent(name) {
  * @param {boolean} [a.isAiGenerated]     the signer says a model made it; wins over the class
  * @param {boolean} [a.hasManifest]       the file already carries credentials
  * @param {string} [a.toolUsed]           what made the file
+ * @param {string} [a.authorName]         who made it
+ * @param {string} [a.organization]       for whom
+ * @param {string} [a.identityUrl]        where the creator's identity is published
+ * @param {boolean} [a.trainingMiningOptOut=true] ask that it not be used to train or mine
  * @param {object} a.generator            { name, version } of this program
  * @returns {{ definition: object, ingredients: Array<{label, relationship, title, useInput: true}> }}
  */

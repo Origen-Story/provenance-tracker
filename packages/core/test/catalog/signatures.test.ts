@@ -157,6 +157,84 @@ describe("recordSigning", () => {
 	});
 });
 
+describe("recordSigning a move", () => {
+	it("records an earlier sidecar set aside as a move of its content, and refuses a move the catalog does not have", () => {
+		const w = world();
+		const first = recordSigning(
+			w.db,
+			w.signing({
+				kind: "asset",
+				signed: {
+					sha256: sha("e"),
+					size: 1,
+					rootId: w.root,
+					path: "take.c2pa",
+					modifiedMs: 1,
+				},
+			}),
+			{ tool: TEST_TOOL, now: () => AT },
+		);
+		recordSigning(
+			w.db,
+			w.signing({
+				kind: "asset",
+				version: 2,
+				signed: {
+					sha256: sha("f"),
+					size: 1,
+					rootId: w.root,
+					path: "take.c2pa",
+					modifiedMs: 2,
+				},
+				moved: {
+					sha256: sha("e"),
+					rootId: w.root,
+					from: "take.c2pa",
+					to: "take.v1.c2pa",
+					modifiedMs: 1,
+				},
+			}),
+			{ tool: TEST_TOOL, now: () => AT },
+		);
+		expect(
+			w.db
+				.prepare(
+					"SELECT content_sha256 AS sha, path, gone_run_id IS NULL AS live FROM locations ORDER BY id",
+				)
+				.all(),
+		).toEqual([
+			{ sha: sha("e"), path: "take.c2pa", live: 0 },
+			{ sha: sha("e"), path: "take.v1.c2pa", live: 1 },
+			{ sha: sha("f"), path: "take.c2pa", live: 1 },
+		]);
+		expect(first.signatureId).toBe(1);
+		expect(() =>
+			recordSigning(
+				w.db,
+				w.signing({
+					kind: "asset",
+					version: 3,
+					signed: {
+						sha256: sha("1"),
+						size: 1,
+						rootId: w.root,
+						path: "x.c2pa",
+						modifiedMs: 1,
+					},
+					moved: {
+						sha256: sha("e"),
+						rootId: w.root,
+						from: "nowhere.c2pa",
+						to: "y.c2pa",
+						modifiedMs: 1,
+					},
+				}),
+				{ tool: TEST_TOOL },
+			),
+		).toThrow(/does not have nowhere.c2pa/);
+	});
+});
+
 describe("publicExport", () => {
 	it("is built from a signing's record alone, and named after the signed file", () => {
 		const w = world();

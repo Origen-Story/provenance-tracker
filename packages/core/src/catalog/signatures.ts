@@ -58,6 +58,18 @@ export interface NewSigning {
 	/** c2patool's read-back of the signed copy. */
 	report: unknown;
 	signedAt: string;
+	/**
+	 * A file this signing moved: re-signing an asset renames its earlier
+	 * sidecar to <name>.v<N>.c2pa first. Recorded here, in the same
+	 * transaction, so the catalog never disagrees with the folder.
+	 */
+	moved?: {
+		sha256: string;
+		rootId: number;
+		from: string;
+		to: string;
+		modifiedMs: number;
+	};
 }
 
 /**
@@ -113,10 +125,30 @@ export function recordSigning(
 						},
 					},
 				);
-			db.prepare(
+			const place = db.prepare(
 				`INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id)
 				 VALUES (?, ?, ?, ?, ?, ?)`,
-			).run(
+			);
+			if (input.moved) {
+				const gone = db
+					.prepare(
+						"UPDATE locations SET gone_run_id = ? WHERE content_sha256 = ? AND root_id = ? AND path = ? AND gone_run_id IS NULL",
+					)
+					.run(runId, input.moved.sha256, input.moved.rootId, input.moved.from);
+				if (gone.changes !== 1)
+					throw new EditError(
+						`The catalog does not have ${input.moved.from} where the file moved from`,
+					);
+				place.run(
+					input.moved.sha256,
+					input.moved.rootId,
+					input.moved.to,
+					input.moved.modifiedMs,
+					runId,
+					runId,
+				);
+			}
+			place.run(
 				input.signed.sha256,
 				input.signed.rootId,
 				input.signed.path,

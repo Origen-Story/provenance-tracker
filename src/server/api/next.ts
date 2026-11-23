@@ -50,6 +50,7 @@ import { ORIGIN_CLASSES } from "@provenancetracker/core/origin-vocabulary.js";
 import { USER_AGENT } from "../lib/user-agent.js";
 import { download } from "./download.ts";
 import { showable, streamFile } from "./stream.ts";
+import { signAsset } from "@provenancetracker/core-node/sign/sign-asset.ts";
 import {
 	c2patoolEngine,
 	signOutput,
@@ -1160,13 +1161,25 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 		(req: Request, res: Response) => {
 			const id = idParam(req.params.assetId, "asset");
 			const { fields } = editBody(req);
-			const unknown = Object.keys(fields).filter((k) => k !== "timestamp_url");
+			// An output takes only a time-stamp address; a source asset also who made it and how.
+			const ASSET_FIELDS = [
+				"creator_name",
+				"organization",
+				"tool_used",
+				"is_ai_generated",
+				"training_mining_opt_out",
+			];
+			const unknown = Object.keys(fields).filter(
+				(k) => k !== "timestamp_url" && !ASSET_FIELDS.includes(k),
+			);
 			if (unknown.length)
 				throw new HttpError(400, `Signing has no field ${unknown.join(", ")}`);
 			const timestampUrl =
 				typeof fields.timestamp_url === "string"
 					? fields.timestamp_url
 					: undefined;
+			const text = (k: string) =>
+				typeof fields[k] === "string" ? (fields[k] as string) : undefined;
 			person(machine);
 			const job = startJob(
 				String(req.params.projectId),
@@ -1175,10 +1188,34 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 					ctx.progress({ step: "sign", done: 0, total: 1, file: "" });
 					// A refusal (nothing set up, no statement, a file not here) is
 					// the job's error, in words.
-					return await signOutput(project, machine, {
+					const engine = await signingEngine(machine);
+					const asset = project.db
+						.prepare("SELECT is_output FROM assets WHERE id = ?")
+						.get(id) as { is_output: number } | undefined;
+					if (!asset) throw new Error("There is no such asset");
+					if (asset.is_output === 1) {
+						const extra = Object.keys(fields).filter((k) =>
+							ASSET_FIELDS.includes(k),
+						);
+						if (extra.length)
+							throw new Error(
+								`A finished edit is signed from its statement; ${extra.join(", ")} is for a source asset`,
+							);
+						return await signOutput(project, machine, {
+							assetId: id,
+							engine,
+							timestampUrl,
+						});
+					}
+					return await signAsset(project, machine, {
 						assetId: id,
-						engine: await signingEngine(machine),
+						engine,
 						timestampUrl,
+						creatorName: text("creator_name"),
+						organization: text("organization"),
+						toolUsed: text("tool_used"),
+						isAiGenerated: fields.is_ai_generated === true,
+						trainingMiningOptOut: fields.training_mining_opt_out !== false,
 					});
 				},
 			);

@@ -286,6 +286,32 @@ Archiving a project, restoring it, or moving it to another computer: copy the pr
 
 A project folder inside OneDrive, Dropbox, Google Drive, iCloud or Syncthing is refused: a sync client can corrupt the catalog while it is being written. Media roots there are allowed, with a warning.
 
+### Moving a project from the Postgres app (in progress)
+
+The migration reads the Postgres dumps the backup task writes (a `.dump` with its `.sha256` beside it); it never connects to Postgres and needs no password, only `pg_restore` from the Postgres client tools. Say where each project goes in a layout file kept outside the repository:
+
+```json
+{
+	"dumps": "D:/backups/postgres",
+	"projects": [
+		{
+			"legacy": "Film",
+			"folder": "D:/Projects/Film",
+			"roots": {
+				"footage": "D:/Projects/Film/footage",
+				"archive": "E:/Archive"
+			}
+		}
+	]
+}
+```
+
+```bash
+npm run cli -- migrate --dry-run --layout layout.json --report dry-run.json
+```
+
+The dry run checks the newest dump against its `.sha256`, builds each project's catalog in a throwaway folder, and reports: every file Postgres names, found in a root with the bytes Postgres recorded; the catalog check; each timeline's breakdown recomputed from the catalog; each signed output's public export rebuilt byte for byte; technical values read fresh by ExifTool against Postgres's; and a scan of the roots (files Postgres never had are listed). Then it deletes what it built. Project folders, media and this machine's settings are only read. Exit code 0 when everything checked is sound. The real run is not built yet. See [D33](docs/decisions.md) and [D34](docs/decisions.md).
+
 ## Database
 
 The schema lives in [`src/server/db/schema.js`](src/server/db/schema.js); migrations live in [`src/server/db/migrations/`](src/server/db/migrations/).

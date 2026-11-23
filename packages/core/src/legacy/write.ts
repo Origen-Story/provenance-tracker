@@ -49,6 +49,13 @@ export interface MigrationResult {
 	counts: Record<string, number>;
 	/** Files Postgres names that were not found, carried as contents without a place. */
 	notFound: Array<{ path: string; reason: string }>;
+	/**
+	 * The Postgres row behind each catalog row ("public.produced_assets:33"),
+	 * by table and catalog id. Also kept in the migrate run's summary, so it
+	 * stays in the catalog for rows that have no history (statements,
+	 * signings, a timeline whose settings are all defaults).
+	 */
+	origins: Record<string, Record<string, string>>;
 }
 
 /**
@@ -147,6 +154,14 @@ export function writeMigration(
 	};
 	const assetIds = new Map<LegacyRef, number>();
 	const notFound: MigrationResult["notFound"] = [];
+	const origins: MigrationResult["origins"] = {};
+	const from = (
+		table: string,
+		id: number | bigint,
+		e: { legacy: string; id: number },
+	) => {
+		(origins[table] ??= {})[String(id)] = `${e.legacy}:${e.id}`;
+	};
 	const idOf = (ref: LegacyRef) => {
 		const id = assetIds.get(ref);
 		if (id === undefined) throw new Error(`No catalog asset for ${ref}`);
@@ -248,6 +263,7 @@ export function writeMigration(
 					),
 				);
 				assetIds.set(a.ref, id);
+				from("assets", id, a.evidence);
 				count("assets");
 				const sha = place(a.file, id, a.createdAt)!;
 				contentOf.set(a.ref, sha);
@@ -294,7 +310,7 @@ export function writeMigration(
 			}
 
 			for (const r of plan.relationships) {
-				createRow(
+				const relationshipId = createRow(
 					db,
 					"relationships",
 					{
@@ -305,6 +321,7 @@ export function writeMigration(
 					},
 					{ actor, now: r.createdAt, evidence: r.evidence },
 				);
+				from("relationships", Number(relationshipId), r.evidence);
 				count("relationships");
 			}
 
@@ -323,6 +340,10 @@ export function writeMigration(
 					s.savedAt,
 				);
 				statementIds.set(s.legacyId, Number(result.lastInsertRowid));
+				from("statements", result.lastInsertRowid, {
+					legacy: "public.creator_statements",
+					id: s.legacyId,
+				});
 				count("statements");
 			}
 
@@ -338,7 +359,7 @@ export function writeMigration(
 				const source =
 					place(s.source, assetId, s.signedAt) ?? contentOf.get(s.asset)!;
 				const signed = place(s.signed, assetId, s.signedAt)!;
-				insertSignature.run(
+				const inserted = insertSignature.run(
 					assetId,
 					s.kind,
 					s.version,
@@ -358,6 +379,10 @@ export function writeMigration(
 					s.status,
 					s.signedAt,
 				);
+				from("signatures", inserted.lastInsertRowid, {
+					legacy: "public.signatures",
+					id: s.legacyId,
+				});
 				count("signatures");
 			}
 
@@ -389,6 +414,7 @@ export function writeMigration(
 						opts2,
 					),
 				);
+				from("timelines", timelineId, t.evidence);
 				count("timelines");
 				for (const s of t.sources) {
 					const sourceId = Number(
@@ -411,7 +437,7 @@ export function writeMigration(
 					count("timeline_sources");
 					for (const c of s.clips) {
 						const { evidence, enabled, ...clip } = c;
-						createRow(
+						const clipId = createRow(
 							db,
 							"timeline_clips",
 							{
@@ -422,6 +448,7 @@ export function writeMigration(
 							},
 							{ ...opts2, evidence },
 						);
+						from("timeline_clips", Number(clipId), evidence);
 						count("timeline_clips");
 					}
 				}
@@ -436,6 +463,7 @@ export function writeMigration(
 					not_found: notFound.length,
 					uncarried: plan.uncarried.length,
 					notes: plan.notes.length,
+					origins,
 				},
 				now: now(),
 			});
@@ -448,5 +476,5 @@ export function writeMigration(
 		});
 		throw err;
 	}
-	return { runId, assetIds, counts, notFound };
+	return { runId, assetIds, counts, notFound, origins };
 }

@@ -146,3 +146,25 @@ describe("the command line", () => {
 		expect(m.settingsPath.startsWith(path.dirname(m.home))).toBe(true);
 	});
 });
+
+describe("migrate", () => {
+	it("runs only as a dry run so far, and needs a layout and a name", async () => {
+		const m = t.machine();
+		const dir = t.tempDir();
+		const c = cli(m, dir);
+		const noLayout = await c.run("migrate", "--dry-run");
+		expect(noLayout.code).toBe(2);
+		expect(noLayout.err).toContain("migrate --dry-run --layout <file>");
+		const real = await c.run("migrate", "--layout", "layout.json");
+		expect(real.code).toBe(2);
+		expect(real.err).toContain("Only the dry run exists so far");
+		const missing = await c.run(
+			"migrate",
+			"--dry-run",
+			"--layout",
+			"layout.json",
+		);
+		expect(missing.code).toBe(1);
+		expect(missing.err).toContain("is not readable JSON");
+	});
+});

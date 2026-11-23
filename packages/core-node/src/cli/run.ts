@@ -20,7 +20,9 @@ import {
 	type RootView,
 } from "../roots.ts";
 import { endExifTool } from "../extract/exiftool.ts";
-import { extractProject } from "../extract.ts";
+import { extractProject, machineReaders } from "../extract.ts";
+import { dryRun, readLayout, type DryRunReport } from "../legacy/migrate.ts";
+import { writeFileSync } from "node:fs";
 import { scanProject, type ScanReport } from "../scan.ts";
 import { describeFile } from "../show.ts";
 import { verifyProject } from "../verify.ts";
@@ -52,6 +54,8 @@ Usage: npm run cli -- <command> [options]
   show <file>                         Everything the catalog knows about one file
   settings                            Show this machine's settings
   settings person <name>              Set the name your edits are recorded under
+  migrate --dry-run --layout <file>   Build the catalogs from the newest Postgres dump in a
+                                      throwaway folder, check them, and report [--report <file>]
 
 Commands that work on a project use the one in the current folder (or a
 folder above it), or --project <folder>. Edits are recorded under the name
@@ -70,6 +74,9 @@ const OPTIONS = {
 	again: { type: "boolean" },
 	hash: { type: "boolean" },
 	help: { type: "boolean", short: "h" },
+	"dry-run": { type: "boolean" },
+	layout: { type: "string" },
+	report: { type: "string" },
 } as const;
 
 type Values = {
@@ -81,6 +88,9 @@ type Values = {
 	again?: boolean;
 	hash?: boolean;
 	help?: boolean;
+	"dry-run"?: boolean;
+	layout?: string;
+	report?: string;
 };
 
 function needArgs(args: string[], count: number, usage: string): void {
@@ -465,6 +475,142 @@ function show(io: Io, args: string[], values: Values): Promise<number> {
 	);
 }
 
+function printDryRun(io: Io, report: DryRunReport): void {
+	io.out("");
+	io.out(`Dump: ${report.dump.file} (matches its .sha256)`);
+	if (report.orphans.length) {
+		io.out(`${report.orphans.length} Postgres row(s) belong to nothing:`);
+		for (const o of report.orphans) io.out(`  ${o}`);
+	} else io.out("No orphaned Postgres rows.");
+	for (const p of report.notInLayout)
+		io.out(
+			`Project "${p.name}" is in the dump but not in the layout: not migrated.`,
+		);
+	for (const p of report.projects) {
+		io.out("");
+		io.out(
+			`${p.ok ? "OK  " : "FIX "} ${p.legacy.name} -> ${p.folder}${p.folderExists ? "" : " (the folder does not exist yet; the real run makes it)"}`,
+		);
+		for (const r of p.roots)
+			io.out(
+				`  root ${r.name}: ${r.folder ?? "-"} (${r.status}${r.inProject ? ", inside the project folder" : ""})`,
+			);
+		if (p.error) io.out(`  stopped: ${p.error}`);
+		for (const b of p.plan.blocking) io.out(`  blocking: ${b}`);
+		for (const x of p.problems) io.out(`  problem: ${x}`);
+		for (const n of p.plan.notes) io.out(`  note: ${n}`);
+		const found = p.files.filter((f) => f.found).length;
+		io.out(
+			`  files Postgres names: ${found} of ${p.files.length} found in the roots`,
+		);
+		for (const f of p.notFound)
+			io.out(`    not here (carried by its hash): ${f.path}`);
+		if (p.written)
+			io.out(
+				`  written: ${Object.entries(p.written)
+					.map(([k, n]) => `${n} ${k}`)
+					.join(", ")}`,
+			);
+		if (p.written)
+			io.out(
+				p.verify.length
+					? `  verifyCatalog: ${p.verify.length} problem(s)`
+					: "  verifyCatalog: clean",
+			);
+		for (const v of p.verify.slice(0, 20))
+			io.out(
+				`    ${v.check} ${v.table ?? ""} ${v.key ?? ""} ${v.field ?? ""}: ${v.detail}`,
+			);
+		for (const b of p.breakdowns)
+			io.out(
+				`  timeline ${b.timeline}: breakdown ${b.same ? "recomputes the same" : `differs at ${b.differences.join(", ")}`}${b.oldShape ? " (cached before asset refs, read as the app reads it)" : ""}`,
+			);
+		for (const e of p.exports)
+			io.out(
+				`  signing ${e.signature}: public export ${e.same ? "byte-identical" : `differs at ${e.differences.join(", ")}`}${e.note ? ` (${e.note})` : ""}`,
+			);
+		if (p.technical) {
+			io.out(
+				`  technical values: ${p.technical.compared} file(s) compared, ${p.technical.differences.length} difference(s)`,
+			);
+			for (const d of p.technical.differences) io.out(`    ${d}`);
+		}
+		if (p.scan) {
+			io.out(
+				`  scan after: ${p.scan.unchanged} unchanged, ${p.scan.gone} gone, ${p.scan.added} file(s) Postgres did not have`,
+			);
+			for (const f of p.scan.addedFiles.slice(0, 30)) io.out(`    new: ${f}`);
+			if (p.scan.addedFiles.length > 30)
+				io.out(
+					`    ... and ${p.scan.addedFiles.length - 30} more (see the report file)`,
+				);
+		}
+		if (p.plan.uncarried.length) {
+			io.out("  not carried (by column):");
+			for (const u of p.plan.uncarried)
+				io.out(`    ${u.column} x${u.count}: ${u.why}`);
+		}
+	}
+	io.out("");
+	io.out(
+		report.ok
+			? "Dry run: everything checked is sound. Nothing was kept."
+			: "Dry run: something above needs fixing before the real run. Nothing was kept.",
+	);
+}
+
+async function migrate(
+	io: Io,
+	args: string[],
+	values: Values,
+): Promise<number> {
+	if (args.length || !values.layout)
+		throw new UsageError(
+			"Usage: npm run cli -- migrate --dry-run --layout <file> [--report <file>]",
+		);
+	if (!values["dry-run"])
+		throw new UsageError(
+			"Only the dry run exists so far (Phase 5, step 2): add --dry-run.",
+		);
+	const layout = readLayout(
+		resolveFrom(io, values.layout),
+		io.machine.platform,
+	);
+	const actor = person(io, values);
+	const readers = await machineReaders(io.machine);
+	const exif = readers.find((r) => r.kind === "exif") ?? null;
+	if (!exif?.version)
+		io.out(
+			"ExifTool is not available here: technical values are not compared.",
+		);
+	let last = 0;
+	try {
+		const report = await dryRun({
+			layout,
+			machine: io.machine,
+			actor,
+			exifReader: exif?.version ? exif : null,
+			progress: (line) => {
+				if (
+					line.startsWith("    ") ||
+					(line.startsWith("  file ") && Date.now() - last < 2000)
+				)
+					return;
+				last = Date.now();
+				io.out(line);
+			},
+		});
+		printDryRun(io, report);
+		if (values.report) {
+			const file = resolveFrom(io, values.report);
+			writeFileSync(file, `${JSON.stringify(report, null, "\t")}\n`);
+			io.out(`The full report is in ${file}`);
+		}
+		return report.ok ? 0 : 1;
+	} finally {
+		await endExifTool();
+	}
+}
 /** Run one command. @returns the exit code */
 export async function run(argv: string[], io: Io): Promise<number> {
 	let parsed;
@@ -505,6 +651,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
 			case "settings":
 				settings(io, args);
 				return 0;
+			case "migrate":
+				return await migrate(io, args, values);
 			default:
 				throw new UsageError(`Unknown command "${command}".`);
 		}

@@ -1,0 +1,24 @@
+{
+	// The client's own check: browser types and JSX, which the server's
+	// tsconfig leaves out on purpose. Vite builds; nothing is emitted here.
+	// New pages are TypeScript (D16); existing JSX is read but not checked.
+	"compilerOptions": {
+		"target": "es2022",
+		"lib": ["es2024", "DOM", "DOM.Iterable"],
+		"module": "esnext",
+		"moduleResolution": "bundler",
+		"jsx": "react-jsx",
+		"types": [],
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true,
+		"erasableSyntaxOnly": true,
+		"verbatimModuleSyntax": true,
+		"allowImportingTsExtensions": true,
+		"isolatedModules": true,
+		"forceConsistentCasingInFileNames": true,
+		"allowJs": true,
+		"checkJs": false
+	},
+	"include": ["**/*.ts", "**/*.tsx"]
+}

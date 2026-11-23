@@ -55,6 +55,8 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
+The pages on the new project catalogs are at [http://localhost:5173/catalog](http://localhost:5173/catalog) while they replace the current pages one area at a time (docs/decisions.md D43).
+
 ## How to use
 
 ### 1. Create a project

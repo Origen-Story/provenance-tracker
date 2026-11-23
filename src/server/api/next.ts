@@ -89,6 +89,7 @@ import {
 import type { Machine } from "@provenancetracker/core-node/machine.ts";
 import { TOOL } from "@provenancetracker/core-node/tool.ts";
 import {
+	createProject,
 	openProject,
 	type OpenProject,
 } from "@provenancetracker/core-node/project.ts";
@@ -344,6 +345,35 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 		} finally {
 			project.db.close();
 		}
+	});
+
+	// Make a new project in a folder (the command line's init): an empty
+	// catalog in .provenancetracker, recorded in this machine's settings. The
+	// folder is the person's choice (docs/threat-model.md); a folder that
+	// already has a catalog, or sits in a sync client's folder, is refused.
+	api.post("/projects", (req: Request, res: Response) => {
+		const { fields } = editBody(req);
+		const unknown = Object.keys(fields).filter(
+			(k) => k !== "folder" && k !== "name",
+		);
+		if (unknown.length)
+			throw new HttpError(400, `A project has no field ${unknown.join(", ")}`);
+		const { folder, name } = fields as { folder?: unknown; name?: unknown };
+		if (typeof folder !== "string" || !folder.trim())
+			throw new HttpError(400, "Say which folder the project is in");
+		if (typeof name !== "string" || !name.trim())
+			throw new HttpError(400, "A project needs a name");
+		let made: { projectId: string; folder: string };
+		try {
+			made = createProject(folder, { name: name.trim(), machine });
+		} catch (err) {
+			throw new HttpError(409, (err as Error).message);
+		}
+		res.status(201).json({
+			projectId: made.projectId,
+			name: name.trim(),
+			folder: made.folder,
+		});
 	});
 
 	api.get("/projects/:projectId", (req: Request, res: Response) => {

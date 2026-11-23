@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { request as httpRequest, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	realpathSync,
@@ -246,6 +247,51 @@ describe("the catalog API", () => {
 			folder: path.join(dir, "nothing here"),
 		});
 		expect(missing.status).toBe(409);
+	});
+
+	it("makes a new project in a folder, and refuses one without a name, an unknown field, or a folder that already has one", async () => {
+		const dir = tempDir();
+		const m = machineIn(dir);
+		const api = await serve(m);
+		const folder = path.join(dir, "Fresh");
+
+		const made = await api.post("/api/next/projects", {
+			fields: { folder, name: " Fresh " },
+		});
+		expect(made.status).toBe(201);
+		expect(made.body).toMatchObject({ name: "Fresh", folder });
+		expect(
+			existsSync(path.join(folder, ".provenancetracker", "catalog.sqlite")),
+		).toBe(true);
+		const summary = await api.get(`/api/next/projects/${made.body.projectId}`);
+		expect(summary.body).toMatchObject({
+			name: "Fresh",
+			roots: [],
+			counts: { assets: 0 },
+		});
+		expect((await api.get("/api/next/projects")).body.projects).toMatchObject([
+			{ projectId: made.body.projectId, status: "ok" },
+		]);
+
+		expect(
+			(
+				await api.post("/api/next/projects", {
+					fields: { folder: path.join(dir, "x") },
+				})
+			).status,
+		).toBe(400);
+		expect(
+			(
+				await api.post("/api/next/projects", {
+					fields: { folder, name: "A", owner: "x" },
+				})
+			).status,
+		).toBe(400);
+		const again = await api.post("/api/next/projects", {
+			fields: { folder, name: "Again" },
+		});
+		expect(again.status).toBe(409);
+		expect((await api.get("/api/next/projects")).body.projects).toHaveLength(1);
 	});
 
 	it("refuses requests that do not come from this machine's own pages", async () => {

@@ -14,11 +14,16 @@ import {
 	toCatalogPath,
 } from "@provenancetracker/core/catalog/paths.ts";
 import {
+	breakdownOf,
 	refreshTimeline,
 	timelineSegments,
 } from "@provenancetracker/core/catalog/timelines.ts";
 import { c2paSummaryOf } from "@provenancetracker/core/extraction/c2pa-summary.ts";
-import { buildOutputManifest } from "@provenancetracker/core/manifest/build.js";
+import {
+	buildCreatorStatement,
+	buildOutputManifest,
+	placedAssetRefs,
+} from "@provenancetracker/core/manifest/build.js";
 import { c2patoolPath, c2patoolVersion } from "../extract/c2patool.ts";
 import { sha256OfFile } from "../hash.ts";
 import type { Machine } from "../machine.ts";
@@ -81,6 +86,13 @@ export async function c2patoolEngine(machine: Machine): Promise<SigningEngine> {
 /** What signs the file says it was made by: this tracker, under its public name. */
 const GENERATOR = { name: "provenance-tracker", version: TOOL.version };
 
+/**
+ * The time-stamp authority the app asks when a person wants a trusted time
+ * (RFC 3161; docs/network.md). The app's sign route takes only yes or no;
+ * the command line names a server itself.
+ */
+export const TIMESTAMP_URL = "http://timestamp.digicert.com";
+
 /** A refusal before anything is signed: the caller's to fix (HTTP 400). */
 export class NotReadyError extends Error {}
 
@@ -141,6 +153,178 @@ function c2paOf(project: OpenProject, sha256: string) {
 		error: (row.error as string | null) ?? null,
 		validation: parse(row.validation),
 	});
+}
+
+/** The CAWG identity address the project's statements carry, or "". */
+function identityUrlOf(project: OpenProject): string {
+	return (
+		(
+			project.db
+				.prepare("SELECT value FROM meta WHERE key = 'cawg_identity_url'")
+				.get() as { value: string } | undefined
+		)?.value ?? ""
+	);
+}
+
+/** The newest place the catalog knows for a content, here or not: its catalog path. */
+function lastKnownPath(project: OpenProject, sha256: string): string | null {
+	const row = project.db
+		.prepare(
+			"SELECT path FROM locations WHERE content_sha256 = ? ORDER BY gone_run_id IS NULL DESC, id DESC LIMIT 1",
+		)
+		.get(sha256) as { path: string } | undefined;
+	return row?.path ?? null;
+}
+
+/**
+ * Every asset the timeline places (enabled clips, the output itself left
+ * out), as the manifest builder takes them, and the ones whose file is not on
+ * this machine. A missing one still has an entry, named from where the
+ * catalog last saw it, so a preview can show it; signing refuses.
+ */
+function placedAssets(
+	project: OpenProject,
+	places: ReturnType<typeof placesHere>,
+	segments: Array<{ enabled: boolean; matchedAssetRef: string | null }>,
+	outputRef: string,
+): { assets: Map<string, Row>; missing: string[] } {
+	const assets = new Map<string, Row>();
+	const missing: string[] = [];
+	for (const ref of new Set(
+		segments
+			.filter(
+				(s) =>
+					s.enabled && s.matchedAssetRef && s.matchedAssetRef !== outputRef,
+			)
+			.map((s) => s.matchedAssetRef!),
+	)) {
+		const a = project.db
+			.prepare("SELECT * FROM assets WHERE id = ?")
+			.get(Number(ref)) as Row;
+		const sha = ownContent(project, Number(ref));
+		const place = sha ? places.get(sha)?.[0] : undefined;
+		if (!place) missing.push(a.title ? String(a.title) : `asset ${ref}`);
+		assets.set(ref, {
+			filePath: place?.file ?? (sha ? lastKnownPath(project, sha) : null),
+			publicTitle: a.public_title,
+			originClass: a.origin_class,
+			originClassConfirmed: a.origin_class_confirmed === 1,
+			originClassSource: a.origin_class_source,
+			originClassNote: a.origin_class_note,
+			aiAssisted: a.ai_assisted === 1,
+			signedBy: a.signed_by,
+			signerName: a.signer_name,
+			c2paSummary: sha ? c2paOf(project, sha) : null,
+		});
+	}
+	return { assets, missing };
+}
+
+/** What a preview of an output's statement found: the statement as it would be signed, and what stops signing now. */
+export interface StatementPreview {
+	/** The creator statement as signing would build it now; null with no timeline. */
+	statement: Record<string, unknown> | null;
+	/** Why it cannot be signed on this machine yet, in words; empty when nothing stops it but the signing set-up. */
+	blockers: string[];
+	/** The asset each ingredient is, in the statement's order. */
+	ingredientAssetIds: number[];
+}
+
+/**
+ * The creator statement an output would be signed with now, built by the
+ * same builder signing uses, without signing or writing anything: so the
+ * page shows exactly what goes into the file. The statement's words are the
+ * newest saved ones; the signing set-up is the caller's to report.
+ */
+export function previewOutputStatement(
+	project: OpenProject,
+	machine: Machine,
+	opts: { assetId: number; now?: () => string },
+): StatementPreview {
+	const { db } = project;
+	const now = opts.now ?? (() => new Date().toISOString());
+	const asset = db
+		.prepare("SELECT * FROM assets WHERE id = ?")
+		.get(opts.assetId) as Row | undefined;
+	if (!asset) throw new NotReadyError("There is no such asset");
+	if (asset.is_output !== 1)
+		throw new NotReadyError(
+			"A creator statement is for a finished edit (an output)",
+		);
+	const blockers: string[] = [];
+	const cut = ownContent(project, opts.assetId);
+	const places = placesHere(project, machine);
+	const cutPlace = cut ? places.get(cut)?.[0] : undefined;
+	if (!cut || !cutPlace)
+		blockers.push(
+			"The output's file is not on this machine. Scan its root, or locate it.",
+		);
+	const timeline = cut
+		? (db
+				.prepare(
+					"SELECT id, sequence_name, fps, duration_frames FROM timelines WHERE content_sha256 = ? ORDER BY id DESC LIMIT 1",
+				)
+				.get(cut) as Row | undefined)
+		: undefined;
+	if (!timeline) {
+		blockers.push("Import the timeline first: the statement is built from it.");
+		return { statement: null, blockers, ingredientAssetIds: [] };
+	}
+	const saved = db
+		.prepare(
+			"SELECT text, author, organization, edited_with FROM statements WHERE asset_id = ? ORDER BY id DESC LIMIT 1",
+		)
+		.get(opts.assetId) as Row | undefined;
+	if (!saved || !String(saved.text ?? "").trim())
+		blockers.push("Write and save the creator statement before signing.");
+	const naming = {
+		refOf: (id: number) => String(id),
+		segmentIdOf: (id: number) => id,
+	};
+	const breakdown = breakdownOf(db, timeline.id as number, naming) as {
+		composition?: unknown;
+	};
+	const segments = timelineSegments(db, timeline.id as number, naming);
+	const outputRef = String(opts.assetId);
+	const { assets, missing } = placedAssets(
+		project,
+		places,
+		segments,
+		outputRef,
+	);
+	if (missing.length)
+		blockers.push(
+			`These files the timeline places are not on this machine, and c2patool reads each one: ${missing.join(", ")}`,
+		);
+	const statement = buildCreatorStatement({
+		output: {
+			ref: outputRef,
+			filePath: cutPlace?.file ?? (cut ? lastKnownPath(project, cut) : null),
+			originClass: asset.origin_class,
+			originClassConfirmed: asset.origin_class_confirmed === 1,
+			publicTitle: asset.public_title,
+		},
+		timeline: {
+			sequenceName: timeline.sequence_name,
+			fps: timeline.fps,
+			durationFrames: timeline.duration_frames,
+		},
+		composition: breakdown.composition as object,
+		segments,
+		assets,
+		statement: {
+			text: saved?.text ?? "",
+			authorName: saved?.author ?? "",
+			organization: saved?.organization ?? "",
+			softwareAgent: saved?.edited_with ?? "",
+			identityUrl: identityUrlOf(project),
+		},
+		statedAt: now(),
+	}) as Record<string, unknown>;
+	const ingredientAssetIds = (
+		placedAssetRefs(segments, outputRef) as string[]
+	).map(Number);
+	return { statement, blockers, ingredientAssetIds };
 }
 
 /** The signed copy's name: the cut's, with ".signed.v<N>" before the extension; the first free N from `version`. */
@@ -229,49 +413,18 @@ export async function signOutput(
 		segmentIdOf: (id) => id,
 	});
 	const outputRef = String(opts.assetId);
-	const assets = new Map<string, Row>();
-	const missing: string[] = [];
-	for (const ref of new Set(
-		segments
-			.filter(
-				(s) =>
-					s.enabled && s.matchedAssetRef && s.matchedAssetRef !== outputRef,
-			)
-			.map((s) => s.matchedAssetRef!),
-	)) {
-		const a = db
-			.prepare("SELECT * FROM assets WHERE id = ?")
-			.get(Number(ref)) as Row;
-		const sha = ownContent(project, Number(ref));
-		const place = sha ? places.get(sha)?.[0] : undefined;
-		if (!place) {
-			missing.push(a.title ? String(a.title) : `asset ${ref}`);
-			continue;
-		}
-		assets.set(ref, {
-			filePath: place.file,
-			publicTitle: a.public_title,
-			originClass: a.origin_class,
-			originClassConfirmed: a.origin_class_confirmed === 1,
-			originClassSource: a.origin_class_source,
-			originClassNote: a.origin_class_note,
-			aiAssisted: a.ai_assisted === 1,
-			signedBy: a.signed_by,
-			signerName: a.signer_name,
-			c2paSummary: c2paOf(project, sha!),
-		});
-	}
+	const { assets, missing } = placedAssets(
+		project,
+		places,
+		segments,
+		outputRef,
+	);
 	if (missing.length)
 		throw new NotReadyError(
 			`These files the timeline places are not on this machine, and c2patool reads each one: ${missing.join(", ")}`,
 		);
 
-	const identityUrl =
-		(
-			db
-				.prepare("SELECT value FROM meta WHERE key = 'cawg_identity_url'")
-				.get() as { value: string } | undefined
-		)?.value ?? "";
+	const identityUrl = identityUrlOf(project);
 	const {
 		definition,
 		ingredients,

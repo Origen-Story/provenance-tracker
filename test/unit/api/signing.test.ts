@@ -247,6 +247,14 @@ describe.skipIf(!haveOpenssl)("signing through the API", () => {
 				})
 			).status,
 		).toBe(400);
+		// Whether to time-stamp is the request's; which server is the tracker's.
+		for (const fields of [
+			{ timestamp_url: "http://elsewhere.example" },
+			{ timestamp: "yes" },
+		]) {
+			const r = await w.call("POST", `/assets/${w.film.id}/sign`, { fields });
+			expect(r.status).toBe(400);
+		}
 	});
 });
 

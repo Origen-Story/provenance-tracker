@@ -389,3 +389,255 @@ export const media = {
 			{},
 		),
 };
+
+// --- Finished edits: timelines, statements, signing, the public export (D40, D41) ---
+
+export interface TimelineSource {
+	id: number;
+	key: string;
+	/** file, sequence (a nested one) or generator (a title or matte). */
+	kind: string;
+	name: string;
+	path: string;
+	assetId: number | null;
+	assetTitle: string | null;
+	/** The matched asset's class, which the source's clips follow unless a clip has its own. */
+	assetClass: string | null;
+	assetClassConfirmed: boolean;
+	assetAiAssisted: boolean;
+	matchMethod: string;
+	matchConfidence: number;
+	clips: number;
+}
+
+export interface TimelineClip {
+	id: number;
+	sourceId: number | null;
+	trackKind: "video" | "audio";
+	trackIndex: number;
+	clipKey: string;
+	name: string;
+	enabled: boolean;
+	startFrame: number;
+	endFrame: number;
+	inFrame: number | null;
+	outFrame: number | null;
+	/** A person's class for this clip alone; null follows its source's asset. */
+	originClass: string | null;
+}
+
+/** One lane of the composition (D10): what plays when, per spectrum position. Read by the strip as it is. */
+export type Lane = Record<string, unknown> & {
+	intervals: Array<Record<string, unknown>>;
+};
+
+export interface Breakdown {
+	durationFrames: number | null;
+	fps: number | null;
+	durationSeconds: number | null;
+	composition: {
+		durationSeconds: number | null;
+		picture?: Lane;
+		audio?: Lane;
+	} | null;
+	counts: {
+		segments: number;
+		unmatched: number;
+		generators: number;
+		nested: number;
+		disabled: number;
+	};
+}
+
+export interface Timeline {
+	id: number;
+	outputAssetId: number | null;
+	contentSha256: string;
+	format: string;
+	formatVersion: string;
+	fileName: string;
+	fileSha256: string;
+	sequenceName: string;
+	fps: number | null;
+	durationFrames: number | null;
+	width: number | null;
+	height: number | null;
+	primaryTrackIndex: number;
+	includeOverlays: boolean;
+	notes: string[];
+	importedAt: string;
+	breakdown: Breakdown | null;
+	sources: TimelineSource[];
+	clips: TimelineClip[];
+}
+
+export interface StatementIngredient {
+	ref: string;
+	title: string;
+	publicTitle: string;
+	originClass: string;
+	position: string;
+	classSetBy: "creator" | "proposal";
+	fileCredentials: "none" | "unreadable" | "present";
+	classClaimedByFile: string | null;
+	signedBy: string;
+	signerName: string;
+	aiAssisted: boolean;
+	note: string;
+	pictureSeconds: number | null;
+	audioSeconds: number | null;
+}
+
+/** The creator statement as signing would build it now (manifest/build.js). */
+export interface BuiltStatement {
+	text: string;
+	author: string;
+	organization: string;
+	editedWith: string;
+	output: {
+		title: string;
+		publicTitle: string;
+		originClass: string;
+		sequence: string;
+		durationSeconds: number | null;
+		fps: number | null;
+	};
+	composition: { picture?: Lane; audio?: Lane };
+	ingredients: StatementIngredient[];
+	unresolved: Array<{
+		clip: string;
+		track: string;
+		startSeconds: number | null;
+		endSeconds: number | null;
+		reason: string;
+	}>;
+	editorGeneratedClips: number;
+}
+
+export interface SigningStatus {
+	configured: boolean;
+	problem: string | null;
+	/** What the certificate says. The API never sends its path. */
+	certificate: {
+		commonName: string;
+		issuer: string;
+		fingerprint: string;
+		validTo: string;
+	} | null;
+}
+
+export const outputs = {
+	importTimeline: (projectId: string, assetId: number, file: File) => {
+		const form = new FormData();
+		form.append("timeline", file, file.name);
+		return api<{
+			import: {
+				timelineId: number;
+				sources: number;
+				matched: number;
+				clips: number;
+			};
+			timeline: Timeline;
+		}>("POST", `/projects/${projectId}/assets/${assetId}/timelines`, form);
+	},
+	timeline: (projectId: string, timelineId: number) =>
+		api<Timeline>("GET", `/projects/${projectId}/timelines/${timelineId}`),
+	setTimeline: (
+		projectId: string,
+		timelineId: number,
+		fields: { primary_track_index?: number; include_overlays?: boolean },
+	) =>
+		api<{ changed: string[]; timeline: Timeline }>(
+			"PATCH",
+			`/projects/${projectId}/timelines/${timelineId}`,
+			{ fields },
+		),
+	/** Say which asset a source is, or null for none. */
+	matchSource: (
+		projectId: string,
+		timelineId: number,
+		sourceId: number,
+		assetId: number | null,
+	) =>
+		api<{ timeline: Timeline }>(
+			"PATCH",
+			`/projects/${projectId}/timelines/${timelineId}/sources/${sourceId}`,
+			{ fields: { asset_id: assetId } },
+		),
+	/** A class for one clip alone, or null to follow its source. */
+	setClipClass: (
+		projectId: string,
+		timelineId: number,
+		clipId: number,
+		originClass: string | null,
+	) =>
+		api<{ timeline: Timeline }>(
+			"PATCH",
+			`/projects/${projectId}/timelines/${timelineId}/clips/${clipId}`,
+			{ fields: { origin_class: originClass } },
+		),
+	removeTimeline: (projectId: string, timelineId: number) =>
+		api<{ removed: number }>(
+			"DELETE",
+			`/projects/${projectId}/timelines/${timelineId}`,
+			{},
+		),
+	saveStatement: (
+		projectId: string,
+		assetId: number,
+		fields: {
+			text: string;
+			author: string;
+			organization: string;
+			edited_with: string;
+		},
+	) =>
+		api<Answer>("POST", `/projects/${projectId}/assets/${assetId}/statements`, {
+			fields,
+		}),
+	preview: (projectId: string, assetId: number) =>
+		api<{
+			statement: BuiltStatement | null;
+			blockers: string[];
+			/** The asset each ingredient is, in the statement's order. */
+			ingredientAssetIds: number[];
+		}>("GET", `/projects/${projectId}/assets/${assetId}/statement-preview`),
+	signing: (projectId: string) =>
+		api<SigningStatus>("GET", `/projects/${projectId}/signing`),
+	setSigning: (projectId: string, certificate: string, privateKey: string) =>
+		api<SigningStatus>("PUT", `/projects/${projectId}/signing`, {
+			fields: { certificate, private_key: privateKey },
+		}),
+	clearSigning: (projectId: string) =>
+		api<SigningStatus>("DELETE", `/projects/${projectId}/signing`, {}),
+	/**
+	 * Sign an asset: an output gets a signed copy, a source asset a sidecar.
+	 * A job. `timestamp: true` asks the tracker's time-stamp server.
+	 */
+	sign: (projectId: string, assetId: number, fields: Fields) =>
+		api<{ job: Job }>("POST", `/projects/${projectId}/assets/${assetId}/sign`, {
+			fields,
+		}),
+	publicExportUrl: (projectId: string, signatureId: number) =>
+		`${BASE}/projects/${projectId}/signatures/${signatureId}/public-export`,
+	publicExport: (projectId: string, signatureId: number) =>
+		api<PublicExport>(
+			"GET",
+			`/projects/${projectId}/signatures/${signatureId}/public-export`,
+		),
+};
+
+/** The public export of one signing (manifest/public-export.js): what a public page shows. */
+export interface PublicExport {
+	film: { title: string; durationSeconds: number | null };
+	statement: { text: string };
+	ingredients: Array<{ title: string; fileName: string }>;
+	composition: { picture?: Lane; audio?: Lane };
+	untracked: unknown[];
+	signedFile: { fileName: string; bytes: number; sha256: string };
+	signature: {
+		statusLabel: string;
+		signer: { commonName?: string } | null;
+		timestamped: boolean;
+	};
+}

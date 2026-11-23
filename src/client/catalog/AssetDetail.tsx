@@ -22,6 +22,7 @@ import Generation from "./asset/Generation.tsx";
 import History from "./asset/History.tsx";
 import Links from "./asset/Links.tsx";
 import OriginForm from "./asset/OriginForm.tsx";
+import SignSidecar from "./asset/SignSidecar.tsx";
 import { assetKey, str, useTakeAnswer } from "./asset/shared.ts";
 
 export default function AssetDetail() {
@@ -67,7 +68,12 @@ export default function AssetDetail() {
 							/>
 							<span>{KIND_LABEL[str(f.kind)] ?? str(f.kind)}</span>
 							{!!f.is_output && (
-								<span className="text-accent">finished edit</span>
+								<Link
+									to={`/catalog/${p}/outputs/${asset.id}`}
+									className="text-accent hover:underline"
+								>
+									finished edit: its timeline and signing
+								</Link>
 							)}
 							{str(f.code) && <span>{str(f.code)}</span>}
 							<span>· changed {when(asset.updatedAt)}</span>
@@ -96,11 +102,13 @@ export default function AssetDetail() {
 			<Section title="Links to other assets">
 				<Links projectId={p} asset={asset} />
 			</Section>
-			{(asset.timelines.length > 0 ||
-				asset.statements.length > 0 ||
-				asset.signatures.length > 0) && (
-				<Section title="Timelines and signing">
-					<OutputSummary asset={asset} />
+			{f.is_output ? (
+				<Section title="Timeline and signing">
+					<OutputSummary projectId={p} asset={asset} />
+				</Section>
+			) : (
+				<Section title="Sign with Content Credentials">
+					<SignSidecar projectId={p} asset={asset} />
 				</Section>
 			)}
 			<Section title="Files">
@@ -197,10 +205,25 @@ function Preview({
 	);
 }
 
-/** What the outputs pages (slice 6d) will manage, shown here as it stands. */
-function OutputSummary({ asset }: { asset: AssetRecord }) {
+/** A finished edit's timeline, statement and signings, managed on its own page. */
+function OutputSummary({
+	projectId,
+	asset,
+}: {
+	projectId: string;
+	asset: AssetRecord;
+}) {
 	return (
 		<Card className="space-y-2 text-sm">
+			<Link
+				to={`/catalog/${projectId}/outputs/${asset.id}`}
+				className="text-accent hover:underline"
+			>
+				Open its timeline, statement and signing
+			</Link>
+			{asset.timelines.length === 0 && (
+				<p className="text-text-secondary">No timeline imported yet.</p>
+			)}
 			{asset.timelines.map((t) => (
 				<p key={t.id}>
 					Timeline{" "}

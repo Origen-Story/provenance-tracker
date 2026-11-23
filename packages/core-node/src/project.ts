@@ -269,6 +269,19 @@ export function backupCatalog(
 }
 
 /**
+ * A folder with no catalog in it. The message states only that; each front
+ * end adds its own way to make one (the command line's init, the app's form).
+ */
+export class NoCatalogError extends Error {
+	folder: string;
+	constructor(folder: string) {
+		super(`There is no catalog in ${folder}.`);
+		this.name = "NoCatalogError";
+		this.folder = folder;
+	}
+}
+
+/**
  * Open the project in `folder`. Refuses a folder inside a sync folder, a
  * file that is not a catalog, and a catalog newer than this tracker. An
  * older catalog is copied to backups/ and then upgraded.
@@ -284,10 +297,7 @@ export function openProject(
 ): OpenProject {
 	const { machine } = opts;
 	const given = fullFolder(folderIn, machine);
-	if (!existsSync(catalogPathOf(given)))
-		throw new Error(
-			`There is no catalog in ${given}. To make one there: npm run cli -- init "${given}"`,
-		);
+	if (!existsSync(catalogPathOf(given))) throw new NoCatalogError(given);
 	const folder = realpathSync.native(given);
 	const catalogPath = catalogPathOf(folder);
 	const sync = findSyncFolder(folder, machine);

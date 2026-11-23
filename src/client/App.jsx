@@ -29,6 +29,10 @@ import OutputsList from "./pages/outputs/OutputsList.jsx";
 import OutputPage from "./pages/outputs/OutputPage.jsx";
 import SearchPage from "./pages/search/SearchPage.jsx";
 import GroupsManager from "./pages/search/GroupsManager.jsx";
+// The pages on the catalogs (Phase 6), beside the old ones until the cutover.
+import CatalogShell from "./catalog/CatalogShell.tsx";
+import ProjectPicker from "./catalog/ProjectPicker.tsx";
+import ProjectHome from "./catalog/ProjectHome.tsx";
 
 function RequireProject({ children }) {
 	const {
@@ -57,6 +61,14 @@ export default function App() {
 			<Routes>
 				{/* Project setup — no shell required */}
 				<Route path="/projects/new" element={<NewProject />} />
+
+				{/* The new pages, on the catalogs: no active project, it is in the URL */}
+				<Route path="/catalog" element={<CatalogShell />}>
+					<Route index element={<ProjectPicker />} />
+				</Route>
+				<Route path="/catalog/:projectId" element={<CatalogShell />}>
+					<Route index element={<ProjectHome />} />
+				</Route>
 
 				{/* Main app — requires active project */}
 				<Route

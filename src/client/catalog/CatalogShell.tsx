@@ -4,6 +4,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, NavLink, Outlet, useParams } from "react-router";
 import { projects } from "./api.ts";
+import { WorkingNote } from "./media/Jobs.tsx";
 
 export default function CatalogShell() {
 	const { projectId } = useParams();
@@ -31,7 +32,11 @@ export default function CatalogShell() {
 							<NavLink to={`/catalog/${projectId}/assets`} className={tab}>
 								Assets
 							</NavLink>
+							<NavLink to={`/catalog/${projectId}/media`} className={tab}>
+								Media
+							</NavLink>
 						</nav>
+						<WorkingNote projectId={projectId} />
 					</>
 				)}
 				<Link

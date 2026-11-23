@@ -129,7 +129,7 @@ async function world(pages: Parameters<typeof web>[0] = {}) {
 		return { status: res.status, body: json };
 	};
 	const finished = async (job: { id: string }) => (await jobs.settled(job.id))!;
-	return { dir, folder, media, call, finished };
+	return { dir, folder, media, call, finished, jobs, projectId };
 }
 
 describe("roots through the API", () => {
@@ -226,6 +226,35 @@ describe("adding files", () => {
 			"day 1/take (2).wav",
 			"day 1/take.wav",
 		]);
+	});
+
+	it("refuses an upload while other work runs, before taking any of it", async () => {
+		const w = await world();
+		await w.call("POST", "/roots", {
+			fields: { name: "media", folder: w.media },
+		});
+		let release = () => {};
+		const held = w.jobs.start(
+			w.projectId,
+			"scan",
+			() => new Promise<void>((r) => (release = r)),
+		);
+		const form = () => {
+			const f = new FormData();
+			f.append("files", new Blob(["new take"]), "take.wav");
+			return f;
+		};
+		const refused = await w.call("POST", "/files?root=media", form());
+		expect(refused.status).toBe(409);
+		expect(refused.body.error).toMatch(
+			/busy.*Add the files when it has finished/,
+		);
+		expect(readdirSync(w.media)).toEqual([]);
+		release();
+		await w.jobs.settled(held.id);
+		const taken = await w.call("POST", "/files?root=media", form());
+		expect(taken.status).toBe(202);
+		expect((await w.finished(taken.body.job)).state).toBe("done");
 	});
 
 	it("refuses a folder outside the root, an unknown root and an empty upload, keeping nothing", async () => {

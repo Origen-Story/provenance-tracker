@@ -35,6 +35,7 @@ import ProjectPicker from "./catalog/ProjectPicker.tsx";
 import ProjectHome from "./catalog/ProjectHome.tsx";
 import AssetsList from "./catalog/AssetsList.tsx";
 import AssetDetail from "./catalog/AssetDetail.tsx";
+import MediaPage from "./catalog/MediaPage.tsx";
 
 function RequireProject({ children }) {
 	const {
@@ -72,6 +73,7 @@ export default function App() {
 					<Route index element={<ProjectHome />} />
 					<Route path="assets" element={<AssetsList />} />
 					<Route path="assets/:assetId" element={<AssetDetail />} />
+					<Route path="media" element={<MediaPage />} />
 				</Route>
 
 				{/* Main app — requires active project */}

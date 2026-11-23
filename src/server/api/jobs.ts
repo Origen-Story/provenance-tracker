@@ -106,6 +106,14 @@ export class JobRunner {
 	}
 
 	/** This project's jobs, newest first. */
+	/** The job of this project running now, if any. */
+	running(projectId: string): JobView | null {
+		const job = [...this.jobs.values()].find(
+			(j) => j.projectId === projectId && j.state === "running",
+		);
+		return job ? view(job) : null;
+	}
+
 	list(projectId: string): JobView[] {
 		return [...this.jobs.values()]
 			.filter((j) => j.projectId === projectId)

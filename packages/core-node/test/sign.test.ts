@@ -16,11 +16,13 @@ import {
 	type TimelineSegment,
 } from "@provenancetracker/core/catalog/timelines.ts";
 import { publicExport } from "@provenancetracker/core/catalog/signatures.ts";
+import { editRow } from "@provenancetracker/core/catalog/edit.ts";
 import { c2patoolPath } from "../src/extract/c2patool.ts";
 import { createProject, openProject } from "../src/project.ts";
 import { addRoot } from "../src/roots.ts";
 import { scanProject } from "../src/scan.ts";
 import { certificateInfo } from "../src/sign/c2patool-sign.ts";
+import { signAsset } from "../src/sign/sign-asset.ts";
 import {
 	NotReadyError,
 	signOutput,
@@ -169,6 +171,15 @@ async function world(opts: { signing?: boolean; statement?: boolean } = {}) {
 		},
 		{ tool: TOOL },
 	);
+	// A person has said what the sources are, as signing a source asset needs.
+	for (const n of ["tone.wav", "still.png"])
+		editRow(
+			p.db,
+			"assets",
+			id(n).id,
+			{ origin_class: "digitalCreation" },
+			{ actor: ME },
+		);
 	const statementId =
 		opts.statement === false
 			? null
@@ -189,6 +200,7 @@ function stubEngine() {
 	const engine: SigningEngine = {
 		name: "stub",
 		version: "1.0",
+		readEmbedded: async () => null,
 		sign: async (args) => {
 			calls.push(args);
 			copyFileSync(args.inputPath, args.outputPath);
@@ -396,6 +408,151 @@ describe.skipIf(!haveOpenssl || !haveC2patool)(
 				ingredients: [{ fileName: "still.png" }, { fileName: "tone.wav" }],
 				signedFile: { version: 1 },
 			});
+		}, 120000);
+	},
+);
+
+describe.skipIf(!haveOpenssl)("signAsset", () => {
+	const sidecarOf = (w: Awaited<ReturnType<typeof world>>) =>
+		path.join(w.media, "tone.c2pa");
+
+	it("signs a source asset into a .c2pa sidecar beside it, recorded as a version of the asset, and a scan finds nothing new", async () => {
+		const w = await world();
+		const tone = w.id("tone.wav");
+		const { engine, calls } = stubEngine();
+		const r = await signAsset(w.p, w.m, {
+			assetId: tone.id,
+			engine,
+			creatorName: "A. Maker",
+		});
+		expect(r).toMatchObject({
+			version: 1,
+			root: "media",
+			path: "tone.c2pa",
+			archived: null,
+		});
+		expect(calls[0]).toMatchObject({
+			outputPath: sidecarOf(w),
+			sidecar: true,
+			definition: { title: "tone.wav" },
+		});
+		expect(
+			readFileSync(path.join(w.media, "tone.wav")).subarray(0, 4).toString(),
+		).toBe("RIFF");
+		const s = w.p.db
+			.prepare(
+				"SELECT kind, version, source_sha256, signed_sha256, statement_id FROM signatures WHERE id = ?",
+			)
+			.get(r.signatureId) as Record<string, unknown>;
+		expect(s).toMatchObject({
+			kind: "asset",
+			version: 1,
+			source_sha256: tone.sha256,
+			statement_id: null,
+		});
+		expect(
+			w.p.db
+				.prepare("SELECT asset_id FROM contents WHERE sha256 = ?")
+				.get(s.signed_sha256 as string),
+		).toEqual({ asset_id: tone.id });
+		const scan = await scanProject(w.p, w.m);
+		expect(scan.counts).toMatchObject({ added: 0, newAssets: 0, gone: 0 });
+	});
+
+	it("sets the earlier sidecar aside on re-signing, moving it in the catalog in the same step", async () => {
+		const w = await world();
+		const tone = w.id("tone.wav");
+		const { engine } = stubEngine();
+		const first = await signAsset(w.p, w.m, { assetId: tone.id, engine });
+		const r = await signAsset(w.p, w.m, { assetId: tone.id, engine });
+		expect(r).toMatchObject({
+			version: 2,
+			path: "tone.c2pa",
+			archived: "tone.v1.c2pa",
+		});
+		expect(existsSync(path.join(w.media, "tone.v1.c2pa"))).toBe(true);
+		const firstSha = (
+			w.p.db
+				.prepare("SELECT signed_sha256 FROM signatures WHERE id = ?")
+				.get(first.signatureId) as { signed_sha256: string }
+		).signed_sha256;
+		expect(
+			w.p.db
+				.prepare(
+					"SELECT path, gone_run_id IS NULL AS live FROM locations WHERE content_sha256 = ? ORDER BY id",
+				)
+				.all(firstSha),
+		).toEqual([
+			{ path: "tone.c2pa", live: 0 },
+			{ path: "tone.v1.c2pa", live: 1 },
+		]);
+		expect((await scanProject(w.p, w.m)).counts).toMatchObject({
+			added: 0,
+			gone: 0,
+			moved: 0,
+		});
+	});
+
+	it("refuses a .c2pa it did not write, and a file with credentials of its own, writing nothing", async () => {
+		const w = await world();
+		const tone = w.id("tone.wav");
+		writeFileSync(sidecarOf(w), "someone else's");
+		await expect(
+			signAsset(w.p, w.m, { assetId: tone.id, engine: stubEngine().engine }),
+		).rejects.toThrow(/the tracker did not write it/);
+		rmSync(sidecarOf(w));
+		const signed = {
+			...stubEngine().engine,
+			readEmbedded: async () => ({ signer: "Example Camera" }),
+		};
+		await expect(
+			signAsset(w.p, w.m, { assetId: tone.id, engine: signed }),
+		).rejects.toThrow(
+			/already carries its own Content Credentials \(signed by Example Camera\)/,
+		);
+		expect(
+			w.p.db.prepare("SELECT count(*) AS n FROM signatures").get(),
+		).toEqual({ n: 0 });
+	});
+
+	it("puts the earlier sidecar back when signing fails", async () => {
+		const w = await world();
+		const tone = w.id("tone.wav");
+		await signAsset(w.p, w.m, {
+			assetId: tone.id,
+			engine: stubEngine().engine,
+		});
+		const before = readFileSync(sidecarOf(w));
+		const failing = {
+			...stubEngine().engine,
+			sign: async () => {
+				throw new Error("Signing failed: example");
+			},
+		};
+		await expect(
+			signAsset(w.p, w.m, { assetId: tone.id, engine: failing }),
+		).rejects.toThrow(/example/);
+		expect(readFileSync(sidecarOf(w))).toEqual(before);
+		expect(existsSync(path.join(w.media, "tone.v1.c2pa"))).toBe(false);
+		expect(
+			w.p.db.prepare("SELECT count(*) AS n FROM signatures").get(),
+		).toEqual({ n: 1 });
+	});
+});
+
+describe.skipIf(!haveOpenssl || !haveC2patool)(
+	"signAsset with c2patool",
+	() => {
+		it("writes a sidecar c2patool reads back against the file", async () => {
+			const w = await world();
+			const still = w.id("still.png");
+			const r = await signAsset(w.p, w.m, { assetId: still.id });
+			expect(r).toMatchObject({ path: "still.c2pa", version: 1 });
+			const s = w.p.db
+				.prepare("SELECT engine, report FROM signatures WHERE id = ?")
+				.get(r.signatureId) as Record<string, unknown>;
+			expect(s.engine).toBe("c2patool");
+			expect(JSON.parse(s.report as string)).toHaveProperty("active_manifest");
 		}, 120000);
 	},
 );

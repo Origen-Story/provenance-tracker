@@ -34,6 +34,7 @@ import { describeFile } from "../show.ts";
 import { verifyProject } from "../verify.ts";
 import { readSettings, updateSettings } from "../settings.ts";
 import { TOOL } from "../tool.ts";
+import { signAsset } from "../sign/sign-asset.ts";
 import { signOutput } from "../sign/sign-output.ts";
 import {
 	clearSigning,
@@ -70,7 +71,8 @@ Usage: npm run cli -- <command> [options]
   signing                             Whether this project can be signed here, and with what
   signing --certificate <f> --key <f> Set the certificate and key that sign it on this machine
   signing --clear                     Forget them
-  sign <asset id> [--timestamp <url>] Sign a finished edit: a new signed copy beside its file
+  sign <asset id> [--timestamp <url>] Sign it: a finished edit gets a signed copy beside its
+                                      file; any other asset a .c2pa sidecar beside it
   verify [--hash] [--root <name>]    Check the catalog, and that every file is still as it was
   show <file>                         Everything the catalog knows about one file
   settings                            Show this machine's settings
@@ -469,14 +471,33 @@ async function sign(io: Io, args: string[], values: Values): Promise<number> {
 	if (!Number.isSafeInteger(id) || id < 1)
 		throw new UsageError("The asset id is a whole number (see the asset list)");
 	return withProject(io, values, async (project) => {
-		io.out("Signing; c2patool reads the whole film and each source it places.");
-		const r = await signOutput(project, io.machine, {
+		const asset = project.db
+			.prepare("SELECT is_output FROM assets WHERE id = ?")
+			.get(id) as { is_output: number } | undefined;
+		if (!asset) throw new Error(`There is no asset ${id}`);
+		if (asset.is_output === 1) {
+			io.out(
+				"Signing; c2patool reads the whole film and each source it places.",
+			);
+			const r = await signOutput(project, io.machine, {
+				assetId: id,
+				timestampUrl: values.timestamp,
+			});
+			io.out(
+				`Signed copy v${r.version}: ${r.root}/${r.path} (${r.status || "read back"}).`,
+			);
+			return 0;
+		}
+		// A source asset: its credentials go in a .c2pa sidecar beside it.
+		const r = await signAsset(project, io.machine, {
 			assetId: id,
 			timestampUrl: values.timestamp,
 		});
 		io.out(
-			`Signed copy v${r.version}: ${r.root}/${r.path} (${r.status || "read back"}).`,
+			`Signed into a sidecar, v${r.version}: ${r.root}/${r.path} (${r.status || "read back"}).`,
 		);
+		if (r.archived)
+			io.out(`The earlier signature is kept as ${r.root}/${r.archived}.`);
 		return 0;
 	});
 }

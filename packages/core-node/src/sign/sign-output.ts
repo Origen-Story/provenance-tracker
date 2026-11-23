@@ -27,6 +27,7 @@ import { listRoots } from "../roots.ts";
 import { TOOL } from "../tool.ts";
 import {
 	certificateInfo,
+	readReport,
 	signWithC2patool,
 	storableDefinition,
 	type SignIngredient,
@@ -45,7 +46,14 @@ export interface SigningEngine {
 		certificatePath: string;
 		privateKeyPath: string;
 		timestampUrl?: string;
+		/** Write the manifest to outputPath as a .c2pa sidecar; the input is untouched. */
+		sidecar?: boolean;
 	}) => Promise<{ report: Record<string, unknown> | null }>;
+	/**
+	 * The credentials a file carries itself, if any, and who signed them; null
+	 * when it has none. A file that has them is not signed at ingest.
+	 */
+	readEmbedded: (file: string) => Promise<{ signer: string } | null>;
 }
 
 /** c2patool on this machine, as the engine. */
@@ -55,6 +63,18 @@ export async function c2patoolEngine(machine: Machine): Promise<SigningEngine> {
 		name: "c2patool",
 		version: (await c2patoolVersion(tool)) ?? "",
 		sign: (args) => signWithC2patool({ ...args, tool }),
+		readEmbedded: async (file) => {
+			const report = await readReport(file, { tool }).catch(() => null);
+			if (!report?.active_manifest) return null;
+			const manifests = report.manifests as
+				| Record<
+						string,
+						{ signature_info?: { common_name?: string; issuer?: string } }
+				  >
+				| undefined;
+			const info = manifests?.[String(report.active_manifest)]?.signature_info;
+			return { signer: info?.common_name || info?.issuer || "" };
+		},
 	};
 }
 

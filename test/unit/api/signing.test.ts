@@ -50,6 +50,7 @@ afterEach(async () => {
 const stub: SigningEngine = {
 	name: "stub",
 	version: "1.0",
+	readEmbedded: async () => null,
 	sign: async ({ inputPath, outputPath }) => {
 		copyFileSync(inputPath, outputPath);
 		writeFileSync(

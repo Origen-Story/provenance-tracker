@@ -238,7 +238,11 @@ describe("scanProject", () => {
 		expect(report.counts.gone).toBe(0);
 		expect(live(p).length).toBe(1);
 		// Plugged in again at another letter: located, scanned, nothing lost.
-		locateRoot(p, m, { name: "media", folder: `${media} unplugged` });
+		locateRoot(p, m, {
+			name: "media",
+			folder: `${media} unplugged`,
+			actor: () => ME,
+		});
 		expect((await scanProject(p, m)).counts).toMatchObject({
 			unchanged: 1,
 			gone: 0,

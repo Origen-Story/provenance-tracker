@@ -13,6 +13,7 @@ import {
 	realpathSync,
 	rmSync,
 	statSync,
+	writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -38,6 +39,18 @@ import { TOOL } from "./tool.ts";
 export const PROJECT_DIR = ".provenancetracker";
 export const CATALOG_FILE = "catalog.sqlite";
 export const BACKUP_DIR = "backups";
+export const GITIGNORE_FILE = ".gitignore";
+
+/**
+ * What init writes to .provenancetracker/.gitignore: the catalog changes
+ * with every scan and git would hold it as an opaque blob, so a project
+ * folder that is also a git repository keeps it out without any change to
+ * the repository's own .gitignore. It travels with the folder instead.
+ */
+export const GITIGNORE_TEXT =
+	"# Written by provenancetracker. The catalog is kept with the project\n" +
+	"# folder and its backups, not in git.\n" +
+	"*\n";
 
 export function catalogPathOf(folder: string): string {
 	return path.join(folder, PROJECT_DIR, CATALOG_FILE);
@@ -154,6 +167,16 @@ export function createProject(
 		}
 	} finally {
 		rmSync(temp, { force: true });
+	}
+	try {
+		writeFileSync(
+			path.join(path.dirname(catalogPath), GITIGNORE_FILE),
+			GITIGNORE_TEXT,
+			{ flag: "wx" },
+		);
+	} catch (err) {
+		// One already there is someone's own; it is left as it is.
+		if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
 	}
 	updateSettings(machine.settingsPath, (s) => {
 		projectEntry(s, projectId).folder = folder;

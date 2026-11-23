@@ -36,7 +36,10 @@ const boolean: FieldSpec = { type: "boolean" };
 const json: FieldSpec = { type: "json" };
 
 export const EDITABLE: Readonly<Record<string, TableSpec>> = {
-	roots: { key: "id", fields: { name: text, note: text } },
+	roots: {
+		key: "id",
+		fields: { name: text, note: text, folder_in_project: textOrNull },
+	},
 	assets: {
 		key: "id",
 		fields: {

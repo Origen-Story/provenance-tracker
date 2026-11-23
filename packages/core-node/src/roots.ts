@@ -1,6 +1,9 @@
-// A project's media roots: named in the catalog (which travels), placed in
-// this machine's settings (which does not). Adding a root writes both;
-// locating one on a new machine writes only the settings.
+// A project's media roots, named in the catalog. A root inside the project
+// folder is placed in the catalog too, relative to the project folder, so the
+// project finds it wherever the folder is copied, archived or restored. A
+// root outside the project folder is placed in this machine's settings, since
+// that path means nothing on another machine; locating one there writes only
+// the settings.
 
 import { existsSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
@@ -10,9 +13,11 @@ import {
 	type Actor,
 } from "@provenancetracker/core/catalog/edit.ts";
 import {
+	fromCatalogPath,
 	isFullPath,
 	isWithin,
 	overlaps,
+	toCatalogPath,
 } from "@provenancetracker/core/catalog/paths.ts";
 import type { Machine } from "./machine.ts";
 import { PROJECT_DIR, type OpenProject } from "./project.ts";
@@ -25,6 +30,11 @@ export interface RootView {
 	note: string;
 	/** Its folder on this machine, or null when this machine has none. */
 	folder: string | null;
+	/**
+	 * True when the root is inside the project folder and found from it, so
+	 * it travels with the folder; false when this machine's settings place it.
+	 */
+	inProject: boolean;
 	status: "ok" | "not located on this machine" | "folder missing";
 	/** Why scanning this root may be slow or surprising. */
 	warnings: string[];
@@ -34,17 +44,20 @@ interface RootRow {
 	id: number;
 	name: string;
 	note: string;
+	folder_in_project: string | null;
 }
+
+const ROOT_COLUMNS = "id, name, note, folder_in_project";
 
 function rootRows(project: OpenProject): RootRow[] {
 	return project.db
-		.prepare("SELECT id, name, note FROM roots ORDER BY id")
+		.prepare(`SELECT ${ROOT_COLUMNS} FROM roots ORDER BY id`)
 		.all() as unknown as RootRow[];
 }
 
 function rootByName(project: OpenProject, name: string): RootRow {
 	const row = project.db
-		.prepare("SELECT id, name, note FROM roots WHERE name = ?")
+		.prepare(`SELECT ${ROOT_COLUMNS} FROM roots WHERE name = ?`)
 		.get(name) as RootRow | undefined;
 	if (!row) {
 		const names = rootRows(project).map((r) => r.name);
@@ -56,6 +69,48 @@ function rootByName(project: OpenProject, name: string): RootRow {
 		);
 	}
 	return row;
+}
+
+function placedHere(
+	project: OpenProject,
+	machine: Machine,
+): Record<string, string> {
+	return (
+		readSettings(machine.settingsPath).projects[project.projectId]?.roots ?? {}
+	);
+}
+
+/**
+ * Where a root is on this machine. A root inside the project folder is
+ * found from the project folder alone; a settings entry left over for it
+ * (from before the project moved, say) is ignored, so it can never lead to
+ * an old copy of the folder.
+ */
+function folderOf(
+	project: OpenProject,
+	machine: Machine,
+	row: RootRow,
+	placed: Record<string, string>,
+): string | null {
+	if (row.folder_in_project === ".") return project.folder;
+	if (row.folder_in_project !== null)
+		return fromCatalogPath(
+			project.folder,
+			row.folder_in_project,
+			machine.platform,
+		);
+	return placed[String(row.id)] ?? null;
+}
+
+/** A folder's place relative to the project folder, or null when it is outside it. */
+function inProjectPlace(
+	project: OpenProject,
+	machine: Machine,
+	folder: string,
+): string | null {
+	if (!isWithin(project.folder, folder, machine.platform)) return null;
+	if (isWithin(folder, project.folder, machine.platform)) return ".";
+	return toCatalogPath(project.folder, folder, machine.platform);
 }
 
 function syncWarnings(folder: string, machine: Machine): string[] {
@@ -85,52 +140,75 @@ function checkFolder(
 		throw new Error(
 			`${folder} is inside the project's own ${PROJECT_DIR} folder`,
 		);
-	const placed =
-		readSettings(machine.settingsPath).projects[project.projectId]?.roots ?? {};
-	const names = new Map(rootRows(project).map((r) => [r.id, r.name]));
-	for (const [id, other] of Object.entries(placed)) {
-		if (Number(id) === except || !names.has(Number(id))) continue;
+	const placed = placedHere(project, machine);
+	for (const row of rootRows(project)) {
+		if (row.id === except) continue;
+		const other = folderOf(project, machine, row, placed);
+		if (other === null) continue;
 		if (
 			isWithin(other, folder, machine.platform) &&
 			isWithin(folder, other, machine.platform)
 		)
 			throw new Error(
-				`${folder} is already the folder of the root "${names.get(Number(id))}"`,
+				`${folder} is already the folder of the root "${row.name}"`,
 			);
 		if (overlaps(other, folder, machine.platform))
 			throw new Error(
-				`${folder} overlaps the root "${names.get(Number(id))}" (${other}). ` +
+				`${folder} overlaps the root "${row.name}" (${other}). ` +
 					"Every file must belong to one root, so roots cannot be inside one another.",
 			);
 	}
 	return folder;
 }
 
+function viewOf(
+	row: RootRow,
+	folder: string | null,
+	machine: Machine,
+): RootView {
+	const base = {
+		id: row.id,
+		name: row.name,
+		note: row.note,
+		folder,
+		inProject: row.folder_in_project !== null,
+	};
+	if (folder === null)
+		return { ...base, status: "not located on this machine", warnings: [] };
+	if (!existsSync(folder) || !statSync(folder).isDirectory())
+		return { ...base, status: "folder missing", warnings: [] };
+	return { ...base, status: "ok", warnings: syncWarnings(folder, machine) };
+}
+
 /** The project's roots, and where each is on this machine. */
 export function listRoots(project: OpenProject, machine: Machine): RootView[] {
-	const placed =
-		readSettings(machine.settingsPath).projects[project.projectId]?.roots ?? {};
-	return rootRows(project).map((row) => {
-		const folder = placed[String(row.id)] ?? null;
-		if (folder === null)
-			return {
-				...row,
-				folder,
-				status: "not located on this machine",
-				warnings: [],
-			};
-		if (!existsSync(folder) || !statSync(folder).isDirectory())
-			return { ...row, folder, status: "folder missing", warnings: [] };
-		return {
-			...row,
-			folder,
-			status: "ok",
-			warnings: syncWarnings(folder, machine),
-		};
+	const placed = placedHere(project, machine);
+	return rootRows(project).map((row) =>
+		viewOf(row, folderOf(project, machine, row, placed), machine),
+	);
+}
+
+/** Write (or, with null, remove) this machine's place for a root. */
+function placeOnThisMachine(
+	project: OpenProject,
+	machine: Machine,
+	id: number,
+	folder: string | null,
+): void {
+	const key = String(id);
+	const current = placedHere(project, machine)[key] ?? null;
+	if (current === folder) return;
+	updateSettings(machine.settingsPath, (s) => {
+		const roots = projectEntry(s, project.projectId).roots;
+		if (folder === null) delete roots[key];
+		else roots[key] = folder;
 	});
 }
 
-/** Add a root to the catalog and place it on this machine. */
+/**
+ * Add a root to the catalog. A folder inside the project folder is recorded
+ * relative to it; any other folder is placed on this machine.
+ */
 export function addRoot(
 	project: OpenProject,
 	machine: Machine,
@@ -150,44 +228,46 @@ export function addRoot(
 	if (taken)
 		throw new Error(`This project already has a root called "${name}"`);
 	const folder = checkFolder(project, machine, opts.folder);
+	const place = inProjectPlace(project, machine, folder);
+	const note = opts.note ?? "";
 	const id = Number(
 		createRow(
 			project.db,
 			"roots",
-			{ name, note: opts.note ?? "" },
+			place === null
+				? { name, note }
+				: { name, note, folder_in_project: place },
 			{ actor: opts.actor, now: opts.now },
 		),
 	);
-	updateSettings(machine.settingsPath, (s) => {
-		projectEntry(s, project.projectId).roots[String(id)] = folder;
-	});
-	return {
-		id,
-		name,
-		note: opts.note ?? "",
-		folder,
-		status: "ok",
-		warnings: syncWarnings(folder, machine),
-	};
+	if (place === null) placeOnThisMachine(project, machine, id, folder);
+	return viewOf({ id, name, note, folder_in_project: place }, folder, machine);
 }
 
-/** Say where an existing root is on this machine. Changes only this machine's settings. */
+/**
+ * Say where an existing root is. A folder outside the project folder changes
+ * only this machine's settings. A folder inside it is recorded in the catalog
+ * (relative to the project folder), which every copy of the project then
+ * follows, so that change is made under `actor` and kept in the history.
+ */
 export function locateRoot(
 	project: OpenProject,
 	machine: Machine,
-	opts: { name: string; folder: string },
+	opts: { name: string; folder: string; actor: () => Actor; now?: string },
 ): RootView {
 	const row = rootByName(project, opts.name);
 	const folder = checkFolder(project, machine, opts.folder, row.id);
-	updateSettings(machine.settingsPath, (s) => {
-		projectEntry(s, project.projectId).roots[String(row.id)] = folder;
-	});
-	return {
-		...row,
-		folder,
-		status: "ok",
-		warnings: syncWarnings(folder, machine),
-	};
+	const place = inProjectPlace(project, machine, folder);
+	if (place !== row.folder_in_project)
+		editRow(
+			project.db,
+			"roots",
+			row.id,
+			{ folder_in_project: place },
+			{ actor: opts.actor(), now: opts.now },
+		);
+	placeOnThisMachine(project, machine, row.id, place === null ? folder : null);
+	return viewOf({ ...row, folder_in_project: place }, folder, machine);
 }
 
 /** Rename a root. Its files and its place on every machine stay as they are. */

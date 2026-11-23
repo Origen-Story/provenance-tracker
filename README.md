@@ -282,7 +282,7 @@ npm run cli -- show "E:\Footage\day 1\clip.mov"             # everything known a
 
 A rescan reads only files that are new or changed; a moved file keeps everything known about it, and a drive that is not plugged in is skipped, never marked gone. Ctrl+C stops a scan cleanly.
 
-Moving a project to another computer: copy the project folder, then on that computer point each root at its folder there with `roots locate <name> <folder>`. Which folder each root is in is kept per machine (in `%LOCALAPPDATA%\provenancetracker\settings.json` on Windows), never in the project.
+Archiving a project, restoring it, or moving it to another computer: copy the project folder. Its catalog is inside it, in `.provenancetracker\`, and a root inside the project folder is recorded relative to it, so the copy finds those roots wherever it lands. A root outside the project folder (a footage drive, say) is placed per machine, in `%LOCALAPPDATA%\provenancetracker\settings.json` on Windows; on another computer point it at its folder there with `roots locate <name> <folder>`. `init` puts a `.gitignore` in `.provenancetracker\`, so a project folder that is also a git repository leaves the catalog out of git.
 
 A project folder inside OneDrive, Dropbox, Google Drive, iCloud or Syncthing is refused: a sync client can corrupt the catalog while it is being written. Media roots there are allowed, with a warning.
 

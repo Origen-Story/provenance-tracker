@@ -119,6 +119,7 @@ export function checkLocalRequest({
 /**
  * Express middleware around checkLocalRequest. `onRefuse(req, reason)` is for
  * logging; the response never repeats the reason's detail back to the caller.
+ * @param {{ allowedHosts?: string[], onRefuse?: (req: any, reason: string) => void }} [options]
  */
 export function localOnly({ allowedHosts = [], onRefuse } = {}) {
 	return (req, res, next) => {

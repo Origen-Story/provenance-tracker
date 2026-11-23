@@ -1,15 +1,12 @@
 import express from "express";
 import path from "path";
+import { thisMachine } from "@provenancetracker/core-node/machine.ts";
+import { createApp } from "./app.ts";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { pool } from "./db/index.js";
 import { createLogger } from "./lib/logger.js";
-import {
-	listenHost,
-	allowedHostnames,
-	isLoopbackHost,
-	localOnly,
-} from "./lib/core/local-only.js";
+import { listenHost, isLoopbackHost } from "./lib/core/local-only.js";
 import { startQueueWorker, releaseStaleLeases } from "./lib/search/queue.js";
 import {
 	startSearchJobWorker,
@@ -35,7 +32,6 @@ import timelinesRouter from "./routes/timelines.js";
 import outputsRouter from "./routes/outputs.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const app = express();
 const PORT = process.env.PORT || 3001;
 // Loopback unless HOST says otherwise: there is no login, so being reachable
 // only from this machine is the access control (docs/threat-model.md).
@@ -45,76 +41,55 @@ const pkg = JSON.parse(
 	readFileSync(path.resolve(__dirname, "../../package.json"), "utf8"),
 );
 
-// Before any body is parsed: refuse API requests that do not come from the
-// tracker's own pages on this machine (another site's form, DNS rebinding).
-app.use(
-	"/api",
-	localOnly({
-		allowedHosts: allowedHostnames(process.env),
-		onRefuse: (req, reason) =>
-			log.warn(
-				`refused ${req.method} ${req.originalUrl.split("?")[0]}: ${reason}`,
-			),
-	}),
-);
+// The request guard, JSON parsing, the catalog API (/api/next) and the JSON
+// error answer come from createApp; the routes still on Postgres mount here.
+const app = createApp({
+	env: process.env,
+	machine: thisMachine(),
+	mount: (app) => {
+		// Liveness/readiness probe. Returns 200 if the server can reach the DB, 503 otherwise.
+		// Useful for reverse-proxy health checks and for anyone self-hosting behind systemd/pm2.
+		app.get("/api/health", async (_req, res) => {
+			try {
+				await pool.query("SELECT 1");
+				res.json({ ok: true, db: true, version: pkg.version });
+			} catch (err) {
+				res.status(503).json({
+					ok: false,
+					db: false,
+					version: pkg.version,
+					error: err.message,
+				});
+			}
+		});
 
-app.use(express.json({ limit: "10mb" }));
-// Express 5 leaves req.body undefined when a request carries no JSON body
-// (Express 4 gave {}). Routes destructure req.body, so keep the old shape.
-app.use((req, _res, next) => {
-	if (req.body === undefined) req.body = {};
-	next();
+		app.use("/api/projects", projectsRouter);
+		app.use("/api/archival", archivalRouter);
+		app.use("/api/assets", assetsRouter);
+		app.use("/api/extract", extractRouter);
+		app.use("/api/notion", notionRouter);
+		app.use("/api/preview", previewRouter);
+		app.use("/api/produced", producedRouter);
+		app.use("/api/upload", uploadRouter);
+		app.use("/api/search", searchRouter);
+		app.use("/api/search-groups", searchGroupsRouter);
+		app.use("/api/sign", signRouter);
+		app.use("/api/origin", originRouter);
+		app.use("/api/relationships", relationshipsRouter);
+		app.use("/api/timelines", timelinesRouter);
+		app.use("/api/outputs", outputsRouter);
+
+		// Serve React build in production
+		if (process.env.NODE_ENV === "production") {
+			const distPath = path.resolve(__dirname, "../../dist");
+			app.use(express.static(distPath));
+			// Express 5 path syntax: a bare "*" is no longer valid; a named splat is.
+			app.get("/{*splat}", (req, res) => {
+				res.sendFile(path.join(distPath, "index.html"));
+			});
+		}
+	},
 });
-
-// Liveness/readiness probe. Returns 200 if the server can reach the DB, 503 otherwise.
-// Useful for reverse-proxy health checks and for anyone self-hosting behind systemd/pm2.
-app.get("/api/health", async (_req, res) => {
-	try {
-		await pool.query("SELECT 1");
-		res.json({ ok: true, db: true, version: pkg.version });
-	} catch (err) {
-		res
-			.status(503)
-			.json({ ok: false, db: false, version: pkg.version, error: err.message });
-	}
-});
-
-// API routes
-app.use("/api/projects", projectsRouter);
-app.use("/api/archival", archivalRouter);
-app.use("/api/assets", assetsRouter);
-app.use("/api/extract", extractRouter);
-app.use("/api/notion", notionRouter);
-app.use("/api/preview", previewRouter);
-app.use("/api/produced", producedRouter);
-app.use("/api/upload", uploadRouter);
-app.use("/api/search", searchRouter);
-app.use("/api/search-groups", searchGroupsRouter);
-app.use("/api/sign", signRouter);
-app.use("/api/origin", originRouter);
-app.use("/api/relationships", relationshipsRouter);
-app.use("/api/timelines", timelinesRouter);
-app.use("/api/outputs", outputsRouter);
-
-// Serve React build in production
-if (process.env.NODE_ENV === "production") {
-	const distPath = path.resolve(__dirname, "../../dist");
-	app.use(express.static(distPath));
-	// Express 5 path syntax: a bare "*" is no longer valid; a named splat is.
-	app.get("/{*splat}", (req, res) => {
-		res.sendFile(path.join(distPath, "index.html"));
-	});
-}
-
-// Express 5 forwards rejected promises from async routes here. Answer in JSON
-// so the client never gets an HTML stack page.
-app.use((err, _req, res, _next) => {
-	log.error(err.stack || err.message);
-	res
-		.status(err.status || 500)
-		.json({ error: err.message || "Internal error" });
-});
-
 app.listen(PORT, HOST, async () => {
 	log.info(
 		`✓ Provenance Tracker API listening on http://${HOST.includes(":") ? `[${HOST}]` : HOST}:${PORT}`,

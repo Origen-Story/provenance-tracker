@@ -94,6 +94,9 @@ async function serve(machine: Machine) {
 		base,
 		get: (url: string) => call("GET", url),
 		post: (url: string, body?: unknown) => call("POST", url, body),
+		patch: (url: string, body?: unknown) => call("PATCH", url, body),
+		put: (url: string, body?: unknown) => call("PUT", url, body),
+		delete: (url: string) => call("DELETE", url),
 	};
 }
 
@@ -267,5 +270,169 @@ describe("the catalog API", () => {
 			await raw({ host: `127.0.0.1:${port}`, origin: "https://example.com" }),
 		).toBe(403);
 		expect(await raw({ host: `127.0.0.1:${port}` })).toBe(200);
+	});
+});
+
+describe("editing through the catalog API", () => {
+	async function editable() {
+		const dir = tempDir();
+		const m = machineIn(dir);
+		const { projectId } = await demoProject(m, dir);
+		updateSettings(m.settingsPath, (s) => {
+			s.person = "Settings Person";
+		});
+		const api = await serve(m);
+		return { m, api, base: `/api/next/projects/${projectId}` };
+	}
+
+	it("changes an asset under the name in this machine's settings, never one the request gives", async () => {
+		const { api, base } = await editable();
+		const r = await api.patch(`${base}/assets/2`, {
+			fields: { title: "A still", origin_class: "digitalCreation" },
+			note: "from the shoot",
+		});
+		expect(r.status).toBe(200);
+		expect(r.body.changed).toEqual([
+			"title",
+			"origin_class",
+			"origin_class_source",
+			"origin_class_confirmed",
+		]);
+		expect(r.body.asset.fields).toMatchObject({
+			title: "A still",
+			origin_class: "digitalCreation",
+			origin_class_source: "user",
+			origin_class_confirmed: true,
+		});
+		expect(r.body.asset.history[0]).toMatchObject({
+			actor: "Settings Person",
+			actorKind: "person",
+			note: "from the shoot",
+		});
+
+		const sneaky = await api.patch(`${base}/assets/2`, {
+			fields: { title: "x", actor: "Someone Else" },
+		});
+		expect(sneaky).toEqual({
+			status: 400,
+			body: { error: "An asset has no field actor that can be set" },
+		});
+		expect(
+			(await api.patch(`${base}/assets/2`, { fields: ["title"] })).status,
+		).toBe(400);
+		expect(
+			(await api.patch(`${base}/assets/2`, { fields: { kind: "video" } }))
+				.status,
+		).toBe(400);
+		expect(
+			(await api.patch(`${base}/assets/99`, { fields: { title: "x" } })).status,
+		).toBe(404);
+	});
+
+	it("refuses an edit when this machine has no name to record it under", async () => {
+		const dir = tempDir();
+		const m = machineIn(dir);
+		const { projectId } = await demoProject(m, dir);
+		const api = await serve(m);
+		const r = await api.patch(`/api/next/projects/${projectId}/assets/1`, {
+			fields: { title: "x" },
+		});
+		expect(r.status).toBe(409);
+		expect(r.body.error).toMatch(/settings person/);
+	});
+
+	it("removes and restores an asset, and edits its credits and generation details", async () => {
+		const { api, base } = await editable();
+		expect(
+			(await api.post(`${base}/assets/2/remove`)).body.asset.fields.removed_at,
+		).not.toBeNull();
+		expect((await api.get(`${base}/assets`)).body.total).toBe(1);
+		expect(
+			(await api.post(`${base}/assets/2/restore`)).body.asset.fields.removed_at,
+		).toBeNull();
+
+		const added = await api.post(`${base}/assets/1/credits`, {
+			fields: { role: "interviewee", name: "Señora Peña" },
+		});
+		const credit = added.body.asset.credits[0];
+		expect(credit).toMatchObject({
+			role: "interviewee",
+			name: "Señora Peña",
+			stated_by: "Settings Person",
+		});
+		expect(
+			(await api.get(`${base}/assets?q=pena`)).body.assets.map(
+				(a: { id: number }) => a.id,
+			),
+		).toEqual([1]);
+		expect(
+			(
+				await api.patch(`${base}/assets/1/credits/${credit.id}`, {
+					fields: { role: "speaker" },
+				})
+			).body.changed,
+		).toEqual(["role"]);
+		expect(
+			(await api.delete(`${base}/assets/1/credits/${credit.id}`)).body.asset
+				.credits,
+		).toEqual([]);
+		expect(
+			(await api.delete(`${base}/assets/1/credits/${credit.id}`)).status,
+		).toBe(404);
+
+		const gen = await api.put(`${base}/assets/2/generation`, {
+			fields: { platform: "example", prompt: "a still life" },
+		});
+		expect(gen.body.asset.generation).toMatchObject({
+			platform: "example",
+			prompt: "a still life",
+		});
+	});
+
+	it("links and unlinks two assets, and changes the project's settings", async () => {
+		const { api, base } = await editable();
+		const link = await api.post(`${base}/relationships`, {
+			fields: { parent_id: 2, child_id: 1, type: "ingredient" },
+		});
+		expect(link.status).toBe(200);
+		expect(
+			(await api.get(`${base}/assets/1`)).body.relationships,
+		).toMatchObject([
+			{
+				id: link.body.id,
+				direction: "parent",
+				otherAssetId: 2,
+				type: "ingredient",
+			},
+		]);
+		expect(
+			(
+				await api.post(`${base}/relationships`, {
+					fields: { parent_id: 1, child_id: 1, type: "ingredient" },
+				})
+			).status,
+		).toBe(400);
+		expect(
+			(await api.delete(`${base}/relationships/${link.body.id}`)).body,
+		).toEqual({ removed: link.body.id });
+		expect(
+			(await api.delete(`${base}/relationships/${link.body.id}`)).status,
+		).toBe(404);
+
+		const s = await api.patch(`${base}/settings`, {
+			fields: { description: "An interview", author: "A. Maker" },
+		});
+		expect(s.body).toMatchObject({
+			changed: ["description", "author"],
+			settings: {
+				description: "An interview",
+				author: "A. Maker",
+				name: "Demo",
+			},
+		});
+		expect(
+			(await api.patch(`${base}/settings`, { fields: { project_id: "x" } }))
+				.status,
+		).toBe(400);
 	});
 });

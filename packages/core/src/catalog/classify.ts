@@ -328,14 +328,23 @@ export interface ClassifyReport {
  */
 export function classifyCatalog(
 	db: DatabaseSync,
-	opts: { tool: Tool; dryRun?: boolean; now?: () => string },
+	opts: {
+		tool: Tool;
+		dryRun?: boolean;
+		/** Only these assets (after a person's edit that their class follows). */
+		assetIds?: readonly number[];
+		now?: () => string;
+	},
 ): ClassifyReport {
 	const now = opts.now ?? (() => new Date().toISOString());
-	const ids = (
+	const all = (
 		db
 			.prepare("SELECT id FROM assets WHERE removed_at IS NULL ORDER BY id")
 			.all() as Array<{ id: number }>
 	).map((r) => r.id);
+	const ids = opts.assetIds
+		? all.filter((id) => opts.assetIds!.includes(id))
+		: all;
 	const plans = ids
 		.map((id) => classifyAsset(db, id))
 		.filter((p): p is AssetClassification => p !== null);

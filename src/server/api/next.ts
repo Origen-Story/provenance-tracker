@@ -13,7 +13,23 @@ import {
 	projectSummary,
 	type AssetFilter,
 } from "@provenancetracker/core/catalog/read.ts";
+import type { Actor } from "@provenancetracker/core/catalog/edit.ts";
+import {
+	addCredit,
+	editAsset,
+	EditError,
+	editCredit,
+	editSettings,
+	linkAssets,
+	NotFoundError,
+	removeCredit,
+	setGeneration,
+	setRemoved,
+	unlink,
+	type PersonEdit,
+} from "@provenancetracker/core/catalog/edits.ts";
 import type { Machine } from "@provenancetracker/core-node/machine.ts";
+import { TOOL } from "@provenancetracker/core-node/tool.ts";
 import {
 	openProject,
 	type OpenProject,
@@ -75,6 +91,64 @@ const queryText = (value: unknown) =>
 	typeof value === "string" && value !== "" ? value : undefined;
 
 const queryFlag = (value: unknown) => value === "1" || value === "true";
+
+/** The person edits are recorded under: this machine's settings, never the request. */
+function person(machine: Machine): Actor {
+	const name = readSettings(machine.settingsPath).person?.trim();
+	if (!name)
+		throw new HttpError(
+			409,
+			'Edits are recorded under your name. Set it once with: npm run cli -- settings person "Your Name"',
+		);
+	return { kind: "person", name };
+}
+
+/** A request body's `fields` (what to set) and `note` (why). */
+function editBody(req: Request): {
+	fields: Record<string, unknown>;
+	note: string;
+} {
+	const body = req.body as { fields?: unknown; note?: unknown };
+	const fields = body.fields ?? {};
+	if (!fields || typeof fields !== "object" || Array.isArray(fields))
+		throw new HttpError(400, 'Send the values to set as { "fields": { ... } }');
+	if (body.note !== undefined && typeof body.note !== "string")
+		throw new HttpError(400, "A note is text");
+	return {
+		fields: fields as Record<string, unknown>,
+		note: (body.note as string) ?? "",
+	};
+}
+
+/** Open the project, make the edit under the person's name, and answer the caller's mistakes in words. */
+function withEdit<T>(
+	machine: Machine,
+	req: Request,
+	fn: (
+		project: OpenProject,
+		opts: PersonEdit,
+		fields: Record<string, unknown>,
+	) => T,
+): T {
+	const { fields, note } = editBody(req);
+	const opts: PersonEdit = { actor: person(machine), note, tool: TOOL };
+	return withProject(machine, String(req.params.projectId), (project) => {
+		try {
+			return fn(project, opts, fields);
+		} catch (err) {
+			if (err instanceof EditError) throw new HttpError(400, err.message);
+			if (err instanceof NotFoundError) throw new HttpError(404, err.message);
+			throw err;
+		}
+	});
+}
+
+/** A whole-number id from the URL; 404 when it is not one. */
+function idParam(value: unknown, what: string): number {
+	const id = queryNumber(value);
+	if (id === undefined) throw new HttpError(404, `There is no such ${what}`);
+	return id;
+}
 
 export function catalogApi(opts: { machine: Machine }): Router {
 	const { machine } = opts;
@@ -190,6 +264,125 @@ export function catalogApi(opts: { machine: Machine }): Router {
 					validation: parse(row.validation),
 					observedAt: row.observed_at,
 				});
+			});
+		},
+	);
+
+	// --- Edits, each under the person's name with its history (D38) ---
+
+	api.patch("/projects/:projectId/settings", (req: Request, res: Response) => {
+		withEdit(machine, req, (project, opts, fields) => {
+			const changed = editSettings(project.db, fields, opts);
+			res.json({ changed, settings: projectSummary(project.db).settings });
+		});
+	});
+
+	const answerAsset = (
+		project: OpenProject,
+		res: Response,
+		id: number,
+		changed?: string[],
+	) =>
+		res.json({
+			...(changed ? { changed } : {}),
+			asset: assetRecord(project.db, id),
+		});
+
+	api.patch(
+		"/projects/:projectId/assets/:assetId",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.assetId, "asset");
+			withEdit(machine, req, (project, opts, fields) =>
+				answerAsset(project, res, id, editAsset(project.db, id, fields, opts)),
+			);
+		},
+	);
+
+	for (const [action, removed] of [
+		["remove", true],
+		["restore", false],
+	] as const)
+		api.post(
+			`/projects/:projectId/assets/:assetId/${action}`,
+			(req: Request, res: Response) => {
+				const id = idParam(req.params.assetId, "asset");
+				withEdit(machine, req, (project, opts) => {
+					setRemoved(project.db, id, removed, opts);
+					answerAsset(project, res, id);
+				});
+			},
+		);
+
+	api.post(
+		"/projects/:projectId/assets/:assetId/credits",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.assetId, "asset");
+			withEdit(machine, req, (project, opts, fields) => {
+				addCredit(project.db, id, fields, opts);
+				answerAsset(project, res, id);
+			});
+		},
+	);
+
+	api.patch(
+		"/projects/:projectId/assets/:assetId/credits/:creditId",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.assetId, "asset");
+			const credit = idParam(req.params.creditId, "credit");
+			withEdit(machine, req, (project, opts, fields) =>
+				answerAsset(
+					project,
+					res,
+					id,
+					editCredit(project.db, id, credit, fields, opts),
+				),
+			);
+		},
+	);
+
+	api.delete(
+		"/projects/:projectId/assets/:assetId/credits/:creditId",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.assetId, "asset");
+			const credit = idParam(req.params.creditId, "credit");
+			withEdit(machine, req, (project, opts) => {
+				removeCredit(project.db, id, credit, opts);
+				answerAsset(project, res, id);
+			});
+		},
+	);
+
+	api.put(
+		"/projects/:projectId/assets/:assetId/generation",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.assetId, "asset");
+			withEdit(machine, req, (project, opts, fields) =>
+				answerAsset(
+					project,
+					res,
+					id,
+					setGeneration(project.db, id, fields, opts),
+				),
+			);
+		},
+	);
+
+	api.post(
+		"/projects/:projectId/relationships",
+		(req: Request, res: Response) => {
+			withEdit(machine, req, (project, opts, fields) => {
+				res.json({ id: linkAssets(project.db, fields, opts) });
+			});
+		},
+	);
+
+	api.delete(
+		"/projects/:projectId/relationships/:linkId",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.linkId, "link");
+			withEdit(machine, req, (project, opts) => {
+				unlink(project.db, id, opts);
+				res.json({ removed: id });
 			});
 		},
 	);

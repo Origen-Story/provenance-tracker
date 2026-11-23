@@ -148,16 +148,21 @@ describe("the command line", () => {
 });
 
 describe("migrate", () => {
-	it("runs only as a dry run so far, and needs a layout and a name", async () => {
+	it("takes --dry-run or --write, and a layout", async () => {
 		const m = t.machine();
 		const dir = t.tempDir();
 		const c = cli(m, dir);
 		const noLayout = await c.run("migrate", "--dry-run");
 		expect(noLayout.code).toBe(2);
-		expect(noLayout.err).toContain("migrate --dry-run --layout <file>");
-		const real = await c.run("migrate", "--layout", "layout.json");
-		expect(real.code).toBe(2);
-		expect(real.err).toContain("Only the dry run exists so far");
+		expect(noLayout.err).toContain(
+			"migrate (--dry-run | --write) --layout <file>",
+		);
+		// One of the two, never both or neither.
+		for (const flags of [[], ["--dry-run", "--write"]]) {
+			const r = await c.run("migrate", ...flags, "--layout", "layout.json");
+			expect(r.code).toBe(2);
+			expect(r.err).toContain("(--dry-run | --write)");
+		}
 		const missing = await c.run(
 			"migrate",
 			"--dry-run",

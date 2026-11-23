@@ -21,11 +21,12 @@ export const APPLICATION_ID = 0x50765472;
 export const CATALOG_FORMAT = 1;
 
 /**
- * "draft" until the first real catalog of this format is written (the
- * Postgres migration, roadmap Phase 5). A draft format may still change;
- * a released one never does.
+ * "draft" until the first real catalog of this format is written; a draft
+ * format may still change, a released one never does. Format 1 was released
+ * with the Postgres migration (roadmap Phase 5, D35): a change to its SQL is
+ * format 2, with an upgrade step and a sample of its own.
  */
-export const CATALOG_FORMAT_STATUS: "draft" | "released" = "draft";
+export const CATALOG_FORMAT_STATUS: "draft" | "released" = "released";
 
 export type CatalogState =
 	| { state: "empty" }

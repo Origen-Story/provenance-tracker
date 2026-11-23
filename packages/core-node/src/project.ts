@@ -40,6 +40,8 @@ export const PROJECT_DIR = ".provenancetracker";
 export const CATALOG_FILE = "catalog.sqlite";
 export const BACKUP_DIR = "backups";
 export const GITIGNORE_FILE = ".gitignore";
+/** Imported timeline files, each named by its SHA-256 (the catalog's timelines.file_sha256). */
+export const TIMELINES_DIR = "timelines";
 
 /**
  * What init writes to .provenancetracker/.gitignore: the catalog changes
@@ -101,7 +103,7 @@ export function realFolder(folder: string): string {
 }
 
 /** Put a finished file at `dest` only if nothing is there, never replacing one. */
-function placeWithoutReplacing(source: string, dest: string): void {
+export function placeWithoutReplacing(source: string, dest: string): void {
 	try {
 		linkSync(source, dest);
 	} catch (err) {
@@ -114,19 +116,15 @@ function placeWithoutReplacing(source: string, dest: string): void {
 }
 
 /**
- * Make a new project in `folder`: an empty catalog with the project's id
- * and name, registered in this machine's settings. The catalog is built
- * under a temporary name and only appears at its real name once complete.
+ * Where a new project's catalog goes, checked: a full path, through any link
+ * or junction to where the folder really is (so a link into a synced folder
+ * is caught too), not inside a sync client's folder, not a file, and with no
+ * catalog already. Nothing is made.
  */
-export function createProject(
+export function newProjectFolder(
 	folderIn: string,
-	opts: { name: string; machine: Machine; now?: string },
-): { projectId: string; folder: string; catalogPath: string } {
-	const { machine } = opts;
-	const now = opts.now ?? isoNow();
-	if (!opts.name.trim()) throw new Error("A project needs a name");
-	// Through any link or junction to where the folder really is, before
-	// anything is made, so a link into a synced folder is caught too.
+	machine: Machine,
+): { folder: string; catalogPath: string } {
 	const folder = realFolder(fullFolder(folderIn, machine));
 	const sync = findSyncFolder(folder, machine);
 	if (sync) throw syncRefusal(folder, sync);
@@ -137,14 +135,29 @@ export function createProject(
 		throw new Error(
 			`${folder} already has a catalog (${catalogPath}). Nothing was changed.`,
 		);
-	mkdirSync(path.dirname(catalogPath), { recursive: true });
+	return { folder, catalogPath };
+}
 
-	const projectId = randomUUID();
+/**
+ * Put a new catalog in place: `write` makes it under a temporary name beside
+ * where it goes; it must pass verifyCatalog; it then appears at its real name
+ * whole, never replacing a catalog already there. Then the folder's
+ * .gitignore (one already there is left alone) and this machine's settings
+ * entry for the project.
+ */
+export function placeNewCatalog(
+	target: { folder: string; catalogPath: string },
+	projectId: string,
+	machine: Machine,
+	write: (temp: string) => void,
+): void {
+	const { folder, catalogPath } = target;
+	mkdirSync(path.dirname(catalogPath), { recursive: true });
 	const temp = `${catalogPath}.${projectId.slice(0, 8)}.new`;
 	try {
+		write(temp);
 		const db = new DatabaseSync(temp);
 		try {
-			createCatalog(db, { projectId, name: opts.name, tool: TOOL, now });
 			const problems = verifyCatalog(db);
 			if (problems.length)
 				throw new Error(
@@ -159,9 +172,7 @@ export function createProject(
 			if ((err as NodeJS.ErrnoException).code === "EEXIST")
 				throw new Error(
 					`${folder} already has a catalog (${catalogPath}). Nothing was changed.`,
-					{
-						cause: err,
-					},
+					{ cause: err },
 				);
 			throw err;
 		}
@@ -181,9 +192,32 @@ export function createProject(
 	updateSettings(machine.settingsPath, (s) => {
 		projectEntry(s, projectId).folder = folder;
 	});
-	return { projectId, folder, catalogPath };
 }
 
+/**
+ * Make a new project in `folder`: an empty catalog with the project's id
+ * and name, registered in this machine's settings. The catalog is built
+ * under a temporary name and only appears at its real name once complete.
+ */
+export function createProject(
+	folderIn: string,
+	opts: { name: string; machine: Machine; now?: string },
+): { projectId: string; folder: string; catalogPath: string } {
+	const { machine } = opts;
+	const now = opts.now ?? isoNow();
+	if (!opts.name.trim()) throw new Error("A project needs a name");
+	const target = newProjectFolder(folderIn, machine);
+	const projectId = randomUUID();
+	placeNewCatalog(target, projectId, machine, (temp) => {
+		const db = new DatabaseSync(temp);
+		try {
+			createCatalog(db, { projectId, name: opts.name, tool: TOOL, now });
+		} finally {
+			db.close();
+		}
+	});
+	return { projectId, ...target };
+}
 /**
  * The project folder holding `start`, looking in `start` and then each
  * folder above it, as git finds a repository. Null when there is none.

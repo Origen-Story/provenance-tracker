@@ -336,3 +336,43 @@ export function differences(a: unknown, b: unknown, limit = 10): string[] {
 	walk(a, b, "");
 	return out;
 }
+
+/**
+ * How the data of two dumps differ, table by table: tables only in one,
+ * different columns, and rows added, gone or changed (by id where the table
+ * has one). Comments, pg_dump's random restrict token and anything else
+ * outside the COPY blocks are not data and are not compared.
+ */
+export function tableDifferences(
+	a: Map<string, CopyTable>,
+	b: Map<string, CopyTable>,
+	limit = 20,
+): string[] {
+	const out: string[] = [];
+	const push = (line: string) => {
+		if (out.length < limit) out.push(line);
+	};
+	for (const name of new Set([...a.keys(), ...b.keys()])) {
+		const x = a.get(name);
+		const y = b.get(name);
+		if (!x || !y) {
+			push(`${name} is only in the ${x ? "first" : "second"} dump`);
+			continue;
+		}
+		if (x.columns.join(",") !== y.columns.join(",")) {
+			push(`${name} has different columns`);
+			continue;
+		}
+		const key = (r: Record<string, string | null>, i: number) =>
+			x.columns.includes("id") ? `id ${r.id}` : `row ${i + 1}`;
+		const rowsOf = (t: CopyTable) =>
+			new Map(t.rows.map((r, i) => [key(r, i), JSON.stringify(r)]));
+		const xs = rowsOf(x);
+		const ys = rowsOf(y);
+		for (const [k, v] of xs)
+			if (!ys.has(k)) push(`${name} ${k} is gone`);
+			else if (ys.get(k) !== v) push(`${name} ${k} changed`);
+		for (const k of ys.keys()) if (!xs.has(k)) push(`${name} ${k} was added`);
+	}
+	return out;
+}

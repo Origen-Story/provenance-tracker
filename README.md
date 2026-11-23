@@ -286,13 +286,17 @@ Archiving a project, restoring it, or moving it to another computer: copy the pr
 
 A project folder inside OneDrive, Dropbox, Google Drive, iCloud or Syncthing is refused: a sync client can corrupt the catalog while it is being written. Media roots there are allowed, with a warning.
 
-### Moving a project from the Postgres app (in progress)
+### Moving a project from the Postgres app
 
 The migration reads the Postgres dumps the backup task writes (a `.dump` with its `.sha256` beside it); it never connects to Postgres and needs no password, only `pg_restore` from the Postgres client tools. Say where each project goes in a layout file kept outside the repository:
 
 ```json
 {
 	"dumps": "D:/backups/postgres",
+	"dump": {
+		"file": "provenance-tracker_2026-11-21_223001.dump",
+		"sha256": "<the SHA-256 in its .sha256 file>"
+	},
 	"projects": [
 		{
 			"legacy": "Film",
@@ -306,11 +310,16 @@ The migration reads the Postgres dumps the backup task writes (a `.dump` with it
 }
 ```
 
+`dump` names the backup of record: the dump whose off-machine copy was restored and matched to its `.sha256`.
+
 ```bash
 npm run cli -- migrate --dry-run --layout layout.json --report dry-run.json
+npm run cli -- migrate --write --layout layout.json --report migrated.json
 ```
 
-The dry run checks the newest dump against its `.sha256`, builds each project's catalog in a throwaway folder, and reports: every file Postgres names, found in a root with the bytes Postgres recorded; the catalog check; each timeline's breakdown recomputed from the catalog; each signed output's public export rebuilt byte for byte; technical values read fresh by ExifTool against Postgres's; and a scan of the roots (files Postgres never had are listed). Then it deletes what it built. Project folders, media and this machine's settings are only read. Exit code 0 when everything checked is sound. The real run is not built yet. See [D33](docs/decisions.md) and [D34](docs/decisions.md).
+The dry run checks the dump (the one `dump` names, or else the newest) against its `.sha256`, builds each project's catalog in a throwaway folder, and reports: every file Postgres names, found in a root with the bytes Postgres recorded; the catalog check; each timeline's breakdown recomputed from the catalog; each signed output's public export rebuilt byte for byte; technical values read fresh by ExifTool against Postgres's; and a scan of the roots (files Postgres never had are listed). Then it deletes what it built. Project folders, media and this machine's settings are only read. Exit code 0 when everything checked is sound.
+
+`--write` is the real run. It reads only the dump `dump` names, and stops if a newer dump in the folder holds other data (Postgres changed since the backup). It runs the same checks, and only if every check of every project holds, and no project folder has a catalog yet, does it put each catalog in its project folder: its timeline files in `.provenancetracker\timelines\`, then the catalog, then the roots outside the project folder in this machine's settings. It never replaces a catalog, and Postgres is not changed. Then run `scan`, `extract` and `verify --hash` in each project. From then on the app's edits reach only Postgres, until the app moves onto the catalogs. See [D33](docs/decisions.md), [D34](docs/decisions.md) and [D35](docs/decisions.md).
 
 ## Database
 

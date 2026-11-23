@@ -9,6 +9,7 @@ import {
 	legacyRefs,
 	recomputeBreakdown,
 	signatureForExport,
+	tableDifferences,
 } from "../../src/legacy/checks.ts";
 import { parseCopyText } from "../../src/legacy/copy-text.ts";
 import { planProject } from "../../src/legacy/plan.ts";
@@ -379,6 +380,45 @@ describe("differences", () => {
 		expect(differences(1, "1")).toEqual(["(the whole value)"]);
 		expect(differences([1], { 0: 1 })).toEqual(["(the whole value)"]);
 		expect(differences({ a: 1, b: 2, c: 3 }, {}, 2)).toEqual(["a", "b"]);
+	});
+});
+
+describe("tableDifferences", () => {
+	it("sees no difference in data dumped twice, whatever the comments and tokens say", () => {
+		const a = parseCopyText(fixtureText());
+		const b = parseCopyText(
+			`\\restrict abc\n-- dumped again\n${fixtureText()}\\unrestrict abc\n`,
+		);
+		expect(tableDifferences(a, b)).toEqual([]);
+	});
+
+	it("names each row added, gone or changed, and tables or columns that differ", () => {
+		const a = parseCopyText(fixtureText());
+		const b = parseCopyText(
+			fixtureText((rows) => {
+				rows["public.creator_statements"][0].author_name = "Someone Else";
+				rows["public.asset_relationships"].pop();
+				rows["public.projects"].push({ id: 3, name: "New project" });
+			}),
+		);
+		expect(tableDifferences(a, b)).toEqual([
+			"public.projects id 3 was added",
+			"public.asset_relationships id 2 is gone",
+			"public.creator_statements id 5 changed",
+		]);
+		const fewer = new Map(a);
+		fewer.delete("public.manifests");
+		expect(tableDifferences(a, fewer)).toEqual([
+			"public.manifests is only in the first dump",
+		]);
+		const other = new Map(a);
+		other.set("public.manifests", {
+			...a.get("public.manifests")!,
+			columns: ["id"],
+		});
+		expect(tableDifferences(a, other)).toEqual([
+			"public.manifests has different columns",
+		]);
 	});
 });
 

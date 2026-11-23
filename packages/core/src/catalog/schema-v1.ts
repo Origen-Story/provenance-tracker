@@ -1,9 +1,8 @@
 // The catalog's SQL, format 1. This text is the format: spec/catalog/catalog.v1.sql
 // is a copy of it, written by `npm run catalog:write` and checked by the tests.
 //
-// While CATALOG_FORMAT_STATUS (format.ts) is "draft", this text may change, and
-// the sample catalog in the tests is rebuilt with it. Once format 1 is released
-// (when the first real catalog is written), it never changes again: a change
+// Format 1 is released (CATALOG_FORMAT_STATUS in format.ts; D35): real
+// catalogs are written in it, so this text never changes again. A change
 // becomes format 2, with an upgrade step in upgrade.ts and a sample of its own.
 
 export const CATALOG_V1_SQL = `-- Provenance Tracker catalog, format 1.

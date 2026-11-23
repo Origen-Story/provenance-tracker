@@ -49,6 +49,20 @@ import {
 import { ORIGIN_CLASSES } from "@provenancetracker/core/origin-vocabulary.js";
 import { USER_AGENT } from "../lib/user-agent.js";
 import { download } from "./download.ts";
+import { showable, streamFile } from "./stream.ts";
+import {
+	c2patoolEngine,
+	signOutput,
+	type SigningEngine,
+} from "@provenancetracker/core-node/sign/sign-output.ts";
+import {
+	clearSigning,
+	setSigning,
+	signingStatus,
+} from "@provenancetracker/core-node/sign/signing-settings.ts";
+import { publicExport } from "@provenancetracker/core/catalog/signatures.ts";
+import { fromCatalogPath } from "@provenancetracker/core/catalog/paths.ts";
+import { existsSync } from "node:fs";
 import { BusyError, JobRunner, type JobKind } from "./jobs.ts";
 import {
 	assetRecord,
@@ -233,6 +247,8 @@ export interface CatalogApiOptions {
 	/** For downloads; tests give their own, so no test reaches the network. */
 	fetchImpl?: (url: string, init: RequestInit) => Promise<globalThis.Response>;
 	lookup?: (hostname: string) => Promise<Array<{ address: string }>>;
+	/** What signs; c2patool on this machine when not given. */
+	signingEngine?: (machine: Machine) => Promise<SigningEngine>;
 }
 
 const JOB_KINDS: readonly string[] = ["scan", "extract", "classify", "import"];
@@ -243,6 +259,7 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 	const readers = opts.readers ?? (() => machineReaders(machine));
 	const lookup =
 		opts.lookup ?? ((host: string) => dnsLookup(host, { all: true }));
+	const signingEngine = opts.signingEngine ?? c2patoolEngine;
 	const api = Router();
 
 	/** Start a job that opens the project for as long as it runs. */
@@ -1076,6 +1093,155 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 				);
 				answerAsset(project, res, id);
 			});
+		},
+	);
+
+	// --- Signing, the public export and previews (D41) ---
+
+	// Whether this project can be signed here, and with which certificate. Never a path.
+	api.get(
+		"/projects/:projectId/signing",
+		async (req: Request, res: Response) => {
+			const projectId = String(req.params.projectId);
+			withProject(machine, projectId, () => undefined);
+			res.json(await signingStatus(machine, projectId));
+		},
+	);
+
+	// Which certificate and key sign this project on this machine: files the
+	// person names on purpose (docs/threat-model.md). Kept in this machine's
+	// settings, never in the catalog, never sent back.
+	api.put(
+		"/projects/:projectId/signing",
+		async (req: Request, res: Response) => {
+			const { fields } = editBody(req);
+			person(machine);
+			const projectId = String(req.params.projectId);
+			withProject(machine, projectId, () => undefined);
+			const unknown = Object.keys(fields).filter(
+				(k) => k !== "certificate" && k !== "private_key",
+			);
+			if (
+				unknown.length ||
+				typeof fields.certificate !== "string" ||
+				typeof fields.private_key !== "string"
+			)
+				throw new HttpError(
+					400,
+					'Give { "certificate": <file>, "private_key": <file> }',
+				);
+			try {
+				res.json(
+					await setSigning(machine, projectId, {
+						certificate: fields.certificate,
+						privateKey: fields.private_key,
+					}),
+				);
+			} catch (err) {
+				throw new HttpError(400, (err as Error).message);
+			}
+		},
+	);
+
+	api.delete(
+		"/projects/:projectId/signing",
+		async (req: Request, res: Response) => {
+			person(machine);
+			const projectId = String(req.params.projectId);
+			withProject(machine, projectId, () => undefined);
+			clearSigning(machine, projectId);
+			res.json(await signingStatus(machine, projectId));
+		},
+	);
+
+	// Sign an output: a job, since c2patool reads the whole film and each source.
+	api.post(
+		"/projects/:projectId/assets/:assetId/sign",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.assetId, "asset");
+			const { fields } = editBody(req);
+			const unknown = Object.keys(fields).filter((k) => k !== "timestamp_url");
+			if (unknown.length)
+				throw new HttpError(400, `Signing has no field ${unknown.join(", ")}`);
+			const timestampUrl =
+				typeof fields.timestamp_url === "string"
+					? fields.timestamp_url
+					: undefined;
+			person(machine);
+			const job = startJob(
+				String(req.params.projectId),
+				"sign",
+				async (project, ctx) => {
+					ctx.progress({ step: "sign", done: 0, total: 1, file: "" });
+					// A refusal (nothing set up, no statement, a file not here) is
+					// the job's error, in words.
+					return await signOutput(project, machine, {
+						assetId: id,
+						engine: await signingEngine(machine),
+						timestampUrl,
+					});
+				},
+			);
+			res.status(202).json({ job });
+		},
+	);
+
+	// The public export of one signing of an output: what a public page shows, built from that record alone.
+	api.get(
+		"/projects/:projectId/signatures/:signatureId/public-export",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.signatureId, "signing");
+			withProject(machine, String(req.params.projectId), (project) => {
+				const { data, fileName } = onTimeline(() =>
+					publicExport(project.db, id, {
+						generatedAt: new Date().toISOString(),
+						generator: { name: "provenance-tracker", version: TOOL.version },
+					}),
+				);
+				res.setHeader(
+					"Content-Disposition",
+					`attachment; filename="${fileName.replace(/["\\]/g, "_")}"`,
+				);
+				res.json(data);
+			});
+		},
+	);
+
+	// A file by its bytes' SHA-256, from wherever it lives on this machine:
+	// pictures, video and sound only. The path comes from the catalog, never the request.
+	api.get(
+		"/projects/:projectId/contents/:sha256/file",
+		(req: Request, res: Response) => {
+			const sha = String(req.params.sha256);
+			if (!/^[0-9a-f]{64}$/.test(sha))
+				throw new HttpError(404, "There is no such file");
+			const file = withProject(
+				machine,
+				String(req.params.projectId),
+				(project) => {
+					const folders = new Map(
+						listRoots(project, machine)
+							.filter((r) => r.folder)
+							.map((r) => [r.id, r.folder!]),
+					);
+					const places = project.db
+						.prepare(
+							"SELECT root_id, path FROM locations WHERE content_sha256 = ? AND gone_run_id IS NULL ORDER BY id",
+						)
+						.all(sha) as Array<{ root_id: number; path: string }>;
+					for (const p of places) {
+						const folder = folders.get(p.root_id);
+						if (!folder) continue;
+						const abs = fromCatalogPath(folder, p.path, machine.platform);
+						if (existsSync(abs)) return abs;
+					}
+					return null;
+				},
+			);
+			if (!file) throw new HttpError(404, "That file is not on this machine");
+			if (!showable(file))
+				throw new HttpError(415, "Only pictures, video and sound are shown");
+			streamFile(req, res, file);
 		},
 	);
 

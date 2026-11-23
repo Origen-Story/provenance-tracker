@@ -34,6 +34,13 @@ import { describeFile } from "../show.ts";
 import { verifyProject } from "../verify.ts";
 import { readSettings, updateSettings } from "../settings.ts";
 import { TOOL } from "../tool.ts";
+import { signOutput } from "../sign/sign-output.ts";
+import {
+	clearSigning,
+	setSigning,
+	signingStatus,
+	type SigningStatus,
+} from "../sign/signing-settings.ts";
 import { classifyCatalog } from "@provenancetracker/core/catalog/classify.ts";
 import { listAssets } from "@provenancetracker/core/catalog/read.ts";
 
@@ -60,6 +67,10 @@ Usage: npm run cli -- <command> [options]
   extract [--root <name>] [--again]   Read what each file says (ExifTool, C2PA, PNG text, sidecars)
   classify [--dry-run]                Say what each asset is, from what its file said (kind for
                                       unsorted assets, origin class, AI generation details)
+  signing                             Whether this project can be signed here, and with what
+  signing --certificate <f> --key <f> Set the certificate and key that sign it on this machine
+  signing --clear                     Forget them
+  sign <asset id> [--timestamp <url>] Sign a finished edit: a new signed copy beside its file
   verify [--hash] [--root <name>]    Check the catalog, and that every file is still as it was
   show <file>                         Everything the catalog knows about one file
   settings                            Show this machine's settings
@@ -90,6 +101,10 @@ const OPTIONS = {
 	write: { type: "boolean" },
 	layout: { type: "string" },
 	report: { type: "string" },
+	certificate: { type: "string" },
+	key: { type: "string" },
+	clear: { type: "boolean" },
+	timestamp: { type: "string" },
 } as const;
 
 type Values = {
@@ -105,6 +120,10 @@ type Values = {
 	write?: boolean;
 	layout?: string;
 	report?: string;
+	certificate?: string;
+	key?: string;
+	clear?: boolean;
+	timestamp?: string;
 };
 
 function needArgs(args: string[], count: number, usage: string): void {
@@ -391,6 +410,76 @@ async function extract(
 	});
 }
 
+function printSigning(io: Io, status: SigningStatus): void {
+	if (!status.configured) {
+		io.out("No certificate and key are set for this project on this machine.");
+		return;
+	}
+	const c = status.certificate;
+	if (c)
+		io.out(
+			`Signs as ${c.commonName} (issued by ${c.issuer}), valid to ${c.validTo.slice(0, 10)}. Certificate SHA-256 ${c.fingerprint}.`,
+		);
+	io.out(
+		status.problem
+			? `It cannot sign now: ${status.problem}.`
+			: "Ready to sign.",
+	);
+}
+
+async function signing(
+	io: Io,
+	args: string[],
+	values: Values,
+): Promise<number> {
+	if (
+		args.length ||
+		(values.clear && (values.certificate || values.key)) ||
+		!values.certificate !== !values.key
+	)
+		throw new UsageError(
+			"Usage: npm run cli -- signing [--certificate <file> --key <file> | --clear]",
+		);
+	return withProject(io, values, async (project) => {
+		if (values.clear) {
+			clearSigning(io.machine, project.projectId);
+			io.out(
+				"This project's certificate and key are forgotten on this machine.",
+			);
+			return 0;
+		}
+		if (values.certificate && values.key) {
+			printSigning(
+				io,
+				await setSigning(io.machine, project.projectId, {
+					certificate: resolveFrom(io, values.certificate),
+					privateKey: resolveFrom(io, values.key),
+				}),
+			);
+			return 0;
+		}
+		printSigning(io, await signingStatus(io.machine, project.projectId));
+		return 0;
+	});
+}
+
+async function sign(io: Io, args: string[], values: Values): Promise<number> {
+	needArgs(args, 1, "sign <asset id> [--timestamp <url>]");
+	const id = Number(args[0]);
+	if (!Number.isSafeInteger(id) || id < 1)
+		throw new UsageError("The asset id is a whole number (see the asset list)");
+	return withProject(io, values, async (project) => {
+		io.out("Signing; c2patool reads the whole film and each source it places.");
+		const r = await signOutput(project, io.machine, {
+			assetId: id,
+			timestampUrl: values.timestamp,
+		});
+		io.out(
+			`Signed copy v${r.version}: ${r.root}/${r.path} (${r.status || "read back"}).`,
+		);
+		return 0;
+	});
+}
 async function classify(
 	io: Io,
 	args: string[],
@@ -728,6 +817,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
 				return await extract(io, args, values);
 			case "classify":
 				return await classify(io, args, values);
+			case "signing":
+				return await signing(io, args, values);
+			case "sign":
+				return await sign(io, args, values);
 			case "verify":
 				return await verify(io, args, values);
 			case "show":

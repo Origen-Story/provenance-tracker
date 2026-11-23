@@ -40,23 +40,14 @@ interface ClipRow {
 	sort_order: number;
 }
 
-/**
- * A timeline's breakdown from the catalog, as the app computed it: each
- * clip's class is its own override, else its source's asset's class. How an
- * asset is named (refOf) and a clip (segmentIdOf), and the order of clips
- * that share a sort order, are the caller's: the migration's check names
- * them as Postgres did, so the result compares with the old cache.
- */
-export function breakdownOf(
-	db: DatabaseSync,
-	timelineId: number,
-	opts: {
-		refOf: (assetId: number) => string | null;
-		segmentIdOf: (clipId: number) => number | null;
-		/** Breaks ties in sort order; the clip's own id by default. */
-		tieBreak?: (clipId: number) => number;
-	},
-): unknown {
+interface NamingOptions {
+	refOf: (assetId: number) => string | null;
+	segmentIdOf: (clipId: number) => number | null;
+	/** Breaks ties in sort order; the clip's own id by default. */
+	tieBreak?: (clipId: number) => number;
+}
+
+function timelineRow(db: DatabaseSync, timelineId: number) {
 	const t = db
 		.prepare(
 			"SELECT duration_frames, fps, primary_track_index, include_overlays FROM timelines WHERE id = ?",
@@ -70,6 +61,21 @@ export function breakdownOf(
 		  }
 		| undefined;
 	if (!t) throw new Error(`No timeline ${timelineId}`);
+	return t;
+}
+
+/**
+ * A timeline's clips as the app's "effective segments": each clip's class is
+ * its own override, else its source's asset's class. How an asset is named
+ * (refOf) and a clip (segmentIdOf), and the order of clips that share a sort
+ * order, are the caller's: the migration's check names them as Postgres did.
+ */
+export function timelineSegments(
+	db: DatabaseSync,
+	timelineId: number,
+	opts: NamingOptions,
+) {
+	const t = timelineRow(db, timelineId);
 	const clips = db
 		.prepare(
 			`SELECT c.id, c.track_kind, c.track_index, c.clip_key, c.name, c.enabled, c.start_frame, c.end_frame,
@@ -84,10 +90,12 @@ export function breakdownOf(
 		.all(timelineId) as unknown as ClipRow[];
 	const tie = opts.tieBreak ?? ((id: number) => id);
 	clips.sort((a, b) => a.sort_order - b.sort_order || tie(a.id) - tie(b.id));
-	const segments = clips.map((c) => ({
+	const fps = t.fps || null;
+	return clips.map((c) => ({
 		id: opts.segmentIdOf(c.id),
 		clipId: c.clip_key,
 		name: c.name,
+		clipName: c.name,
 		trackKind: c.track_kind,
 		trackIndex: c.track_index,
 		enabled: c.enabled === 1,
@@ -95,6 +103,9 @@ export function breakdownOf(
 		endFrame: c.end_frame,
 		inFrame: c.in_frame,
 		outFrame: c.out_frame,
+		startSeconds: fps ? c.start_frame / fps : null,
+		endSeconds: fps ? c.end_frame / fps : null,
+		sortOrder: c.sort_order,
 		sourceKind: c.source_kind ?? "file",
 		sourceKey: c.source_key ?? "",
 		sourceName: c.source_name ?? "",
@@ -103,14 +114,22 @@ export function breakdownOf(
 		originClass: c.clip_class || c.asset_class || null,
 		aiAssisted: !c.clip_class && c.ai_assisted === 1,
 	}));
-	return computeBreakdown(segments, {
+}
+
+/** A timeline's breakdown from its clips, with the same computeBreakdown the app used. */
+export function breakdownOf(
+	db: DatabaseSync,
+	timelineId: number,
+	opts: NamingOptions,
+): unknown {
+	const t = timelineRow(db, timelineId);
+	return computeBreakdown(timelineSegments(db, timelineId, opts), {
 		durationFrames: t.duration_frames,
 		fps: t.fps,
 		primaryTrackIndex: t.primary_track_index || 1,
 		includeOverlays: t.include_overlays === 1,
 	});
 }
-
 /** Recompute a timeline's breakdown cache. A cache, not a record: no history. */
 export function refreshTimeline(db: DatabaseSync, timelineId: number): unknown {
 	const breakdown = breakdownOf(db, timelineId, {

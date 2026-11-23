@@ -117,6 +117,8 @@ export interface TimelineImport {
 	sources: number;
 	matched: number;
 	clips: number;
+	/** Clips given the class they had in the previous import of this edit. */
+	carriedClasses: number;
 }
 
 /**
@@ -153,7 +155,7 @@ export async function importTimeline(
 		parsed,
 		matchesByClip(parsed, bySource),
 	) as TimelineSegment[];
-	const { timelineId, runId } = writeTimeline(
+	const { timelineId, runId, carriedClasses } = writeTimeline(
 		project.db,
 		{
 			outputAssetId: opts.outputAssetId,
@@ -185,6 +187,7 @@ export async function importTimeline(
 		sources: bySource.size,
 		matched: [...bySource.values()].filter((m) => m.asset).length,
 		clips: segments.length,
+		carriedClasses,
 	};
 }
 

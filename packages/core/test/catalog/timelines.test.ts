@@ -323,6 +323,96 @@ describe("what changes what is on screen", () => {
 		).toThrow(NotFoundError);
 	});
 
+	it("carries the classes a person gave clips to the next import of the edit, by what the clip is, not its id", () => {
+		const w = world();
+		// A subclip with no asset of its own, on picture and sound, and a recording used twice.
+		const cut = (ids: string[]) => [
+			seg({
+				clipId: ids[0],
+				name: "plate-subclip",
+				trackIndex: 4,
+				sourceKind: "sequence",
+				sourceName: "plate-subclip",
+			}),
+			seg({
+				clipId: ids[1],
+				name: "plate-subclip",
+				trackKind: "audio",
+				sourceKind: "sequence",
+				sourceName: "plate-subclip",
+			}),
+			seg({
+				clipId: ids[2],
+				name: "rec.wav",
+				sourceKey: "file-1",
+				sourceName: "rec.wav",
+				matchedAssetRef: String(w.rec),
+				matchMethod: "path",
+				matchConfidence: 1,
+			}),
+			seg({
+				clipId: ids[3],
+				name: "rec.wav",
+				startFrame: 50,
+				endFrame: 60,
+				sourceKey: "file-1",
+				sourceName: "rec.wav",
+				matchedAssetRef: String(w.rec),
+				matchMethod: "path",
+				matchConfidence: 1,
+			}),
+		];
+		const first = writeTimeline(w.db, timeline(w, cut(["a", "b", "c", "d"])), {
+			tool: TEST_TOOL,
+			now: () => AT,
+		});
+		expect(first.carriedClasses).toBe(0);
+		const clips = timelineRecord(w.db, first.timelineId)!.clips;
+		setClipClass(w.db, first.timelineId, clips[0].id, "compositeSynthetic", ME);
+		setClipClass(w.db, first.timelineId, clips[1].id, "compositeSynthetic", ME);
+		// The same recording given two classes says nothing about the next cut's use of it.
+		setClipClass(w.db, first.timelineId, clips[2].id, "digitalCreation", ME);
+		setClipClass(w.db, first.timelineId, clips[3].id, "composite", ME);
+
+		// A re-export: the editor numbers the clips afresh.
+		const second = writeTimeline(w.db, timeline(w, cut(["w", "x", "y", "z"])), {
+			tool: TEST_TOOL,
+			now: () => AT,
+		});
+		expect(second.carriedClasses).toBe(2);
+		const now = timelineRecord(w.db, second.timelineId)!;
+		expect(now.clips.map((c) => c.originClass)).toEqual([
+			"compositeSynthetic",
+			"compositeSynthetic",
+			null,
+			null,
+		]);
+		const h = w.db
+			.prepare(
+				"SELECT actor_kind, new_value, evidence FROM history WHERE table_name = 'timeline_clips' AND row_key = ? AND field = 'origin_class'",
+			)
+			.get(String(now.clips[0].id)) as {
+			actor_kind: string;
+			new_value: string;
+			evidence: string;
+		};
+		expect(h.actor_kind).toBe("tool");
+		expect(JSON.parse(h.evidence)).toMatchObject({
+			carried_from_timeline: first.timelineId,
+		});
+
+		// Cleared in the newest timeline: not brought back from an older one.
+		setClipClass(w.db, second.timelineId, now.clips[0].id, null, ME);
+		const third = writeTimeline(w.db, timeline(w, cut(["p", "q", "r", "s"])), {
+			tool: TEST_TOOL,
+			now: () => AT,
+		});
+		expect(third.carriedClasses).toBe(1);
+		expect(
+			timelineRecord(w.db, third.timelineId)!.clips.map((c) => c.originClass),
+		).toEqual([null, "compositeSynthetic", null, null]);
+	});
+
 	it("removes a timeline with its sources and clips, keeping their last values in history", () => {
 		const w = world();
 		const { timelineId } = writeTimeline(w.db, timeline(w), {

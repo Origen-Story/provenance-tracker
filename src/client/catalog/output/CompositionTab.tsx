@@ -109,7 +109,7 @@ function ImportTimeline({
 				file it uses is matched to this project's assets by path, by its bytes
 				and by name.
 				{again &&
-					" The new import becomes the one the composition and signing use; the earlier one stays in the record."}
+					" The new import becomes the one the composition and signing use; the earlier one stays in the record. A class you gave a clip in the previous import is given to the same clip in the new one (same track kind, name and asset); check the clips below afterwards."}
 			</p>
 			<div className="flex flex-wrap items-center gap-3">
 				<input

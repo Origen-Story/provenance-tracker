@@ -241,18 +241,90 @@ function sourceKeyOf(s: TimelineSegment): string {
 }
 
 /**
+ * What a clip is, as far as its class goes, the same from one export of a
+ * timeline to the next: its track kind, its name, and the asset it shows
+ * (else the kind and name of what made it). Clip ids are not: an editor
+ * numbers them afresh on each export.
+ */
+function clipIdentity(
+	trackKind: string,
+	clipName: string,
+	assetId: number | null,
+	sourceKind: string,
+	sourceName: string,
+): string {
+	const source =
+		assetId !== null
+			? `asset:${assetId}`
+			: `${sourceKind}:${sourceName || clipName}`;
+	return JSON.stringify([trackKind, clipName, source]);
+}
+
+/**
+ * The classes given to clips in the output's newest timeline, by clip
+ * identity, to carry to a new import of it: a re-export of the edit would
+ * otherwise drop them, and a class a person gave a clip that has no asset of
+ * its own (a subclip, a nested sequence) would silently become unknown. A
+ * clip identity given two different classes is left out; a class cleared in
+ * the newest timeline is not brought back from an older one.
+ */
+function classesToCarry(
+	db: DatabaseSync,
+	outputAssetId: number,
+): { fromTimelineId: number; classes: Map<string, string> } | null {
+	const previous = db
+		.prepare(
+			`SELECT t.id FROM timelines t JOIN contents c ON c.sha256 = t.content_sha256
+			 WHERE c.asset_id = ? ORDER BY t.id DESC LIMIT 1`,
+		)
+		.get(outputAssetId) as { id: number } | undefined;
+	if (!previous) return null;
+	const rows = db
+		.prepare(
+			`SELECT c.track_kind, c.name, c.origin_class, s.asset_id, s.kind, s.name AS source_name
+			 FROM timeline_clips c LEFT JOIN timeline_sources s ON s.id = c.source_id
+			 WHERE c.timeline_id = ? AND c.origin_class IS NOT NULL`,
+		)
+		.all(previous.id) as Array<{
+		track_kind: string;
+		name: string;
+		origin_class: string;
+		asset_id: number | null;
+		kind: string | null;
+		source_name: string | null;
+	}>;
+	const classes = new Map<string, string>();
+	const mixed = new Set<string>();
+	for (const r of rows) {
+		const id = clipIdentity(
+			r.track_kind,
+			r.name,
+			r.asset_id,
+			r.kind ?? "",
+			r.source_name ?? "",
+		);
+		if (classes.has(id) && classes.get(id) !== r.origin_class) mixed.add(id);
+		else classes.set(id, r.origin_class);
+	}
+	for (const id of mixed) classes.delete(id);
+	return { fromTimelineId: previous.id, classes };
+}
+
+/**
  * Write an imported timeline: the timeline, a source for each file (or
- * generator, or nested sequence) with its match, and each clip. Each matched
- * asset is linked to the output (output_of), and the output is marked a
- * finished edit unless a person said otherwise. Then its breakdown is
- * computed and the output classified from it. One import run.
- * @returns the timeline's id and the run's
+ * generator, or nested sequence) with its match, and each clip. A clip that
+ * had a class of its own in the output's previous timeline keeps it
+ * (classesToCarry), recorded in its history. Each matched asset is linked to
+ * the output (output_of), and the output is marked a finished edit unless a
+ * person said otherwise. Then its breakdown is computed and the output
+ * classified from it. One import run.
+ * @returns the timeline's id, the run's, and how many clip classes were carried
  */
 export function writeTimeline(
 	db: DatabaseSync,
 	input: NewTimeline,
 	opts: { tool: Tool; now?: () => string },
-): { timelineId: number; runId: number } {
+): { timelineId: number; runId: number; carriedClasses: number } {
 	const now = opts.now ?? (() => new Date().toISOString());
 	const content = db
 		.prepare("SELECT asset_id FROM contents WHERE sha256 = ?")
@@ -271,9 +343,11 @@ export function writeTimeline(
 		format: input.format,
 	};
 	try {
+		let carriedClasses = 0;
 		const timelineId = inTransaction(db, () => {
 			const at = now();
 			const change = { actor, now: at, evidence };
+			const carry = classesToCarry(db, input.outputAssetId);
 			const fps = input.sequence.fps;
 			const timelineId = Number(
 				createRow(
@@ -327,7 +401,7 @@ export function writeTimeline(
 					);
 					sources.set(key, sourceId);
 				}
-				createRow(
+				const clipId = createRow(
 					db,
 					"timeline_clips",
 					{
@@ -349,6 +423,31 @@ export function writeTimeline(
 					},
 					change,
 				);
+				const carried = carry?.classes.get(
+					clipIdentity(
+						s.trackKind,
+						s.name ?? "",
+						assetId,
+						s.sourceKind,
+						s.sourceName,
+					),
+				);
+				if (carried) {
+					editRow(
+						db,
+						"timeline_clips",
+						Number(clipId),
+						{ origin_class: carried },
+						{
+							...change,
+							evidence: {
+								...evidence,
+								carried_from_timeline: carry!.fromTimelineId,
+							},
+						},
+					);
+					carriedClasses++;
+				}
 				if (
 					assetId !== null &&
 					assetId !== input.outputAssetId &&
@@ -372,13 +471,14 @@ export function writeTimeline(
 					clips: input.segments.length,
 					sources: sources.size,
 					matched: [...linked].length,
+					carried_classes: carriedClasses,
 				},
 				now: now(),
 			});
 			return timelineId;
 		});
 		refreshTimelines(db, [timelineId], { tool: opts.tool, now: now() });
-		return { timelineId, runId };
+		return { timelineId, runId, carriedClasses };
 	} catch (err) {
 		// A failed write was rolled back, its run's ending with it; say so.
 		const run = db

@@ -79,61 +79,99 @@ function ProjectRow({ project }: { project: KnownProject }) {
 	);
 }
 
+type Done = (r: { projectId: string }) => void;
+
+// Opening and making are two forms, each with its own folder and button, so
+// Enter does what the form being filled in says, and each refusal shows
+// under the button that caused it.
 function OpenOrCreate() {
 	const qc = useQueryClient();
 	const navigate = useNavigate();
-	const [folder, setFolder] = useState("");
-	const [name, setName] = useState("");
-	const done = (r: { projectId: string }) => {
+	const done: Done = (r) => {
 		qc.invalidateQueries({ queryKey: ["catalog", "projects"] });
 		navigate(`/catalog/${r.projectId}`);
 	};
+	return (
+		<div className="space-y-4">
+			<OpenForm done={done} />
+			<CreateForm done={done} />
+		</div>
+	);
+}
+
+function OpenForm({ done }: { done: Done }) {
+	const [folder, setFolder] = useState("");
 	const open = useMutation({
 		mutationFn: () => projects.open(folder.trim()),
 		onSuccess: done,
 	});
-	const create = useMutation({
-		mutationFn: () => projects.create(folder.trim(), name.trim()),
-		onSuccess: done,
-	});
+	const ready = !!folder.trim() && !open.isPending;
 	const submit = (e: FormEvent) => {
 		e.preventDefault();
-		open.mutate();
+		if (ready) open.mutate();
 	};
 	return (
 		<Card>
 			<form onSubmit={submit} className="space-y-3">
-				<h3 className="font-medium text-text-primary">
-					Open or make a project
-				</h3>
+				<h3 className="font-medium text-text-primary">Open a project</h3>
 				<TextField
 					label="Project folder"
 					value={folder}
-					onChange={setFolder}
+					onChange={(v) => {
+						setFolder(v);
+						open.reset();
+					}}
 					placeholder="D:\Projects\Film"
-					hint="The folder that holds (or will hold) .provenancetracker. Paste it from your file manager."
+					hint="A folder that already holds .provenancetracker, for example one copied from another machine. Paste it from your file manager."
 				/>
-				<div className="flex gap-2">
-					<Button type="submit" disabled={!folder.trim() || open.isPending}>
-						Open this folder's project
-					</Button>
-				</div>
+				<Button type="submit" disabled={!ready}>
+					{open.isPending ? "Opening…" : "Open"}
+				</Button>
 				<Problem error={open.error} />
-				<div className="border-t border-border pt-3 space-y-3">
-					<TextField
-						label="Name, for a new project"
-						value={name}
-						onChange={setName}
-						placeholder="Film"
-					/>
-					<Button
-						onClick={() => create.mutate()}
-						disabled={!folder.trim() || !name.trim() || create.isPending}
-					>
-						Make a new project in this folder
-					</Button>
-					<Problem error={create.error} />
-				</div>
+			</form>
+		</Card>
+	);
+}
+
+function CreateForm({ done }: { done: Done }) {
+	const [folder, setFolder] = useState("");
+	const [name, setName] = useState("");
+	const create = useMutation({
+		mutationFn: () => projects.create(folder.trim(), name.trim()),
+		onSuccess: done,
+	});
+	const ready = !!folder.trim() && !!name.trim() && !create.isPending;
+	const submit = (e: FormEvent) => {
+		e.preventDefault();
+		if (ready) create.mutate();
+	};
+	return (
+		<Card>
+			<form onSubmit={submit} className="space-y-3">
+				<h3 className="font-medium text-text-primary">Make a new project</h3>
+				<TextField
+					label="Project folder"
+					value={folder}
+					onChange={(v) => {
+						setFolder(v);
+						create.reset();
+					}}
+					placeholder="D:\Projects\Film"
+					hint="The catalog is kept in .provenancetracker inside this folder. The folder is made if it does not exist yet."
+				/>
+				<TextField
+					label="Name"
+					value={name}
+					onChange={(v) => {
+						setName(v);
+						create.reset();
+					}}
+					placeholder="Film"
+				/>
+				<Button type="submit" disabled={!ready}>
+					{create.isPending ? "Making…" : "Make the project"}
+				</Button>
+				<Problem error={create.error} />
 			</form>
 		</Card>
 	);

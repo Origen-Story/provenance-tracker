@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
 import { projects, type KnownProject } from "./api.ts";
+import PersonForm from "./Person.tsx";
 import {
 	Button,
 	Card,
@@ -42,12 +43,23 @@ export default function ProjectPicker() {
 				</div>
 			)}
 			<OpenOrCreate />
+			<div className="mt-8">
+				<PersonForm />
+			</div>
 		</div>
 	);
 }
 
 function ProjectRow({ project }: { project: KnownProject }) {
 	const ok = project.status === "ok";
+	const qc = useQueryClient();
+	// A project that opens is forgotten from its own settings page; one that
+	// cannot be opened here is forgotten from this list.
+	const forget = useMutation({
+		mutationFn: () => projects.forget(project.projectId),
+		onSuccess: (r) =>
+			qc.setQueryData(["catalog", "projects"], { projects: r.projects }),
+	});
 	return (
 		<Card className="flex items-center justify-between gap-4">
 			<div className="min-w-0">
@@ -66,7 +78,24 @@ function ProjectRow({ project }: { project: KnownProject }) {
 				{project.detail && (
 					<p className="text-xs text-warning mt-0.5">{project.detail}</p>
 				)}
+				<Problem error={forget.error} />
 			</div>
+			{!ok && (
+				<Button
+					quiet
+					disabled={forget.isPending}
+					onClick={() => {
+						if (
+							confirm(
+								`Forget ${project.folder} on this machine? Nothing there is deleted or changed; opening the folder again brings the project back.`,
+							)
+						)
+							forget.mutate();
+					}}
+				>
+					Forget it here
+				</Button>
+			)}
 			{ok && (
 				<Link
 					to={`/catalog/${project.projectId}`}

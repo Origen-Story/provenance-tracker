@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router";
 import { projects, type Root } from "./api.ts";
 import { KIND_LABEL } from "./labels.ts";
+import { useMachine } from "./Person.tsx";
 import { Card, Loading, PageTitle, Problem, Status, when } from "./ui.tsx";
 
 const RUN_LABEL: Record<string, string> = {
@@ -23,6 +24,7 @@ export default function ProjectHome() {
 		queryKey: ["catalog", projectId, "summary"],
 		queryFn: () => projects.summary(projectId!),
 	});
+	const here = useMachine();
 	if (isLoading) return <Loading />;
 	if (error || !data)
 		return <Problem error={error ?? "This project could not be read"} />;
@@ -30,13 +32,23 @@ export default function ProjectHome() {
 	return (
 		<div className="max-w-4xl space-y-6">
 			<PageTitle title={data.name} description={s.description || data.folder} />
+			{here.data && !here.data.person && (
+				<p className="text-sm text-warning">
+					Edits are recorded under your name, and none is set on this machine
+					yet.{" "}
+					<Link to="/catalog" className="text-accent hover:underline">
+						Set it on the Projects page
+					</Link>
+					.
+				</p>
+			)}
 
 			<section className="grid grid-cols-2 md:grid-cols-4 gap-3">
 				<Count label="Assets" value={data.counts.assets} to="assets" />
 				<Count
 					label="Finished edits"
 					value={data.counts.outputs}
-					to="assets?outputs=1"
+					to="outputs"
 				/>
 				<Count
 					label="Not sorted yet"

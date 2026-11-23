@@ -5,8 +5,9 @@
 // first.
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
-import type { AssetRecord } from "../api.ts";
+import { projects, type AssetRecord } from "../api.ts";
 import { SIGNED_STATUS } from "../labels.ts";
 import { useSignJob, useSigning } from "../output/SigningTab.tsx";
 import { Button, Card, Checkbox, Problem, TextField, when } from "../ui.tsx";
@@ -36,6 +37,11 @@ export default function SignSidecar({
 	const [optOut, setOptOut] = useState(true);
 	const [timestamp, setTimestamp] = useState(true);
 	const signing = useSigning(projectId);
+	// The project's own creator and organization (its settings) fill in the form.
+	const summary = useQuery({
+		queryKey: ["catalog", projectId, "summary"],
+		queryFn: () => projects.summary(projectId),
+	});
 	const { start, job, busy } = useSignJob(projectId, asset.id);
 	const sidecars = asset.signatures.filter((s) => s.kind === "asset");
 	const running = job?.state === "running";
@@ -59,7 +65,14 @@ export default function SignSidecar({
 			)}
 			{!open ? (
 				<div className="flex items-center gap-3">
-					<Button onClick={() => setOpen(true)}>
+					<Button
+						onClick={() => {
+							const d = summary.data?.settings;
+							if (d && !creator) setCreator(d.author ?? "");
+							if (d && !organization) setOrganization(d.organization ?? "");
+							setOpen(true);
+						}}
+					>
 						{sidecars.length ? "Sign it again…" : "Sign this file…"}
 					</Button>
 					<span className="text-xs text-text-secondary">

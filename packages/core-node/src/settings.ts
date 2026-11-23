@@ -44,6 +44,9 @@ export interface Settings {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ROOT_ID = /^[1-9][0-9]*$/;
 
+/** Whether a value is a project id (a UUID), and so may be a key in the settings. */
+export const isProjectId = (value: string): boolean => UUID.test(value);
+
 function isPlainObject(v: unknown): v is Record<string, unknown> {
 	return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -145,7 +148,7 @@ export function projectEntry(
 	settings: Settings,
 	projectId: string,
 ): ProjectSettings {
-	if (!UUID.test(projectId))
+	if (!isProjectId(projectId))
 		throw new Error(`${JSON.stringify(projectId)} is not a project id`);
 	if (!Object.hasOwn(settings.projects, projectId))
 		settings.projects[projectId] = { roots: {} };

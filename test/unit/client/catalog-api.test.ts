@@ -29,6 +29,7 @@ import {
 	ApiError,
 	assets,
 	fileUrl,
+	machine,
 	media,
 	outputs,
 	projects,
@@ -384,5 +385,45 @@ describe("the finished edit pages' API client", () => {
 		await expect(outputs.publicExport(w.projectId, 999)).rejects.toBeInstanceOf(
 			ApiError,
 		);
+	});
+});
+
+describe("the settings pages' API client", () => {
+	it("sets the person, edits the project's settings, and forgets the project", async () => {
+		const w = await world();
+		expect(await machine.get()).toEqual({ person: "Test Person" });
+		expect(await machine.setPerson("Another Person")).toEqual({
+			person: "Another Person",
+		});
+
+		const r = await projects.editSettings(
+			w.projectId,
+			{
+				name: "Demo film",
+				author: "A. Maker",
+				cawg_identity_url: "https://example.org/id.json",
+			},
+			"renamed",
+		);
+		expect(r.changed).toEqual(["name", "author", "cawg_identity_url"]);
+		const summary = await projects.summary(w.projectId);
+		expect(summary).toMatchObject({
+			name: "Demo film",
+			settings: { author: "A. Maker" },
+		});
+		await expect(
+			projects.editSettings(w.projectId, { cawg_identity_url: "http://x.org" }),
+		).rejects.toThrow(/https:\/\//);
+
+		expect(await projects.forget(w.projectId)).toEqual({
+			forgotten: w.projectId,
+			projects: [],
+		});
+		await expect(projects.summary(w.projectId)).rejects.toBeInstanceOf(
+			ApiError,
+		);
+		// Opening the folder brings it back, with its settings, as they are kept in it.
+		await projects.open(w.folder);
+		expect((await projects.summary(w.projectId)).name).toBe("Demo film");
 	});
 });

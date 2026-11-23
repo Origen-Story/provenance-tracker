@@ -97,9 +97,15 @@ import {
 	openProject,
 	type OpenProject,
 } from "@provenancetracker/core-node/project.ts";
-import { knownProjects } from "@provenancetracker/core-node/projects.ts";
+import {
+	forgetProject,
+	knownProjects,
+} from "@provenancetracker/core-node/projects.ts";
 import { listRoots } from "@provenancetracker/core-node/roots.ts";
-import { readSettings } from "@provenancetracker/core-node/settings.ts";
+import {
+	readSettings,
+	updateSettings,
+} from "@provenancetracker/core-node/settings.ts";
 
 /** An error with the HTTP status it should answer with. */
 export class HttpError extends Error {
@@ -168,7 +174,7 @@ function person(machine: Machine): Actor {
 	if (!name)
 		throw new HttpError(
 			409,
-			'Edits are recorded under your name. Set it once with: npm run cli -- settings person "Your Name"',
+			'Edits are recorded under your name. Set it once on the Projects page, under "Your name on this machine".',
 		);
 	return { kind: "person", name };
 }
@@ -326,6 +332,51 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 
 	api.get("/projects", (_req: Request, res: Response) => {
 		res.json({ projects: knownProjects(machine) });
+	});
+
+	// This machine's own settings that a page may show or change: the name
+	// edits are recorded under. Where projects and their media are here is
+	// changed by opening, placing and forgetting, never set whole.
+	api.get("/machine", (_req: Request, res: Response) => {
+		res.json({ person: readSettings(machine.settingsPath).person ?? null });
+	});
+
+	api.patch("/machine", (req: Request, res: Response) => {
+		const { fields } = editBody(req);
+		const unknown = Object.keys(fields).filter((k) => k !== "person");
+		if (unknown.length)
+			throw new HttpError(
+				400,
+				`This machine's settings have no field ${unknown.join(", ")}`,
+			);
+		const name = fields.person;
+		if (typeof name !== "string" || !name.trim())
+			throw new HttpError(400, "Your name cannot be empty");
+		if (name.trim().length > 200 || /\p{Cc}/u.test(name))
+			throw new HttpError(
+				400,
+				"Your name is up to 200 characters, on one line",
+			);
+		const s = updateSettings(machine.settingsPath, (s) => {
+			s.person = name.trim();
+		});
+		res.json({ person: s.person });
+	});
+
+	// Forget a project on this machine (its entry in this machine's settings);
+	// the folder, the catalog and the media are not touched. Not while work
+	// runs on it, which reads those settings as it goes.
+	api.delete("/projects/:projectId", (req: Request, res: Response) => {
+		const projectId = String(req.params.projectId);
+		const running = jobs.running(projectId);
+		if (running)
+			throw new HttpError(
+				409,
+				`Work is running on this project (${running.kind}). Stop it or let it finish first.`,
+			);
+		if (!forgetProject(machine, projectId))
+			throw new HttpError(404, "This machine does not know that project");
+		res.json({ forgotten: projectId, projects: knownProjects(machine) });
 	});
 
 	// Open a project folder: its catalog, recorded in this machine's settings.

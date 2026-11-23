@@ -23,9 +23,32 @@ export interface CopyTable {
 	rows: CopyRow[];
 }
 
-// The table name is bare parts and "quoted" parts ("" inside quotes is one ").
-const COPY_LINE = /^COPY ((?:"(?:[^"]|"")*"|[^\s"])+) \((.*)\) FROM stdin;$/;
 const ENCODING_LINE = /^SET client_encoding = '([^']*)';$/;
+
+const COPY_START = "COPY ";
+const COPY_END = ") FROM stdin;";
+
+/**
+ * The table name and column list of a "COPY <name> (<columns>) FROM stdin;"
+ * line, or null for any other line. Read by walking the characters once,
+ * with quotes tracked, rather than by a regular expression: a name such as
+ * "a""b" can be split more than one way, and a pattern that tries them all
+ * takes exponential time on a hostile line.
+ */
+function copyHeader(line: string): { name: string; columns: string } | null {
+	if (!line.startsWith(COPY_START) || !line.endsWith(COPY_END)) return null;
+	let quoted = false;
+	for (let i = COPY_START.length; i < line.length; i++) {
+		const c = line[i];
+		if (c === '"') quoted = !quoted;
+		else if (!quoted && c === " ") {
+			const name = line.slice(COPY_START.length, i);
+			if (!name || line[i + 1] !== "(") return null;
+			return { name, columns: line.slice(i + 2, -COPY_END.length) };
+		}
+	}
+	return null;
+}
 
 /** An identifier as Postgres writes it: bare, or in double quotes with "" for ". */
 function unquoteIdent(text: string): string {
@@ -140,12 +163,12 @@ export function parseCopyText(text: string): Map<string, CopyTable> {
 			throw new Error(
 				`The dump text is in ${encoding[1]}; only UTF8 can be read`,
 			);
-		const m = COPY_LINE.exec(line);
-		if (!m) continue;
-		const name = unquoteName(m[1]);
+		const header = copyHeader(line);
+		if (!header) continue;
+		const name = unquoteName(header.name);
 		if (tables.has(name))
 			throw new Error(`The dump has the table ${name} twice`);
-		const columns = splitIdents(m[2]);
+		const columns = splitIdents(header.columns);
 		const rows: CopyRow[] = [];
 		for (i++; ; i++) {
 			if (i >= lines.length)

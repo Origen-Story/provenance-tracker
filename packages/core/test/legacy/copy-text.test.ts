@@ -71,6 +71,17 @@ describe("parseCopyText", () => {
 		expect(t.rows).toEqual([{ id: "1", order: "2", "a, b": "3" }]);
 	});
 
+	it("reads a COPY line in time linear in its length, however its quotes fall", () => {
+		// CodeQL js/redos: a name of many "" pairs made the old pattern backtrack.
+		const hostile = `COPY "${'""'.repeat(50_000)} (id) FROM stdin;`;
+		const started = performance.now();
+		expect(parseCopyText(`${hostile}\n${hostile}x\n`).size).toBe(0);
+		expect(performance.now() - started).toBeLessThan(500);
+		// The same shape closed properly is a table name with quotes in it.
+		const ok = `COPY "${'""'.repeat(3)}" (id) FROM stdin;\n1\n\\.\n`;
+		expect([...parseCopyText(ok).keys()]).toEqual(['"""']);
+	});
+
 	it("refuses a row whose field count is not the column count", () => {
 		expect(() =>
 			parseCopyText(block("COPY public.t (id, v) FROM stdin;", "1\tx\ty")),

@@ -1,4 +1,4 @@
-// The new pages' one way to call the catalog API (/api/next, D36). Every
+// The new pages' one way to call the catalog API (/api, D36). Every
 // call answers with its JSON or throws an ApiError carrying the API's own
 // words, which pages show as they are.
 
@@ -10,7 +10,7 @@ export class ApiError extends Error {
 	}
 }
 
-const BASE = "/api/next";
+const BASE = "/api";
 
 export async function api<T>(
 	method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",

@@ -1,6 +1,5 @@
-// The app's API on the catalogs (roadmap Phase 6). It grows beside the old
-// Postgres routes under /api/next, page by page, and becomes /api when the
-// old routes are removed. Routes stay thin: the work is core's (SQL on a
+// The app's API, on /api, on the project catalogs (roadmap Phase 6; it was
+// /api/next while the old Postgres routes still held /api). Routes stay thin: the work is core's (SQL on a
 // catalog) and core-node's (opening catalogs, this machine's settings).
 //
 // A project is named in the URL by its id; this machine's settings say which

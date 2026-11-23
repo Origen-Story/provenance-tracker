@@ -16,6 +16,7 @@ import {
 	type TimelineSegment,
 } from "@provenancetracker/core/catalog/timelines.ts";
 import { publicExport } from "@provenancetracker/core/catalog/signatures.ts";
+import { validate } from "../../core/test/helpers/json-schema-lite.js";
 import { editRow } from "@provenancetracker/core/catalog/edit.ts";
 import { c2patoolPath } from "../src/extract/c2patool.ts";
 import { createProject, openProject } from "../src/project.ts";
@@ -470,7 +471,7 @@ const haveC2patool = (() => {
 describe.skipIf(!haveOpenssl || !haveC2patool)(
 	"signOutput with c2patool",
 	() => {
-		it("signs for real with a throwaway certificate, and the public export builds from the record", async () => {
+		it("signs for real with a throwaway certificate, and the public export builds from the record and meets its published schema", async () => {
 			const w = await world();
 			const r = await signOutput(w.p, w.m, { assetId: w.film.id });
 			expect(existsSync(path.join(w.media, r.path))).toBe(true);
@@ -490,6 +491,21 @@ describe.skipIf(!haveOpenssl || !haveC2patool)(
 				ingredients: [{ fileName: "still.png" }, { fileName: "tone.wav" }],
 				signedFile: { version: 1 },
 			});
+			// Built from c2patool's real read-back of the signed file, as the viewer reads it.
+			const schema = JSON.parse(
+				readFileSync(
+					path.resolve(
+						import.meta.dirname,
+						"..",
+						"..",
+						"..",
+						"spec",
+						"public-export.v1.schema.json",
+					),
+					"utf8",
+				),
+			);
+			expect(validate(schema, data)).toEqual([]);
 		}, 120000);
 	},
 );

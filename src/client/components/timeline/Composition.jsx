@@ -139,8 +139,8 @@ function Readout({ label, lane, prefix, seconds }) {
  * The output's own file playing above its two composed lanes (decision D10).
  * The readout says what is on screen and audible at the playhead; clicking a
  * lane seeks the player. Expanding a lane shows its real tracks.
- * The catalog pages pass the file's address (`src`) and its `kind`
- * ("video" or "audio") themselves.
+ * The page passes the file's address (`src`, the API's file by content) and
+ * its `kind` ("video" or "audio").
  */
 export default function Composition({ asset, composition, src: given, kind }) {
 	const mediaRef = useRef(null);
@@ -154,11 +154,7 @@ export default function Composition({ asset, composition, src: given, kind }) {
 	const isAudio = kind
 		? kind === "audio"
 		: asset?.mimeType?.startsWith("audio/");
-	const src =
-		given ??
-		(asset?.filePath
-			? `/api/preview?path=${encodeURIComponent(asset.filePath)}`
-			: null);
+	const src = given ?? null;
 	const seek = (s) => {
 		const m = mediaRef.current;
 		if (m) {

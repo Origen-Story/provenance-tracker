@@ -4,7 +4,6 @@ import {
 	getMimeType,
 	isPreviewable,
 } from "../../../src/server/lib/core/file-utils.js";
-import { IMPORTABLE_EXTENSIONS } from "../../../src/server/lib/core/scan-folder.js";
 
 describe("isPreviewable", () => {
 	it("accepts pictures, video and sound, whatever the case of the extension", () => {
@@ -50,11 +49,6 @@ describe("isPreviewable", () => {
 		expect(isPreviewable("key.png.pem")).toBe(false);
 		expect(isPreviewable("photo.pem.png")).toBe(true);
 		expect(isPreviewable(".png")).toBe(false);
-	});
-
-	it("covers every type the importer accepts, so nothing imported loses its preview", () => {
-		for (const ext of IMPORTABLE_EXTENSIONS)
-			expect(isPreviewable(`file${ext}`), ext).toBe(true);
 	});
 });
 

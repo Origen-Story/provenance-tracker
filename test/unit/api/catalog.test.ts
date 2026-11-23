@@ -1,4 +1,4 @@
-// The catalog API (/api/next) over real HTTP: the app the server runs, on a
+// The catalog API (/api) over real HTTP: the app the server runs, on a
 // port of its own, with a throwaway machine and project folders.
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -113,10 +113,10 @@ describe("the catalog API", () => {
 		const { projectId, folder } = await demoProject(m, dir);
 		const api = await serve(m);
 
-		expect((await api.get("/api/next/projects")).body).toEqual({
+		expect((await api.get("/api/projects")).body).toEqual({
 			projects: [{ projectId, folder, name: "Demo", status: "ok" }],
 		});
-		const p = await api.get(`/api/next/projects/${projectId}`);
+		const p = await api.get(`/api/projects/${projectId}`);
 		expect(p.status).toBe(200);
 		expect(p.body).toMatchObject({
 			projectId,
@@ -139,7 +139,7 @@ describe("the catalog API", () => {
 		const m = machineIn(dir);
 		const { projectId } = await demoProject(m, dir);
 		const api = await serve(m);
-		const base = `/api/next/projects/${projectId}`;
+		const base = `/api/projects/${projectId}`;
 
 		const all = await api.get(`${base}/assets`);
 		expect(all.body.total).toBe(2);
@@ -191,21 +191,19 @@ describe("the catalog API", () => {
 		const { projectId, folder } = await demoProject(m, dir);
 		const api = await serve(m);
 
-		expect(await api.get(`/api/next/projects/${projectId}/assets/99`)).toEqual({
+		expect(await api.get(`/api/projects/${projectId}/assets/99`)).toEqual({
 			status: 404,
 			body: { error: "There is no such asset" },
 		});
 		expect(
-			(await api.get(`/api/next/projects/${projectId}/assets/abc`)).status,
+			(await api.get(`/api/projects/${projectId}/assets/abc`)).status,
 		).toBe(404);
 		expect(
-			(await api.get(`/api/next/projects/${projectId}/observations/99`)).status,
+			(await api.get(`/api/projects/${projectId}/observations/99`)).status,
 		).toBe(404);
-		expect((await api.get("/api/next/projects/not-a-project")).status).toBe(
-			404,
-		);
+		expect((await api.get("/api/projects/not-a-project")).status).toBe(404);
 		const unknown = await api.get(
-			"/api/next/projects/00000000-0000-4000-8000-000000000000",
+			"/api/projects/00000000-0000-4000-8000-000000000000",
 		);
 		expect(unknown.status).toBe(404);
 		expect(unknown.body.error).toMatch(/does not know that project/);
@@ -215,11 +213,11 @@ describe("the catalog API", () => {
 		updateSettings(m.settingsPath, (s) => {
 			s.projects[projectId].folder = other.folder;
 		});
-		const moved = await api.get(`/api/next/projects/${projectId}`);
+		const moved = await api.get(`/api/projects/${projectId}`);
 		expect(moved.status).toBe(409);
 		expect(moved.body.error).toMatch(/now holds another project \(Other\)/);
 		expect(
-			(await api.get("/api/next/projects")).body.projects.find(
+			(await api.get("/api/projects")).body.projects.find(
 				(p: { projectId: string }) => p.projectId === projectId,
 			),
 		).toMatchObject({
@@ -235,20 +233,20 @@ describe("the catalog API", () => {
 		const m = machineIn(dir);
 		const api = await serve(m);
 
-		expect((await api.get("/api/next/projects")).body.projects).toEqual([]);
-		const opened = await api.post("/api/next/projects/open", { folder });
+		expect((await api.get("/api/projects")).body.projects).toEqual([]);
+		const opened = await api.post("/api/projects/open", { folder });
 		expect(opened).toEqual({
 			status: 200,
 			body: { projectId, name: "Demo", folder, upgraded: null },
 		});
 		expect(
-			(await api.get("/api/next/projects")).body.projects.map(
+			(await api.get("/api/projects")).body.projects.map(
 				(p: { projectId: string }) => p.projectId,
 			),
 		).toEqual([projectId]);
 
-		expect((await api.post("/api/next/projects/open", {})).status).toBe(400);
-		const missing = await api.post("/api/next/projects/open", {
+		expect((await api.post("/api/projects/open", {})).status).toBe(400);
+		const missing = await api.post("/api/projects/open", {
 			folder: path.join(dir, "nothing here"),
 		});
 		expect(missing.status).toBe(409);
@@ -263,7 +261,7 @@ describe("the catalog API", () => {
 		const api = await serve(m);
 		const folder = path.join(dir, "Fresh");
 
-		const made = await api.post("/api/next/projects", {
+		const made = await api.post("/api/projects", {
 			fields: { folder, name: " Fresh " },
 		});
 		expect(made.status).toBe(201);
@@ -271,35 +269,35 @@ describe("the catalog API", () => {
 		expect(
 			existsSync(path.join(folder, ".provenancetracker", "catalog.sqlite")),
 		).toBe(true);
-		const summary = await api.get(`/api/next/projects/${made.body.projectId}`);
+		const summary = await api.get(`/api/projects/${made.body.projectId}`);
 		expect(summary.body).toMatchObject({
 			name: "Fresh",
 			roots: [],
 			counts: { assets: 0 },
 		});
-		expect((await api.get("/api/next/projects")).body.projects).toMatchObject([
+		expect((await api.get("/api/projects")).body.projects).toMatchObject([
 			{ projectId: made.body.projectId, status: "ok" },
 		]);
 
 		expect(
 			(
-				await api.post("/api/next/projects", {
+				await api.post("/api/projects", {
 					fields: { folder: path.join(dir, "x") },
 				})
 			).status,
 		).toBe(400);
 		expect(
 			(
-				await api.post("/api/next/projects", {
+				await api.post("/api/projects", {
 					fields: { folder, name: "A", owner: "x" },
 				})
 			).status,
 		).toBe(400);
-		const again = await api.post("/api/next/projects", {
+		const again = await api.post("/api/projects", {
 			fields: { folder, name: "Again" },
 		});
 		expect(again.status).toBe(409);
-		expect((await api.get("/api/next/projects")).body.projects).toHaveLength(1);
+		expect((await api.get("/api/projects")).body.projects).toHaveLength(1);
 	});
 
 	it("refuses requests that do not come from this machine's own pages", async () => {
@@ -310,7 +308,7 @@ describe("the catalog API", () => {
 		const raw = (headers: Record<string, string>) =>
 			new Promise<number>((resolve, reject) => {
 				const req = httpRequest(
-					{ host: "127.0.0.1", port, path: "/api/next/projects", headers },
+					{ host: "127.0.0.1", port, path: "/api/projects", headers },
 					(res) => {
 						res.resume();
 						resolve(res.statusCode ?? 0);
@@ -336,7 +334,7 @@ describe("editing through the catalog API", () => {
 			s.person = "Settings Person";
 		});
 		const api = await serve(m);
-		return { m, api, base: `/api/next/projects/${projectId}` };
+		return { m, api, base: `/api/projects/${projectId}` };
 	}
 
 	it("changes an asset under the name in this machine's settings, never one the request gives", async () => {
@@ -388,14 +386,14 @@ describe("editing through the catalog API", () => {
 		const m = machineIn(dir);
 		const { projectId } = await demoProject(m, dir);
 		const api = await serve(m);
-		const r = await api.patch(`/api/next/projects/${projectId}/assets/1`, {
+		const r = await api.patch(`/api/projects/${projectId}/assets/1`, {
 			fields: { title: "x" },
 		});
 		expect(r.status).toBe(409);
 		expect(r.body.error).toMatch(/Your name on this machine/);
 
 		// The name is this machine's, set from the Projects page.
-		expect((await api.get("/api/next/machine")).body).toEqual({ person: null });
+		expect((await api.get("/api/machine")).body).toEqual({ person: null });
 		for (const fields of [
 			{ person: "  " },
 			{ person: 5 },
@@ -403,18 +401,16 @@ describe("editing through the catalog API", () => {
 			{ person: "x".repeat(201) },
 			{ person: "A. Person", projects: {} },
 		])
-			expect((await api.patch("/api/next/machine", { fields })).status).toBe(
-				400,
-			);
+			expect((await api.patch("/api/machine", { fields })).status).toBe(400);
 		expect(
 			(
-				await api.patch("/api/next/machine", {
+				await api.patch("/api/machine", {
 					fields: { person: " A. Person " },
 				})
 			).body,
 		).toEqual({ person: "A. Person" });
 		expect(readSettings(m.settingsPath).person).toBe("A. Person");
-		const again = await api.patch(`/api/next/projects/${projectId}/assets/1`, {
+		const again = await api.patch(`/api/projects/${projectId}/assets/1`, {
 			fields: { title: "x" },
 		});
 		expect(again.status).toBe(200);
@@ -435,7 +431,7 @@ describe("editing through the catalog API", () => {
 		);
 		servers.push(server);
 		await new Promise((r) => server.once("listening", r));
-		const at = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/next/projects`;
+		const at = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/projects`;
 		const forget = (id: string) => fetch(`${at}/${id}`, { method: "DELETE" });
 
 		let finish = () => {};

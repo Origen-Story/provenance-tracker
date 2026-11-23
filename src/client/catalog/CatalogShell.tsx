@@ -1,5 +1,4 @@
-// The new pages' frame: the project's name, its pages, and the way back to
-// the old app until the cutover (Phase 6, slice 7) makes this the app.
+// The app's frame: the project's name and its pages.
 
 import { useQuery } from "@tanstack/react-query";
 import { Link, NavLink, Outlet, useParams } from "react-router";
@@ -45,12 +44,6 @@ export default function CatalogShell() {
 						<WorkingNote projectId={projectId} />
 					</>
 				)}
-				<Link
-					to="/"
-					className="ml-auto text-xs text-text-secondary hover:text-text-primary"
-				>
-					Back to the current app
-				</Link>
 			</header>
 			<main className="p-8">
 				<Outlet />

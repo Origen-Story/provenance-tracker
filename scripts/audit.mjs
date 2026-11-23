@@ -6,19 +6,9 @@
 // the risk is understood; remove it in the commit that removes the cause.
 import { spawnSync } from "node:child_process";
 
-const ALLOW = {
-	// sharp <= 0.35.5 (libvips CVEs) comes in only through c2pa-node 0.5.26,
-	// which uses it for thumbnails on images we sign ourselves; it never runs on
-	// untrusted input. The unscoped package is unmaintained since 2025-08; the
-	// migration to @contentauth/c2pa-node (docs/planned-features.md, Phase 4c)
-	// removes sharp from the tree. Added 2026-11-02.
-	"GHSA-f88m-g3jw-g9cj":
-		"sharp (libvips) via c2pa-node 0.5.26; removed by the @contentauth/c2pa-node migration",
-	"GHSA-rgj7-g3m4-5g8c":
-		"sharp (libheif) via c2pa-node 0.5.26; same cause and exit",
-	"GHSA-wq5f-xc86-pv6w":
-		"sharp (librsvg) via c2pa-node 0.5.26; same cause and exit",
-};
+// None at the moment. The sharp advisories allowed here came in only through
+// c2pa-node 0.5.26, removed with the old app (D49).
+const ALLOW = {};
 const FAIL_LEVELS = new Set(["high", "critical"]);
 
 // One command string through the shell: npm is npm.cmd on Windows, and Node

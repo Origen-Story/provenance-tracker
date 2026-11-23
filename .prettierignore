@@ -1,6 +1,5 @@
 # Generated, or bytes that tests and tools depend on: never reformatted.
 package-lock.json
-src/server/db/migrations/
 packages/*/test/fixtures/
 test-fixtures/
 tools/

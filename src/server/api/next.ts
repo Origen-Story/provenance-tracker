@@ -34,6 +34,19 @@ import {
 	renameRoot,
 } from "@provenancetracker/core-node/roots.ts";
 import { scanProject } from "@provenancetracker/core-node/scan.ts";
+import {
+	importTimeline,
+	matchEvidence,
+} from "@provenancetracker/core-node/timeline-import.ts";
+import {
+	removeTimeline,
+	saveStatement,
+	setClipClass,
+	setSourceMatch,
+	setTimelineSettings,
+	timelineRecord,
+} from "@provenancetracker/core/catalog/timelines.ts";
+import { ORIGIN_CLASSES } from "@provenancetracker/core/origin-vocabulary.js";
 import { USER_AGENT } from "../lib/user-agent.js";
 import { download } from "./download.ts";
 import { BusyError, JobRunner, type JobKind } from "./jobs.ts";
@@ -836,6 +849,235 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 		});
 		res.status(202).json({ job });
 	});
+
+	// --- Timelines and creator statements (D40) ---
+
+	const timelineUpload = multer({
+		storage: multer.memoryStorage(),
+		limits: { files: 1, fileSize: 50 * 1024 * 1024 },
+		defParamCharset: "utf8",
+	});
+
+	/** Run a timeline change, answering its refusals in words. */
+	const onTimeline = <T>(fn: () => T): T => {
+		try {
+			return fn();
+		} catch (err) {
+			if (err instanceof EditError) throw new HttpError(400, err.message);
+			if (err instanceof NotFoundError) throw new HttpError(404, err.message);
+			throw err;
+		}
+	};
+
+	// Import a timeline file (form field "timeline") for an output.
+	api.post(
+		"/projects/:projectId/assets/:assetId/timelines",
+		(req: Request, res: Response, next: NextFunction) =>
+			timelineUpload.single("timeline")(req, res, (err: unknown) =>
+				err ? next(new HttpError(400, (err as Error).message)) : next(),
+			),
+		async (req: Request, res: Response) => {
+			const id = idParam(req.params.assetId, "asset");
+			const file = req.file;
+			if (!file)
+				throw new HttpError(
+					400,
+					'Send the timeline file as form field "timeline"',
+				);
+			const project = openById(machine, String(req.params.projectId));
+			try {
+				if (!project.db.prepare("SELECT 1 FROM assets WHERE id = ?").get(id))
+					throw new HttpError(404, "There is no such asset");
+				let result;
+				try {
+					result = await importTimeline(project, machine, {
+						outputAssetId: id,
+						bytes: file.buffer,
+						fileName: file.originalname,
+					});
+				} catch (err) {
+					if (err instanceof HttpError || err instanceof NotFoundError)
+						throw err;
+					// Not a timeline this tracker reads, or a cut that is not the output's.
+					throw new HttpError(400, (err as Error).message);
+				}
+				res.json({
+					import: result,
+					timeline: timelineRecord(project.db, result.timelineId),
+				});
+			} finally {
+				project.db.close();
+			}
+		},
+	);
+
+	api.get(
+		"/projects/:projectId/timelines/:timelineId",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.timelineId, "timeline");
+			withProject(machine, String(req.params.projectId), (project) => {
+				const record = timelineRecord(project.db, id);
+				if (!record) throw new HttpError(404, "There is no such timeline");
+				res.json(record);
+			});
+		},
+	);
+
+	api.patch(
+		"/projects/:projectId/timelines/:timelineId",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.timelineId, "timeline");
+			withEdit(machine, req, (project, opts, fields) => {
+				const unknown = Object.keys(fields).filter(
+					(k) => k !== "primary_track_index" && k !== "include_overlays",
+				);
+				if (unknown.length)
+					throw new HttpError(
+						400,
+						`A timeline has no field ${unknown.join(", ")} that can be set`,
+					);
+				const changed = onTimeline(() =>
+					setTimelineSettings(
+						project.db,
+						id,
+						fields as {
+							primary_track_index?: number;
+							include_overlays?: boolean;
+						},
+						opts,
+					),
+				);
+				res.json({ changed, timeline: timelineRecord(project.db, id) });
+			});
+		},
+	);
+
+	api.patch(
+		"/projects/:projectId/timelines/:timelineId/sources/:sourceId",
+		async (req: Request, res: Response) => {
+			const timelineId = idParam(req.params.timelineId, "timeline");
+			const sourceId = idParam(req.params.sourceId, "source");
+			const { fields, note } = editBody(req);
+			const unknown = Object.keys(fields).filter((k) => k !== "asset_id");
+			if (unknown.length || !("asset_id" in fields))
+				throw new HttpError(
+					400,
+					'Say which asset the source is: { "asset_id": n } (or null for none)',
+				);
+			const assetId = fields.asset_id;
+			if (assetId !== null && !Number.isSafeInteger(assetId))
+				throw new HttpError(400, "asset_id is an asset's id, or null");
+			const actor = person(machine);
+			const project = openById(machine, String(req.params.projectId));
+			try {
+				const source = project.db
+					.prepare(
+						"SELECT path FROM timeline_sources WHERE id = ? AND timeline_id = ?",
+					)
+					.get(sourceId, timelineId) as { path: string } | undefined;
+				if (!source)
+					throw new HttpError(404, "There is no such source in this timeline");
+				const method =
+					assetId === null
+						? "unmatched"
+						: await matchEvidence(
+								project,
+								machine,
+								source.path,
+								assetId as number,
+							);
+				onTimeline(() =>
+					setSourceMatch(
+						project.db,
+						timelineId,
+						sourceId,
+						{ assetId: assetId as number | null, method },
+						{ actor, note, tool: TOOL },
+					),
+				);
+				res.json({ timeline: timelineRecord(project.db, timelineId) });
+			} finally {
+				project.db.close();
+			}
+		},
+	);
+
+	api.patch(
+		"/projects/:projectId/timelines/:timelineId/clips/:clipId",
+		(req: Request, res: Response) => {
+			const timelineId = idParam(req.params.timelineId, "timeline");
+			const clipId = idParam(req.params.clipId, "clip");
+			withEdit(machine, req, (project, opts, fields) => {
+				const cls = fields.origin_class;
+				if (
+					Object.keys(fields).some((k) => k !== "origin_class") ||
+					!("origin_class" in fields)
+				)
+					throw new HttpError(
+						400,
+						'Say the clip\'s class: { "origin_class": "..." } (or null to follow its source)',
+					);
+				if (cls !== null && !ORIGIN_CLASSES.includes(cls as string))
+					throw new HttpError(
+						400,
+						`Unknown origin class: ${JSON.stringify(cls)}`,
+					);
+				onTimeline(() =>
+					setClipClass(
+						project.db,
+						timelineId,
+						clipId,
+						cls as string | null,
+						opts,
+					),
+				);
+				res.json({ timeline: timelineRecord(project.db, timelineId) });
+			});
+		},
+	);
+
+	api.delete(
+		"/projects/:projectId/timelines/:timelineId",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.timelineId, "timeline");
+			withEdit(machine, req, (project, opts) => {
+				onTimeline(() => removeTimeline(project.db, id, opts));
+				res.json({ removed: id });
+			});
+		},
+	);
+
+	// Save a creator statement for an output: a new version each time.
+	api.post(
+		"/projects/:projectId/assets/:assetId/statements",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.assetId, "asset");
+			withEdit(machine, req, (project, _opts, fields) => {
+				const unknown = Object.keys(fields).filter(
+					(k) => !["text", "author", "organization", "edited_with"].includes(k),
+				);
+				if (unknown.length)
+					throw new HttpError(
+						400,
+						`A statement has no field ${unknown.join(", ")}`,
+					);
+				onTimeline(() =>
+					saveStatement(
+						project.db,
+						id,
+						{
+							text: String(fields.text ?? ""),
+							author: fields.author as string | undefined,
+							organization: fields.organization as string | undefined,
+							editedWith: fields.edited_with as string | undefined,
+						},
+						{},
+					),
+				);
+				answerAsset(project, res, id);
+			});
+		},
+	);
 
 	return api;
 }

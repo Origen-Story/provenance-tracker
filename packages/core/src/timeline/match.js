@@ -25,7 +25,10 @@ export function basename(p) {
 }
 
 /**
- * @param {Array<{type:string,id:number,filename?:string,filePath:string,originalFilePath?:string|null,fileHash?:string,fileSize?:number,originClass?:string,originClassConfirmed?:boolean}>} assets
+ * One entry per file of an asset; an entry is returned as the match, so it
+ * may carry anything else the caller needs. `ref` names the asset (D23);
+ * `filePath` is null for a file known only by its bytes.
+ * @param {Array<{ref:string,filename?:string,filePath?:string|null,originalFilePath?:string|null,fileHash?:string,fileSize?:number,originClass?:string,originClassConfirmed?:boolean,aiAssisted?:boolean}>} assets
  */
 export function buildMatchIndex(assets) {
 	const byPath = new Map();

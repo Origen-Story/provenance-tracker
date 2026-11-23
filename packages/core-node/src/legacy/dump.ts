@@ -4,14 +4,9 @@
 // pg_dump and never connects to a database, so it needs no password.
 
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import {
-	createReadStream,
-	existsSync,
-	readdirSync,
-	readFileSync,
-} from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { sha256OfFile } from "../hash.ts";
 
 /** The database whose dumps the migration reads. */
 export const LEGACY_DATABASE = "provenance-tracker";
@@ -47,12 +42,7 @@ export function listDumps(
 	);
 }
 
-export async function sha256OfFile(file: string): Promise<string> {
-	const hash = createHash("sha256");
-	for await (const chunk of createReadStream(file, { highWaterMark: 1 << 20 }))
-		hash.update(chunk as Buffer);
-	return hash.digest("hex");
-}
+export { sha256OfFile };
 
 /**
  * The hash a .sha256 file gives for its dump. The file is one line in the

@@ -10,7 +10,7 @@
 
 import type { DatabaseSync } from "node:sqlite";
 import { withLegacyLayerRefs } from "../asset-ref.ts";
-import { computeBreakdown } from "../timeline/breakdown.js";
+import { breakdownOf } from "../catalog/timelines.ts";
 import type { CopyTable } from "./copy-text.ts";
 import {
 	LEGACY_TABLE,
@@ -138,100 +138,26 @@ export function legacyRefs(
 	return out;
 }
 
-interface ClipRow {
-	id: number;
-	track_kind: string;
-	track_index: number;
-	clip_key: string;
-	name: string;
-	enabled: number;
-	start_frame: number;
-	end_frame: number;
-	in_frame: number | null;
-	out_frame: number | null;
-	clip_class: string | null;
-	source_kind: string | null;
-	source_key: string | null;
-	source_name: string | null;
-	asset_id: number | null;
-	asset_class: string | null;
-	ai_assisted: number | null;
-	sort_order: number;
-}
-
 /**
  * A migrated timeline's breakdown, recomputed from the catalog as the app
- * recomputed it (src/server/lib/timeline/timelines.js): each clip's class is
- * its own override, else its source's asset's class; the asset ref and the
- * segment id are Postgres's, so the result can be compared with the cache.
+ * recomputed it, with Postgres's asset refs and segment ids, so the result
+ * can be compared with the cache. Postgres ordered clips by sort_order with
+ * ties in row order (its ids); the catalog's own ids follow sources, so the
+ * Postgres ids break ties.
  */
 export function recomputeBreakdown(
 	db: DatabaseSync,
 	timelineId: number,
 	runId: number,
 ): unknown {
-	const t = db
-		.prepare(
-			"SELECT duration_frames, fps, primary_track_index, include_overlays FROM timelines WHERE id = ?",
-		)
-		.get(timelineId) as
-		| {
-				duration_frames: number;
-				fps: number;
-				primary_track_index: number;
-				include_overlays: number;
-		  }
-		| undefined;
-	if (!t) throw new Error(`No timeline ${timelineId}`);
 	const refs = legacyRefs(db, runId);
 	const clipIds = legacyIds(db, "timeline_clips", runId);
-	const clips = db
-		.prepare(
-			`SELECT c.id, c.track_kind, c.track_index, c.clip_key, c.name, c.enabled, c.start_frame, c.end_frame,
-			        c.in_frame, c.out_frame, c.origin_class AS clip_class,
-			        s.kind AS source_kind, s.source_key, s.name AS source_name, s.asset_id,
-			        a.origin_class AS asset_class, a.ai_assisted, c.sort_order
-			 FROM timeline_clips c
-			 LEFT JOIN timeline_sources s ON s.id = c.source_id
-			 LEFT JOIN assets a ON a.id = s.asset_id
-			 WHERE c.timeline_id = ? ORDER BY c.sort_order, c.id`,
-		)
-		.all(timelineId) as unknown as ClipRow[];
-	// Postgres ordered by sort_order, ties in row order (its ids); the
-	// catalog's own ids follow sources, so the Postgres ids break ties.
-	const legacyOf = (c: ClipRow) =>
-		clipIds.get(c.id)?.id ?? Number.MAX_SAFE_INTEGER;
-	clips.sort(
-		(a, b) => a.sort_order - b.sort_order || legacyOf(a) - legacyOf(b),
-	);
-	const segments = clips.map((c) => ({
-		id: clipIds.get(c.id)?.id ?? null,
-		clipId: c.clip_key,
-		name: c.name,
-		trackKind: c.track_kind,
-		trackIndex: c.track_index,
-		enabled: c.enabled === 1,
-		startFrame: c.start_frame,
-		endFrame: c.end_frame,
-		inFrame: c.in_frame,
-		outFrame: c.out_frame,
-		sourceKind: c.source_kind ?? "file",
-		sourceKey: c.source_key ?? "",
-		sourceName: c.source_name ?? "",
-		matchedAssetRef:
-			c.asset_id === null ? null : (refs.get(c.asset_id) ?? null),
-		matched: c.asset_id !== null,
-		originClass: c.clip_class || c.asset_class || null,
-		aiAssisted: !c.clip_class && c.ai_assisted === 1,
-	}));
-	return computeBreakdown(segments, {
-		durationFrames: t.duration_frames,
-		fps: t.fps,
-		primaryTrackIndex: t.primary_track_index || 1,
-		includeOverlays: t.include_overlays === 1,
+	return breakdownOf(db, timelineId, {
+		refOf: (id) => refs.get(id) ?? null,
+		segmentIdOf: (id) => clipIds.get(id)?.id ?? null,
+		tieBreak: (id) => clipIds.get(id)?.id ?? Number.MAX_SAFE_INTEGER,
 	});
 }
-
 /**
  * A cached breakdown as the app reads it. One cached before asset refs
  * existed (D23) names each layer's asset by matchedAssetType and

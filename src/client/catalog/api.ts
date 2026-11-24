@@ -302,6 +302,20 @@ export const assets = {
 		api<Answer>("POST", `/projects/${projectId}/assets/${id}/restore`, {
 			note,
 		}),
+	startFrom: (projectId: string, id: number, fromId: number) =>
+		api<
+			Answer & {
+				copied: {
+					from: number;
+					fields: string[];
+					credits: number;
+					statement: boolean;
+					clipClasses: number;
+				};
+			}
+		>("POST", `/projects/${projectId}/assets/${id}/start-from`, {
+			fields: { from_id: fromId },
+		}),
 	addCredit: (projectId: string, id: number, fields: Fields) =>
 		api<Answer>("POST", `/projects/${projectId}/assets/${id}/credits`, {
 			fields,

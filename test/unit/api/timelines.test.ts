@@ -60,6 +60,7 @@ async function world() {
 	writeFileSync(path.join(media, "Clip 01.mp4"), "clip one");
 	writeFileSync(path.join(media, "Still 02.png"), "still two");
 	writeFileSync(path.join(media, "exports", "film.mp4"), "the cut");
+	writeFileSync(path.join(media, "exports", "film-v2.mp4"), "the next cut");
 	const { projectId } = createProject(folder, { name: "Demo", machine });
 	updateSettings(machine.settingsPath, (s) => {
 		s.person = "Settings Person";
@@ -106,6 +107,7 @@ async function world() {
 		folder,
 		call,
 		film: idOf("exports/film.mp4"),
+		filmV2: idOf("exports/film-v2.mp4"),
 		clip: idOf("Clip 01.mp4"),
 		still: idOf("Still 02.png"),
 	};
@@ -250,6 +252,69 @@ describe("timelines through the API", () => {
 		expect(
 			(await w.call("POST", `/assets/${w.film}/timelines`, new FormData()))
 				.status,
+		).toBe(400);
+	});
+	it("starts a new export from an earlier edit: its statement and clip classes come across once (D50)", async () => {
+		const w = await world();
+		const t = (
+			await w.call("POST", `/assets/${w.film}/timelines`, upload(SAMPLE))
+		).body.timeline;
+		await w.call("PATCH", `/timelines/${t.id}/clips/${t.clips[0].id}`, {
+			fields: { origin_class: "compositeSynthetic" },
+		});
+		await w.call("POST", `/assets/${w.film}/statements`, {
+			fields: { text: "Made from two takes and a still.", author: "A. Maker" },
+		});
+		await w.call("PATCH", `/assets/${w.film}`, {
+			fields: { public_title: "The Film" },
+		});
+
+		expect(
+			(
+				await w.call("POST", `/assets/${w.filmV2}/start-from`, {
+					fields: { from_id: w.film, public_title: "sneaked in" },
+				})
+			).status,
+		).toBe(400);
+		expect(
+			(
+				await w.call("POST", `/assets/${w.filmV2}/start-from`, {
+					fields: { from_id: w.clip },
+				})
+			).status,
+		).toBe(400);
+
+		const r = await w.call("POST", `/assets/${w.filmV2}/start-from`, {
+			fields: { from_id: w.film },
+		});
+		expect(r.status).toBe(200);
+		expect(r.body.copied).toMatchObject({ from: w.film, statement: true });
+		expect(r.body.asset.fields).toMatchObject({
+			is_output: true,
+			public_title: "The Film",
+		});
+		expect(r.body.asset.statements).toMatchObject([
+			{ text: "Made from two takes and a still.", author: "A. Maker" },
+		]);
+		expect(r.body.asset.relationships).toContainEqual(
+			expect.objectContaining({
+				type: "started_from",
+				// the other asset's side
+				direction: "parent",
+				otherAssetId: w.film,
+			}),
+		);
+
+		const v2 = (
+			await w.call("POST", `/assets/${w.filmV2}/timelines`, upload(SAMPLE))
+		).body.timeline;
+		expect(v2.clips[0].originClass).toBe("compositeSynthetic");
+		expect(
+			(
+				await w.call("POST", `/assets/${w.filmV2}/start-from`, {
+					fields: { from_id: w.film },
+				})
+			).status,
 		).toBe(400);
 	});
 });

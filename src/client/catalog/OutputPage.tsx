@@ -9,6 +9,7 @@ import { OriginBadge } from "./badge.tsx";
 import CompositionTab from "./output/CompositionTab.tsx";
 import ExportTab from "./output/ExportTab.tsx";
 import SigningTab from "./output/SigningTab.tsx";
+import StartFrom, { startedFromLink } from "./output/StartFrom.tsx";
 import StatementTab from "./output/StatementTab.tsx";
 import { Loading, PageTitle, Problem } from "./ui.tsx";
 
@@ -42,6 +43,7 @@ export default function OutputPage() {
 	const f = asset.fields;
 	const fileName = asset.contents[0]?.places[0]?.path.split("/").pop();
 	const title = str(f.title) || fileName || `Output ${asset.id}`;
+	const started = startedFromLink(asset);
 	return (
 		<div key={asset.id} className="max-w-6xl space-y-6">
 			<div>
@@ -70,16 +72,30 @@ export default function OutputPage() {
 							>
 								Its details, credits and files
 							</Link>
+							{started && (
+								<span>
+									· started from{" "}
+									<Link
+										to={`/catalog/${p}/outputs/${started.otherAssetId}`}
+										className="text-accent hover:underline"
+									>
+										{started.otherTitle || `edit ${started.otherAssetId}`}
+									</Link>
+								</span>
+							)}
 						</span>
 					}
 				/>
 				{!f.is_output && (
 					<p className="text-sm text-warning">
 						This asset is not marked as a finished edit. Mark it on its details
-						page to sign it as one.
+						page, or start it from an earlier edit below, to sign it as one.
 					</p>
 				)}
 			</div>
+			{!started && asset.statements.length === 0 && (
+				<StartFrom projectId={p} asset={asset} />
+			)}
 			<nav className="flex gap-1 border-b border-border">
 				{TABS.map((t) => (
 					<button

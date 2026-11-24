@@ -95,10 +95,13 @@ describe("findSyncFolder", () => {
 			expect(
 				findSyncFolder(path.join(cloud, "OneDrive-Personal", "x"), m)?.service,
 			).toBe("OneDrive");
-			expect(
-				findSyncFolder(path.join(m.home, "Library", "Mobile Documents", "x"), m)
-					?.service,
-			).toBe("iCloud Drive");
+			const icloud = path.join(m.home, "Library", "Mobile Documents");
+			// No iCloud folder on this Mac: nothing to report.
+			expect(findSyncFolder(path.join(icloud, "x"), m)).toBeNull();
+			mkdirSync(icloud);
+			expect(findSyncFolder(path.join(icloud, "x"), m)?.service).toBe(
+				"iCloud Drive",
+			);
 			expect(findSyncFolder(path.join(m.home, "Movies"), m)).toBeNull();
 		},
 	);

@@ -1,7 +1,7 @@
 // An output's timeline: importing it, the composition strip over the film,
 // and putting right which asset each file in it is, or a clip's class.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import {
@@ -89,10 +89,12 @@ function ImportTimeline({
 }) {
 	const qc = useQueryClient();
 	const [file, setFile] = useState<File | null>(null);
+	const picker = useRef<HTMLInputElement>(null);
 	const send = useMutation({
 		mutationFn: () => outputs.importTimeline(projectId, asset.id, file!),
 		onSuccess: () => {
 			setFile(null);
+			if (picker.current) picker.current.value = "";
 			qc.invalidateQueries({ queryKey: assetKey(projectId, asset.id) });
 			qc.invalidateQueries({ queryKey: ["catalog", projectId, "assets"] });
 			onDone?.();
@@ -112,15 +114,23 @@ function ImportTimeline({
 					" The new import becomes the one the composition and signing use; the earlier one stays in the record. A class you gave a clip in the previous import is given to the same clip in the new one (same track kind, name and asset); check the clips below afterwards."}
 			</p>
 			<div className="flex flex-wrap items-center gap-3">
+				{/* The browser's own file input is easy to miss; a button opens it. */}
 				<input
+					ref={picker}
 					type="file"
 					accept=".xml,.fcpxml,text/xml,application/xml"
 					onChange={(e) => {
 						setFile(e.target.files?.[0] ?? null);
 						send.reset();
 					}}
-					className="text-xs text-text-secondary"
+					className="hidden"
 				/>
+				<Button quiet onClick={() => picker.current?.click()}>
+					Choose the timeline file…
+				</Button>
+				<span className="text-sm text-text-secondary">
+					{file ? file.name : "No file chosen"}
+				</span>
 				<Button
 					onClick={() => send.mutate()}
 					disabled={!file || send.isPending}

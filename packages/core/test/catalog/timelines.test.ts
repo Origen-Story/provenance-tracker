@@ -490,11 +490,14 @@ describe("matchableFiles", () => {
 
 describe("startFromEdit (D50)", () => {
 	/** A second export of the film, as a scan finds it: unsorted, its own file. */
-	function secondExport(w: ReturnType<typeof world>): number {
+	function secondExport(
+		w: ReturnType<typeof world>,
+		kind = "unsorted",
+	): number {
 		const run = startRun(w.db, { kind: "scan", tool: TEST_TOOL, now: AT });
 		const tool: Actor = { kind: "tool", name: "t", runId: run };
 		const id = Number(
-			createRow(w.db, "assets", { kind: "unsorted" }, { actor: tool, now: AT }),
+			createRow(w.db, "assets", { kind }, { actor: tool, now: AT }),
 		);
 		createRow(
 			w.db,
@@ -671,6 +674,22 @@ describe("startFromEdit (D50)", () => {
 		setClipClass(w2.db, t3.timelineId, clip.id, "composite", ME);
 		setClipClass(w2.db, t3.timelineId, clip.id, null, ME);
 		expect(startFromEdit(w2.db, v3, w2.film, ME).clipClasses).toBe(0);
+	});
+
+	it("makes the new edit produced unless a person chose its kind", () => {
+		// The editor's own credentials can make classify call the export AI-generated.
+		const w = world();
+		firstEdit(w);
+		const byTool = secondExport(w, "generated");
+		startFromEdit(w.db, byTool, w.film, ME);
+		expect(asset(w.db, byTool).kind).toBe("produced");
+
+		const w2 = world();
+		firstEdit(w2);
+		const byPerson = secondExport(w2);
+		editAsset(w2.db, byPerson, { kind: "archival" }, ME);
+		startFromEdit(w2.db, byPerson, w2.film, ME);
+		expect(asset(w2.db, byPerson).kind).toBe("archival");
 	});
 
 	it("starts only from another finished edit, and not for a removed asset", () => {

@@ -98,6 +98,12 @@ export default function OriginForm({
 				onChange={(v) => {
 					set("origin_class")(v);
 					if (v !== recorded.origin_class) set("origin_class_confirmed")(true);
+					// "AI-assisted" means something only for digital work, and its box
+					// is hidden for any other class; a tick left behind would be refused.
+					if (
+						(originClassDef(v) as { position?: string })?.position !== "digital"
+					)
+						set("ai_assisted")(false);
 				}}
 				options={CLASS_OPTIONS}
 			/>

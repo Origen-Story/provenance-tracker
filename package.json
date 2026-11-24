@@ -10,7 +10,7 @@
 	"homepage": "https://provenancetracker.org",
 	"scripts": {
 		"dev": "concurrently -n server,client -c \"#5cb88a,#5a9fd4\" \"npm run server:dev\" \"npm run client:dev\"",
-		"server:dev": "node --watch --env-file-if-exists=.env src/server/index.js",
+		"server:dev": "node --watch --watch-preserve-output --env-file-if-exists=.env src/server/index.js",
 		"client:dev": "vite",
 		"build": "vite build",
 		"start": "node --env-file-if-exists=.env src/server/index.js",

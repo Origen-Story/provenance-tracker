@@ -59,17 +59,33 @@ export function useSignJob(projectId: string, assetId: number) {
 	const qc = useQueryClient();
 	const jobs = useJobs(projectId);
 	const [jobId, setJobId] = useState<string | null>(null);
+	const [startedAt, setStartedAt] = useState(0);
 	const start = useMutation({
 		mutationFn: (fields: Record<string, unknown>) =>
 			outputs.sign(projectId, assetId, fields),
 		onSuccess: (r) => {
 			setJobId(r.job.id);
+			setStartedAt(Date.now());
 			qc.invalidateQueries({ queryKey: jobsKey(projectId) });
 		},
 	});
 	const job = jobs.data?.jobs.find((j) => j.id === jobId) ?? null;
 	const busy = jobs.data?.jobs.find((j) => j.state === "running") ?? null;
-	return { start, job, busy };
+	// The server keeps its jobs in memory: if it restarted, a list fetched
+	// after this job started no longer has it, and nothing will finish it.
+	const interrupted =
+		jobId !== null && job === null && jobs.dataUpdatedAt > startedAt;
+	return { start, job, busy, interrupted };
+}
+
+/** What to say when a signing job vanished with a server restart. */
+export function Interrupted() {
+	return (
+		<p className="text-sm text-warning">
+			The signing was interrupted: the tracker's server restarted while it ran,
+			so no signed copy was recorded. Sign again.
+		</p>
+	);
 }
 
 function SignOutput({
@@ -85,7 +101,7 @@ function SignOutput({
 		queryKey: previewKey(projectId, asset.id),
 		queryFn: () => outputs.preview(projectId, asset.id),
 	});
-	const { start, job, busy } = useSignJob(projectId, asset.id);
+	const { start, job, busy, interrupted } = useSignJob(projectId, asset.id);
 	const next =
 		Math.max(
 			0,
@@ -135,6 +151,7 @@ function SignOutput({
 			</div>
 			<Problem error={start.error} />
 			{job?.state === "failed" && <Problem error={job.error} />}
+			{interrupted && <Interrupted />}
 			{job?.state === "done" && (
 				<p className="text-sm text-accent">
 					Signed. The new copy is listed below.
@@ -204,7 +221,8 @@ function SignedCopies({
 							{place?.live && (
 								<a
 									href={fileUrl(projectId, s.signedSha256)}
-									download
+									// Its own name; a bare download attribute saves it as "file".
+									download={place.path.split("/").pop()}
 									className="text-accent hover:underline"
 								>
 									Download the signed copy

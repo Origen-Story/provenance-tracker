@@ -8,7 +8,7 @@ Explanations that used to live in `CLAUDE.md`. `CLAUDE.md` is rules only; this f
 - **Frontend:** React 19, React Router 8, TanStack Query 5, Tailwind CSS 4 (dark theme in `src/client/app.css`), built by Vite.
 - **Backend:** Express 5, the local API on `/api`.
 - **Dev:** `concurrently` runs the server (port 3001) and the Vite dev server (port 5173, proxying `/api` to the server).
-- **Helper programs:** ExifTool (through `exiftool-vendored`) and `c2patool`, which reads and signs C2PA credentials (installed by `npm run tools:fetch`, pinned and checksummed). c2patool rather than a native binding, because Windows Smart App Control can block the binding.
+- **Helper programs:** ExifTool (through `exiftool-vendored`); the C2PA library (`@contentauth/c2pa-node`), which reads every file's C2PA credentials against the pinned C2PA trust lists (D51); and `c2patool`, which signs. The library's native binary, c2patool and the trust lists are installed by `npm run tools:fetch`, pinned and checksummed. Neither binary is code-signed, so Windows Smart App Control, when it is on, can block them (D15).
 
 ## The shape of it
 
@@ -25,7 +25,7 @@ packages/
       manifest/  # manifest and creator statement builder, public export, verification report
       legacy/    # reading the old Postgres app's dumps, for the migration (D33-D35)
   core-node/     # @provenancetracker/core-node: what touches the machine (D28)
-    src/         # project folders, this machine's settings, roots, scan, extract (ExifTool, c2patool, PNG), timeline import,
+    src/         # project folders, this machine's settings, roots, scan, extract (ExifTool, the C2PA library, PNG), timeline import,
                  # signing (sign/), the migration (legacy/), the command line (cli/)
 src/
   server/        # index.js starts the server; app.ts is the app (tests run it on a port of their own);
@@ -35,7 +35,7 @@ public-viewer/   # the static public page section for a signed film's record (pl
 spec/            # the catalog format, the creator statement and the public export, with their schemas
 ```
 
-Core runs SQL on a catalog it is handed and never opens a file; core-node opens catalogs, reads folders and runs ExifTool and c2patool; the server's routes are thin: each request opens the project's catalog by the id in the URL, runs the work in a transaction, and closes it. There is no global "active project" and no database server.
+Core runs SQL on a catalog it is handed and never opens a file; core-node opens catalogs, reads folders and runs ExifTool, the C2PA library and c2patool; the server's routes are thin: each request opens the project's catalog by the id in the URL, runs the work in a transaction, and closes it. There is no global "active project" and no database server.
 
 ## The catalog
 

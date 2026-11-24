@@ -96,11 +96,14 @@ export function knownSyncFolders(
 					folder: p.join(cloudStorage, name),
 					evidence: "macOS's CloudStorage folder",
 				});
-		found.push({
-			service: "iCloud Drive",
-			folder: p.join(home, "Library", "Mobile Documents"),
-			evidence: "macOS's iCloud folder",
-		});
+		// Only where it exists, like every other client's folder.
+		const mobileDocuments = p.join(home, "Library", "Mobile Documents");
+		if (existsSync(mobileDocuments))
+			found.push({
+				service: "iCloud Drive",
+				folder: mobileDocuments,
+				evidence: "macOS's iCloud folder",
+			});
 	}
 	if (platform === "win32") {
 		const icloud = p.join(home, "iCloudDrive");

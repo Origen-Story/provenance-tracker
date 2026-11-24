@@ -106,8 +106,9 @@ async function readers(
 	m: Machine,
 	c2pa: Reader[] = fakeC2pa(),
 ): Promise<Reader[]> {
+	// The machine's own C2PA readers are swapped for the stand-ins, by kind.
 	const real = (await machineReaders(m)).filter(
-		(r) => r.extractor !== "c2patool",
+		(r) => r.kind !== "c2pa" && r.kind !== "c2pa-sidecar",
 	);
 	return [...real, ...c2pa];
 }
@@ -347,13 +348,13 @@ describe("extractProject", () => {
 		expect(Object.values(rest.written).reduce((a, b) => a + b, 0)).toBe(4);
 	});
 
-	it("runs with this machine's own readers, c2patool included when it is here", async () => {
+	it("runs with this machine's own readers, the C2PA library included when it is installed", async () => {
 		const { m, p, media } = setup();
 		put(media, "still.png", png());
 		await scanProject(p, m);
 		const report = await extractProject(p, m);
 		const c2pa = observations(p).find((o) => o.kind === "c2pa")!;
-		// No manifest in the file, or no c2patool on this machine (CI does not fetch it).
+		// No manifest in the file, or the library not installed here (npm run tools:fetch).
 		expect(["absent", "unavailable"]).toContain(c2pa.status);
 		expect(report.written["exif ok"]).toBe(1);
 	});

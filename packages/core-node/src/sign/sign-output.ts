@@ -142,7 +142,8 @@ function c2paOf(project: OpenProject, sha256: string) {
 	const row = project.db
 		.prepare(
 			`SELECT status, data, error, validation FROM observations
-			 WHERE content_sha256 = ? AND kind IN ('c2pa', 'c2pa-sidecar') ORDER BY id DESC LIMIT 1`,
+			 WHERE content_sha256 = ? AND kind IN ('c2pa', 'c2pa-sidecar')
+			   AND status <> 'unavailable' ORDER BY id DESC LIMIT 1`,
 		)
 		.get(sha256) as Row | undefined;
 	if (!row) return null;

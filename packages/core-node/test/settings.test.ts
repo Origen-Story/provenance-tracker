@@ -118,6 +118,10 @@ describe("readSettings and writeSettings", () => {
 				"folder is not text",
 			],
 			['{"format": 1, "person": 3, "projects": {}}', "person is not text"],
+			[
+				'{"format": 1, "remoteCredentials": "no", "projects": {}}',
+				"remoteCredentials is not true or false",
+			],
 		];
 		for (const [text, why] of cases) {
 			writeFileSync(file, text);

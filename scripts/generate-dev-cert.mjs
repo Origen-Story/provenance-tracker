@@ -47,6 +47,9 @@ for (const p of [signingKeyPath, chainPath]) {
 //   basicConstraints CA:FALSE (end-entity)
 //   keyUsage: digitalSignature + nonRepudiation
 //   extendedKeyUsage: emailProtection
+//   authorityKeyIdentifier: named, not left to the openssl in use. OpenSSL 3
+//     adds it unasked; LibreSSL (macOS's openssl) does not, and c2patool
+//     then refuses the certificate as invalid (found by CI on macOS).
 //   must be issued by another cert, not self-signed at the leaf level
 const caCnfPath = path.join(outDir, "_ca.cnf");
 writeFileSync(
@@ -71,7 +74,6 @@ writeFileSync(
 	`[req]
 distinguished_name = dn
 prompt = no
-req_extensions = v3_ee
 [dn]
 CN = Origen Story Dev Signing Cert
 O = Origen Story
@@ -80,6 +82,7 @@ basicConstraints = critical, CA:FALSE
 keyUsage = critical, digitalSignature, nonRepudiation
 extendedKeyUsage = critical, emailProtection
 subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always
 `,
 );
 

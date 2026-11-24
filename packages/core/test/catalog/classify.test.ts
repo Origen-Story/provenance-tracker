@@ -464,6 +464,29 @@ describe("classify", () => {
 		expect(asset(db, f.id).signer_name).toBe("Example AI Ltd");
 	});
 
+	it("is not misled by a reader that was not available on some machine (D51)", () => {
+		const { db, file, read } = world();
+		const f = file("y.wav");
+		read(
+			f.content,
+			"c2pa",
+			"ok",
+			store({
+				generator: "Example AI",
+				signer: "Example AI Inc.",
+				action: "c2pa.created",
+				sourceType: AI,
+			}),
+		);
+		// Read again where the library was not installed: says nothing about the file.
+		read(f.content, "c2pa", "unavailable");
+		classifyCatalog(db, { tool: TEST_TOOL, now: () => AT });
+		expect(asset(db, f.id)).toMatchObject({
+			kind: "generated",
+			signer_name: "Example AI Inc.",
+		});
+	});
+
 	it("leaves removed assets alone", () => {
 		const { db, file, read } = world();
 		const f = file("gone.wav");

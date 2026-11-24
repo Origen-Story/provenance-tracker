@@ -1,6 +1,6 @@
 # tools/
 
-Helper programs the tracker runs. Everything here except this README is gitignored.
+Helper programs the tracker runs, the C2PA library's native binary, and the C2PA trust lists. Everything here except this README is gitignored.
 
 ## Install
 
@@ -12,9 +12,17 @@ This downloads each tool at the version pinned in [`scripts/lib/pinned-tools.mjs
 
 ## c2patool
 
-The C2PA command-line tool (`tools/c2patool/c2patool`, `.exe` on Windows). The tracker reads credentials with it (`packages/core-node/src/extract/c2patool.ts`) and signs with it (`packages/core-node/src/sign/c2patool-sign.ts`).
+The C2PA command-line tool (`tools/c2patool/c2patool`, `.exe` on Windows). The tracker signs with it (`packages/core-node/src/sign/c2patool-sign.ts`) and reads back what it has just signed.
 
-Every c2patool release up to 0.27.23 misreads genuine Pixel video as invalid (`assertion.bmffHash.mismatch`), because it is built on an older version of the C2PA library than the fix for that (decision D15). So c2patool's verdict on a camera file is not to be trusted until a release built on c2pa-rs 0.91 or later exists; its reading of the tracker's own signed outputs is fine.
+It no longer reads files for the catalog: every c2patool release up to 0.27.23 misreads genuine Pixel video as invalid (`assertion.bmffHash.mismatch`), because it is built on an older version of the C2PA library than the fix for that (decision D15). The C2PA library below reads instead.
+
+## c2pa-node
+
+The native part of the C2PA library, `@contentauth/c2pa-node` (`tools/c2pa-node/index.node`, with `index.node.pinned.json` recording its version and SHA-256). The tracker reads every file's Content Credentials with it (`packages/core-node/src/extract/c2pa-library.ts`, D51), and loads only this copy: the one the package's own install script may have downloaded is unchecked (docs/dependencies.md). `C2PA_LIBRARY_PATH` overrides the location. Pinned downloads exist for Windows x64, macOS (Intel and Apple silicon) and Linux (x64 and arm64).
+
+## trust-lists
+
+The C2PA trust list (`C2PA-TRUST-LIST.pem`: the certificate authorities whose signers C2PA recognises) and its list of time-stamp authorities (`C2PA-TSA-TRUST-LIST.pem`), from `c2pa-org/conformance-public` at the commit named in `scripts/lib/pinned-tools.mjs`, licensed CC BY 4.0 by their authors. A file signed under one of these authorities reads as trusted; one signed with a certificate no list knows (a development certificate) reads as valid with an unrecognised issuer.
 
 ### A machine with no pinned download
 

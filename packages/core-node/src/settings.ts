@@ -35,6 +35,12 @@ export interface Settings {
 	format: number;
 	/** The name recorded when a person edits a catalog from this machine. */
 	person?: string;
+	/**
+	 * Whether reading a file whose Content Credentials are stored on the web
+	 * (it carries only their address; Adobe Firefly video does this) fetches
+	 * them. Absent means yes (D51); docs/network.md says what goes out.
+	 */
+	remoteCredentials?: boolean;
 	/** Project id → what this machine knows about it. */
 	projects: Record<string, ProjectSettings>;
 	/** Anything a newer version of the same format added is kept as it is. */
@@ -75,6 +81,11 @@ export function readSettings(file: string): Settings {
 		);
 	if (data.person !== undefined && typeof data.person !== "string")
 		throw damaged(file, "person is not text");
+	if (
+		data.remoteCredentials !== undefined &&
+		typeof data.remoteCredentials !== "boolean"
+	)
+		throw damaged(file, "remoteCredentials is not true or false");
 	const projects = data.projects ?? {};
 	if (!isPlainObject(projects))
 		throw damaged(file, "projects is not an object");
@@ -109,6 +120,10 @@ export function readSettings(file: string): Settings {
 	}
 	return { ...data, format: data.format, projects } as Settings;
 }
+
+/** Whether this machine fetches Content Credentials a file points to on the web (D51). */
+export const fetchesRemoteCredentials = (settings: Settings): boolean =>
+	settings.remoteCredentials !== false;
 
 /**
  * Write the settings whole: to a temporary file beside it, then renamed over

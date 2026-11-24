@@ -272,20 +272,30 @@ function classesToCarry(
 	db: DatabaseSync,
 	outputAssetId: number,
 ): { fromTimelineId: number; classes: Map<string, string> } | null {
-	const previous = db
-		.prepare(
-			`SELECT t.id FROM timelines t JOIN contents c ON c.sha256 = t.content_sha256
-			 WHERE c.asset_id = ? ORDER BY t.id DESC LIMIT 1`,
-		)
-		.get(outputAssetId) as { id: number } | undefined;
+	// An edit's own newest timeline; for its first, the newest of the edit
+	// it started from (D50).
+	const previous =
+		newestTimelineOf(db, outputAssetId) ??
+		newestTimelineOf(db, startedFrom(db, outputAssetId));
 	if (!previous) return null;
+	return {
+		fromTimelineId: previous.id,
+		classes: classesToCarryFrom(db, previous.id),
+	};
+}
+
+/** The clip classes in one timeline, by clip identity, leaving out any given two. */
+function classesToCarryFrom(
+	db: DatabaseSync,
+	timelineId: number,
+): Map<string, string> {
 	const rows = db
 		.prepare(
 			`SELECT c.track_kind, c.name, c.origin_class, s.asset_id, s.kind, s.name AS source_name
 			 FROM timeline_clips c LEFT JOIN timeline_sources s ON s.id = c.source_id
 			 WHERE c.timeline_id = ? AND c.origin_class IS NOT NULL`,
 		)
-		.all(previous.id) as Array<{
+		.all(timelineId) as Array<{
 		track_kind: string;
 		name: string;
 		origin_class: string;
@@ -307,7 +317,92 @@ function classesToCarry(
 		else classes.set(id, r.origin_class);
 	}
 	for (const id of mixed) classes.delete(id);
-	return { fromTimelineId: previous.id, classes };
+	return classes;
+}
+
+function newestTimelineOf(
+	db: DatabaseSync,
+	assetId: number | null,
+): { id: number } | undefined {
+	if (assetId === null) return undefined;
+	return db
+		.prepare(
+			`SELECT t.id FROM timelines t JOIN contents c ON c.sha256 = t.content_sha256
+			 WHERE c.asset_id = ? ORDER BY t.id DESC LIMIT 1`,
+		)
+		.get(assetId) as { id: number } | undefined;
+}
+
+/** The earlier edit this one started from (D50), if any. */
+export function startedFrom(db: DatabaseSync, assetId: number): number | null {
+	const row = db
+		.prepare(
+			"SELECT parent_id FROM relationships WHERE child_id = ? AND type = 'started_from' ORDER BY id DESC LIMIT 1",
+		)
+		.get(assetId) as { parent_id: number } | undefined;
+	return row?.parent_id ?? null;
+}
+
+/**
+ * Give the clips of an edit's newest timeline the classes a person gave the
+ * same clips in another edit's newest timeline (D50), for a timeline imported
+ * before the edit started from that one. Only a clip nobody has given a class
+ * keeps quiet now; one a person set or cleared is left as they left it.
+ * @returns how many clips were given a class
+ */
+export function carryClassesInto(
+	db: DatabaseSync,
+	outputAssetId: number,
+	fromAssetId: number,
+	change: { actor: Actor; now?: string; evidence?: Record<string, unknown> },
+	tool: Tool,
+): number {
+	const target = newestTimelineOf(db, outputAssetId);
+	const source = newestTimelineOf(db, fromAssetId);
+	if (!target || !source) return 0;
+	const carry = classesToCarryFrom(db, source.id);
+	const clips = db
+		.prepare(
+			`SELECT c.id, c.track_kind, c.name, s.asset_id, s.kind, s.name AS source_name
+			 FROM timeline_clips c LEFT JOIN timeline_sources s ON s.id = c.source_id
+			 WHERE c.timeline_id = ? AND c.origin_class IS NULL
+			   AND NOT EXISTS (SELECT 1 FROM history h WHERE h.table_name = 'timeline_clips'
+			     AND h.row_key = CAST(c.id AS TEXT) AND h.field = 'origin_class' AND h.old_value IS NOT NULL)`,
+		)
+		.all(target.id) as Array<{
+		id: number;
+		track_kind: string;
+		name: string;
+		asset_id: number | null;
+		kind: string | null;
+		source_name: string | null;
+	}>;
+	let n = 0;
+	for (const c of clips) {
+		const cls = carry.get(
+			clipIdentity(
+				c.track_kind,
+				c.name,
+				c.asset_id,
+				c.kind ?? "",
+				c.source_name ?? "",
+			),
+		);
+		if (!cls) continue;
+		editRow(
+			db,
+			"timeline_clips",
+			c.id,
+			{ origin_class: cls },
+			{
+				...change,
+				evidence: { ...change.evidence, carried_from_timeline: source.id },
+			},
+		);
+		n++;
+	}
+	if (n) refreshTimelines(db, [target.id], { tool, now: change.now });
+	return n;
 }
 
 /**

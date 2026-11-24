@@ -1,7 +1,12 @@
 import { describe, it, expect } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import { createRow, type Actor } from "../../src/catalog/edit.ts";
-import { editAsset } from "../../src/catalog/edits.ts";
+import {
+	addCredit,
+	editAsset,
+	setRemoved,
+	startFromEdit,
+} from "../../src/catalog/edits.ts";
 import { EditError, NotFoundError } from "../../src/catalog/errors.ts";
 import { finishRun, startRun } from "../../src/catalog/runs.ts";
 import {
@@ -480,5 +485,203 @@ describe("matchableFiles", () => {
 			[w.gen, "gen.mp4"],
 			[w.film, "exports/film.mp4"],
 		]);
+	});
+});
+
+describe("startFromEdit (D50)", () => {
+	/** A second export of the film, as a scan finds it: unsorted, its own file. */
+	function secondExport(w: ReturnType<typeof world>): number {
+		const run = startRun(w.db, { kind: "scan", tool: TEST_TOOL, now: AT });
+		const tool: Actor = { kind: "tool", name: "t", runId: run };
+		const id = Number(
+			createRow(w.db, "assets", { kind: "unsorted" }, { actor: tool, now: AT }),
+		);
+		createRow(
+			w.db,
+			"contents",
+			{ sha256: sha("d"), size: 100, asset_id: id, first_run_id: run },
+			{ actor: tool, now: AT },
+		);
+		finishRun(w.db, run, { outcome: "ok", now: AT });
+		return id;
+	}
+	const cutOf = (
+		w: ReturnType<typeof world>,
+		film: number,
+		sha256: string,
+	) => ({
+		...timeline(w, [
+			seg({
+				clipId: "p1",
+				name: "plate-subclip",
+				sourceKind: "sequence",
+				sourceName: "plate-subclip",
+			}),
+			seg({
+				clipId: "r1",
+				name: "rec.wav",
+				startFrame: 10,
+				endFrame: 20,
+				sourceKey: "file-1",
+				sourceName: "rec.wav",
+				matchedAssetRef: String(w.rec),
+				matchMethod: "path",
+				matchConfidence: 1,
+			}),
+		]),
+		outputAssetId: film,
+		contentSha256: sha256,
+	});
+	/** The first edit, finished: public details, a credit, two statements, a clip class. */
+	function firstEdit(w: ReturnType<typeof world>) {
+		const t = writeTimeline(w.db, cutOf(w, w.film, sha("c")), {
+			tool: TEST_TOOL,
+			now: () => AT,
+		});
+		editAsset(
+			w.db,
+			w.film,
+			{
+				public_title: "The Film",
+				description: "About the film",
+				license: "CC BY 4.0",
+			},
+			ME,
+		);
+		addCredit(w.db, w.film, { role: "director", name: "A. Maker" }, ME);
+		saveStatement(w.db, w.film, { text: "First words." }, { now: AT });
+		saveStatement(
+			w.db,
+			w.film,
+			{
+				text: "Newest words.",
+				author: "A. Maker",
+				editedWith: "Example Editor",
+			},
+			{ now: AT },
+		);
+		const clips = timelineRecord(w.db, t.timelineId)!.clips;
+		setClipClass(w.db, t.timelineId, clips[0].id, "compositeSynthetic", ME);
+		return t;
+	}
+
+	it("copies the earlier edit's public details, credits and newest statement once, keeping what is filled in", () => {
+		const w = world();
+		firstEdit(w);
+		const v2 = secondExport(w);
+		editAsset(w.db, v2, { description: "Its own words" }, ME);
+
+		const copied = startFromEdit(w.db, v2, w.film, ME);
+		expect(copied).toMatchObject({
+			from: w.film,
+			credits: 1,
+			statement: true,
+			clipClasses: 0,
+		});
+		expect(copied.fields.sort()).toEqual(
+			["is_output", "kind", "license", "public_title"].sort(),
+		);
+		expect(asset(w.db, v2)).toMatchObject({
+			is_output: 1,
+			kind: "produced",
+			public_title: "The Film",
+			description: "Its own words",
+			license: "CC BY 4.0",
+		});
+		expect(
+			w.db
+				.prepare("SELECT role, name, stated_by FROM credits WHERE asset_id = ?")
+				.all(v2),
+		).toEqual([{ role: "director", name: "A. Maker", stated_by: "A. Maker" }]);
+		expect(
+			w.db
+				.prepare(
+					"SELECT text, author, edited_with FROM statements WHERE asset_id = ?",
+				)
+				.all(v2),
+		).toEqual([
+			{
+				text: "Newest words.",
+				author: "A. Maker",
+				edited_with: "Example Editor",
+			},
+		]);
+		// Recorded under the person, with where it came from.
+		const h = w.db
+			.prepare(
+				"SELECT actor_kind, actor, note, evidence FROM history WHERE table_name = 'assets' AND row_key = ? AND field = 'public_title'",
+			)
+			.get(String(v2)) as Record<string, string>;
+		expect(h).toMatchObject({ actor_kind: "person", actor: "A. Maker" });
+		expect(h.note).toMatch(/Started from asset/);
+		expect(JSON.parse(h.evidence)).toEqual({ started_from: w.film });
+		expect(
+			w.db
+				.prepare(
+					"SELECT parent_id, child_id FROM relationships WHERE type = 'started_from'",
+				)
+				.all(),
+		).toEqual([{ parent_id: w.film, child_id: v2 }]);
+
+		// Once only; and the earlier edit is untouched.
+		expect(() => startFromEdit(w.db, v2, w.film, ME)).toThrow(
+			/already started/,
+		);
+		expect(asset(w.db, w.film).description).toBe("About the film");
+	});
+
+	it("carries the earlier edit's clip classes to the new edit's first timeline import", () => {
+		const w = world();
+		firstEdit(w);
+		const v2 = secondExport(w);
+		startFromEdit(w.db, v2, w.film, ME);
+		const t = writeTimeline(w.db, cutOf(w, v2, sha("d")), {
+			tool: TEST_TOOL,
+			now: () => AT,
+		});
+		expect(t.carriedClasses).toBe(1);
+		expect(
+			timelineRecord(w.db, t.timelineId)!.clips.map((c) => c.originClass),
+		).toEqual(["compositeSynthetic", null]);
+	});
+
+	it("gives a timeline imported before starting the classes, but not a clip a person cleared", () => {
+		const w = world();
+		firstEdit(w);
+		const v2 = secondExport(w);
+		const t = writeTimeline(w.db, cutOf(w, v2, sha("d")), {
+			tool: TEST_TOOL,
+			now: () => AT,
+		});
+		expect(t.carriedClasses).toBe(0);
+		expect(startFromEdit(w.db, v2, w.film, ME).clipClasses).toBe(1);
+		expect(
+			timelineRecord(w.db, t.timelineId)!.clips.map((c) => c.originClass),
+		).toEqual(["compositeSynthetic", null]);
+
+		// The same again, but the person had set and cleared the subclip's class.
+		const w2 = world();
+		firstEdit(w2);
+		const v3 = secondExport(w2);
+		const t3 = writeTimeline(w2.db, cutOf(w2, v3, sha("d")), {
+			tool: TEST_TOOL,
+			now: () => AT,
+		});
+		const clip = timelineRecord(w2.db, t3.timelineId)!.clips[0];
+		setClipClass(w2.db, t3.timelineId, clip.id, "composite", ME);
+		setClipClass(w2.db, t3.timelineId, clip.id, null, ME);
+		expect(startFromEdit(w2.db, v3, w2.film, ME).clipClasses).toBe(0);
+	});
+
+	it("starts only from another finished edit, and not for a removed asset", () => {
+		const w = world();
+		firstEdit(w);
+		const v2 = secondExport(w);
+		expect(() => startFromEdit(w.db, v2, v2, ME)).toThrow(/itself/);
+		expect(() => startFromEdit(w.db, v2, w.rec, ME)).toThrow(/finished edit/);
+		expect(() => startFromEdit(w.db, v2, 999, ME)).toThrow(NotFoundError);
+		expect(() => startFromEdit(w.db, v2, Number.NaN, ME)).toThrow(EditError);
+		setRemoved(w.db, v2, true, ME);
+		expect(() => startFromEdit(w.db, v2, w.film, ME)).toThrow(/removed/);
 	});
 });

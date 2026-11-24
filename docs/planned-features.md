@@ -55,6 +55,7 @@ Note: Origen Story's projects currently use only the high-priority set. Deferred
 - **CONTRIBUTING.md** — written fresh at public launch, not retroactive. Covers: dev setup, how to add a platform parser, test-fixtures conventions, PR checklist.
 - **CHANGELOG.md** — started fresh at public launch; use Keep-a-Changelog format.
 - **Self-hosting guide** — section in README or a separate doc: reverse-proxy examples (nginx, Caddy, Tailscale), HTTPS, backups, log rotation.
+- **Bring this file up to date with the new app** (noted 2026-11-24). Several entries describe the app before the cutover (D49): Postgres and docker-compose, `/api/health` with a database check, the old extraction and search paths, and work since done (the ESLint and Prettier setup, the extraction registry). Remove or rewrite them.
 - **Convert this file to GitHub issues** at public launch. One issue per bullet, appropriately labeled.
 
 ---
@@ -66,11 +67,20 @@ Note: Origen Story's projects currently use only the high-priority set. Deferred
 - **Review status columns on assets** — add `review_status` (`pending` / `reviewed` / `flagged`) to asset tables so users can dismiss novel flags or explicitly flag items for future parser work. Deferred; start with derive-at-query-time novelty and add this only if noise becomes a problem.
 - **Novelty detection for archival + produced assets** — the first pass covers only AI assets (where platform parsing matters most). Extend to archival (where C2PA may be present but unparsed) and produced (where new camera/mic firmware writes unseen EXIF/RIFF data) once the AI side is stable.
 - **Modification chain tracking** — our schema currently models origin (generators) but not modifications. If an archival photo is upscaled with Topaz, there's no place to record "this asset is a Topaz-modified version of archival asset #42." Entails: a generic `modification_events` table (or extending `asset_relationships` across asset types), parser output of a `modifications: [{tool, version, action, date}]` array, UI for viewing a processing chain, and C2PA manifest generation that chains modifications into the output manifest's ingredients.
-- **A new cut of the same film carries its details forward** — today each re-export is a separate output, so the public title, the creator statement (text, author, organisation) and the class given to nested-sequence clips have to be entered again although none of them changed. A re-export should be addable as a new version of an existing output: it inherits those details, imports its own timeline, and signs as the next version. Came up on 2026-11-15, when a second cut needed all of them copied across by hand.
+- **A new cut of the same film carries its details forward: done (D50, 2026-11-24).** A finished edit can start from an earlier one, copying its public details, credits, newest statement and clip classes once. Each export stays its own finished edit. Still open: Import could suggest which edit a new export starts from (by the timeline's sequence name or the file name), instead of the person choosing it.
 - **Choose the sequence when a timeline file holds several** — a Premiere XML export of a whole project contains every sequence, and the xmeml parser takes the first one without saying so. On 2026-11-15 that was a 631-second assembly instead of the 146-second film. Offer the sequences by name and length, default to the one whose length matches the output, and refuse to guess when none matches.
 
 - **License URL on archival imports** — both archival import forms (`ArchivalIngest.jsx` and the archival form in `ImportHub.jsx`) send a `licenseUrl` that no input lets anyone enter, so it is always saved empty. Found by the linter on 2026-11-21; deferred to the app cutover, when the import pages are rebuilt. Rights information on archival material matters, so it should not wait longer than that.
 
 - **A design pass on the app's pages, after the cutover** — the pages on the catalogs (Phase 6, slice 6) are built to work first; what is visible at once, the layout and the order of sections are decided once every page exists, from getting files in to signing. Anything that makes a mistake easy (a buried save, a dangerous button among everyday ones) is fixed as it is found rather than waiting for this. Noted so far, on 2026-11-23: the asset page is one long column of sections, and an AI-generated asset's view is fine for now but should be reviewed with the rest.
 
-_(Add more as they come up.)_
+---
+
+## Later: worth a funded study
+
+Things deliberately put off until people other than the author have used the tool, or until there is funding to do them properly. Each says when and why it came up.
+
+- **Versioning of finished edits** (raised 2026-11-24). Edits go through many revisions, and a client may ask to go back to an earlier one; a project also has several deliverables (a full-length film, a vertical version, a short cut-down). Today each export is its own finished edit and a new one can start from an earlier one (D50); the tool has no idea of a deliverable with revisions. Before designing one: a survey of how editors, producers and clients name, keep and return to revisions in different editing tools, and what a public viewer should say about a film that replaces an earlier signed one (for example "replaces the version signed on 15 Nov"). Things a design would have to settle: whether a revision belongs to its deliverable through the catalog or only through a link, how signed copies are numbered per revision, signing an earlier revision again, and links between deliverables ("cut down from").
+- **An OpenTimelineIO reader** (in the roadmap as "keep xmeml, add OTIO later"; raised again 2026-11-24, when Premiere exported both a Final Cut Pro XML and an `.otio` file of the same cut). OTIO is an open timeline format that many editors read and write, so it is a better long-term input than Final Cut XML. It would be a timeline-format registry module beside xmeml, with a committed fixture and a test.
+
+_(Add more as they come up. Anything deferred goes here or in a section above, so it is not lost in a handoff.)_

@@ -75,6 +75,16 @@ export default function AssetDetail() {
 									finished edit: its timeline and signing
 								</Link>
 							)}
+							{!f.is_output &&
+								!f.removed_at &&
+								mediaKind(fileName) === "video" && (
+									<Link
+										to={`/catalog/${p}/outputs/${asset.id}`}
+										className="text-accent hover:underline"
+									>
+										a new export? Make it a finished edit
+									</Link>
+								)}
 							{str(f.code) && <span>{str(f.code)}</span>}
 							<span>· changed {when(asset.updatedAt)}</span>
 						</span>

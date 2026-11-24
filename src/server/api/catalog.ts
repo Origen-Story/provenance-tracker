@@ -85,6 +85,7 @@ import {
 	removeCredit,
 	setGeneration,
 	setRemoved,
+	startFromEdit,
 	unlink,
 	type PersonEdit,
 } from "@provenancetracker/core/catalog/edits.ts";
@@ -567,6 +568,29 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 				});
 			},
 		);
+
+	// A new export starts from an earlier finished edit, once (D50).
+	api.post(
+		"/projects/:projectId/assets/:assetId/start-from",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.assetId, "asset");
+			withEdit(machine, req, (project, opts, fields) => {
+				const unknown = Object.keys(fields).filter((k) => k !== "from_id");
+				if (unknown.length)
+					throw new HttpError(
+						400,
+						`Starting from an edit takes only from_id, not ${unknown.join(", ")}`,
+					);
+				const copied = startFromEdit(
+					project.db,
+					id,
+					Number(fields.from_id),
+					opts,
+				);
+				res.json({ copied, asset: assetRecord(project.db, id) });
+			});
+		},
+	);
 
 	api.post(
 		"/projects/:projectId/assets/:assetId/credits",

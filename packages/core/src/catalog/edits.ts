@@ -20,7 +20,13 @@ import {
 } from "./edit.ts";
 import { EDITABLE, EDITABLE_META } from "./fields.ts";
 import { inTransaction } from "./format.ts";
-import { refreshTimelines, timelinesUsing } from "./timelines.ts";
+import {
+	carryClassesInto,
+	refreshTimelines,
+	saveStatement,
+	startedFrom,
+	timelinesUsing,
+} from "./timelines.ts";
 
 import { EditError, NotFoundError } from "./errors.ts";
 
@@ -375,6 +381,135 @@ export function unlink(db: DatabaseSync, id: number, opts: PersonEdit): void {
 	if (!db.prepare("SELECT 1 FROM relationships WHERE id = ?").get(id))
 		throw new NotFoundError("There is no such link");
 	removeRow(db, "relationships", id, change(opts));
+}
+
+/** The finished edit's details a new export of it starts with (D50). */
+export const STARTED_FROM_FIELDS: readonly string[] = [
+	"public_title",
+	"description",
+	"caption",
+	"usage_notes",
+	"license",
+	"license_url",
+];
+
+export interface StartedFrom {
+	from: number;
+	fields: string[];
+	credits: number;
+	statement: boolean;
+	clipClasses: number;
+}
+
+/**
+ * Start a new export as a finished edit from an earlier one (D50), once: it is
+ * marked a finished edit, and takes the earlier edit's public details (only
+ * where its own are empty), its credits (if it has none), its newest statement
+ * (if it has none) and, in its timeline, the classes a person gave the same
+ * clips. A copy, not a link: changing either edit afterwards leaves the other
+ * as it was. The started_from link records where the copy came from.
+ */
+export function startFromEdit(
+	db: DatabaseSync,
+	assetId: number,
+	fromId: number,
+	opts: PersonEdit,
+): StartedFrom {
+	if (!Number.isSafeInteger(fromId))
+		throw new EditError("Say which finished edit to start from");
+	if (assetId === fromId)
+		throw new EditError("An edit cannot start from itself");
+	const asset = assetRow(db, assetId);
+	const from = assetRow(db, fromId);
+	if (asset.removed_at !== null)
+		throw new EditError("This asset is removed; restore it first");
+	if (from.is_output !== 1)
+		throw new EditError("Start only from a finished edit");
+	const already = startedFrom(db, assetId);
+	if (already !== null)
+		throw new EditError(
+			`This edit already started from asset ${already}; change its details directly`,
+		);
+	const evidence = { started_from: fromId };
+	const ch: ChangeOptions = {
+		...change(opts),
+		note: opts.note || `Started from asset ${fromId}`,
+		evidence,
+	};
+	return inTransaction(db, () => {
+		const values: Record<string, unknown> = {};
+		if (asset.is_output !== 1) values.is_output = true;
+		if (asset.kind === "unsorted") values.kind = "produced";
+		for (const f of STARTED_FROM_FIELDS)
+			if (!String(asset[f] ?? "").trim() && String(from[f] ?? "").trim())
+				values[f] = from[f];
+		const fields = editRow(db, "assets", assetId, values, ch);
+
+		let credits = 0;
+		const has = (sql: string) => !!db.prepare(sql).get(assetId);
+		if (!has("SELECT 1 FROM credits WHERE asset_id = ?")) {
+			const rows = db
+				.prepare(
+					"SELECT role, name, on_behalf_of, sort_order FROM credits WHERE asset_id = ? ORDER BY sort_order, id",
+				)
+				.all(fromId) as Array<Record<string, unknown>>;
+			for (const r of rows) {
+				createRow(
+					db,
+					"credits",
+					{ asset_id: assetId, stated_by: opts.actor.name, ...r },
+					ch,
+				);
+				credits++;
+			}
+		}
+
+		let statement = false;
+		if (!has("SELECT 1 FROM statements WHERE asset_id = ?")) {
+			const s = db
+				.prepare(
+					"SELECT text, author, organization, edited_with FROM statements WHERE asset_id = ? ORDER BY id DESC LIMIT 1",
+				)
+				.get(fromId) as
+				| {
+						text: string;
+						author: string;
+						organization: string;
+						edited_with: string;
+				  }
+				| undefined;
+			if (s) {
+				saveStatement(
+					db,
+					assetId,
+					{
+						text: s.text,
+						author: s.author,
+						organization: s.organization,
+						editedWith: s.edited_with,
+					},
+					{ now: opts.now },
+				);
+				statement = true;
+			}
+		}
+
+		createRow(
+			db,
+			"relationships",
+			{
+				parent_id: fromId,
+				child_id: assetId,
+				type: "started_from",
+				match_method: "manual",
+				confidence: 1,
+				note: "",
+			},
+			ch,
+		);
+		const clipClasses = carryClassesInto(db, assetId, fromId, ch, opts.tool);
+		return { from: fromId, fields, credits, statement, clipClasses };
+	});
 }
 
 /**

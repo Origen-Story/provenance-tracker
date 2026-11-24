@@ -29,6 +29,8 @@ import { devCertificate, haveOpenssl } from "./helpers/cert.ts";
 const haveC2patool =
 	spawnSync(c2patoolPath({}, process.platform), ["--version"]).status === 0;
 const haveLibrary = existsSync(PINNED_BINARY);
+// Tests use no network: these files carry their credentials inside them anyway.
+const NO_REMOTE = { remoteManifests: false };
 
 /** A silent 16-bit mono WAV of a tenth of a second. */
 function wav(): Buffer {
@@ -70,15 +72,21 @@ const DEFINITION = {
 };
 
 describe("readerSettings", () => {
-	it("never lets reading go online: no remote manifests, no OCSP, trust given as text", () => {
-		const s = readerSettings("-----BEGIN CERTIFICATE-----");
-		expect(s.verify).toMatchObject({
-			remoteManifestFetch: false,
+	it("fetches remote credentials only as the machine's setting says, never OCSP, trust given as text", () => {
+		const on = readerSettings("-----BEGIN CERTIFICATE-----", {
+			remoteManifests: true,
+		});
+		expect(on.verify).toMatchObject({
+			remoteManifestFetch: true,
 			ocspFetch: false,
 			verifyTrust: true,
 		});
-		expect(s.trust.trustAnchors).toMatch(/^-----BEGIN/);
-		expect(s.trust).not.toHaveProperty("userAnchors");
+		expect(on.trust.trustAnchors).toMatch(/^-----BEGIN/);
+		expect(on.trust).not.toHaveProperty("userAnchors");
+		expect(
+			readerSettings("x", { remoteManifests: false }).verify
+				.remoteManifestFetch,
+		).toBe(false);
 	});
 });
 
@@ -118,7 +126,10 @@ describe.skipIf(!haveOpenssl || !haveC2patool || !haveLibrary)(
 
 		it("reads a file signed with a certificate no list knows as valid, with an unrecognised issuer", async () => {
 			const file = await signed("signed.wav");
-			const o = await readC2paWithLibrary(await loadLibraryReader({}), file);
+			const o = await readC2paWithLibrary(
+				await loadLibraryReader({}, NO_REMOTE),
+				file,
+			);
 			expect(o).toMatchObject({
 				kind: "c2pa",
 				extractor: "c2pa-node",
@@ -139,7 +150,10 @@ describe.skipIf(!haveOpenssl || !haveC2patool || !haveLibrary)(
 				"utf8",
 			);
 			const o = await readC2paWithLibrary(
-				await loadLibraryReader({}, { userAnchors: ca }),
+				await loadLibraryReader(
+					{},
+					{ remoteManifests: false, userAnchors: ca },
+				),
 				file,
 			);
 			expect(o.validation!.failures).toEqual([]);
@@ -150,7 +164,7 @@ describe.skipIf(!haveOpenssl || !haveC2patool || !haveLibrary)(
 		it("reads a .c2pa sidecar against the file it describes", async () => {
 			const sidecar = await signed("tone.c2pa", true);
 			const o = await readC2paWithLibrary(
-				await loadLibraryReader({}),
+				await loadLibraryReader({}, NO_REMOTE),
 				plain,
 				sidecar,
 			);
@@ -161,7 +175,7 @@ describe.skipIf(!haveOpenssl || !haveC2patool || !haveLibrary)(
 		}, 60000);
 
 		it("says a file has no credentials, and a type C2PA cannot hold is absent, not unreadable", async () => {
-			const reader = await loadLibraryReader({});
+			const reader = await loadLibraryReader({}, NO_REMOTE);
 			expect((await readC2paWithLibrary(reader, plain)).status).toBe("absent");
 			const notes = path.join(dir, "notes.md");
 			writeFileSync(notes, "# notes");
@@ -173,7 +187,10 @@ describe.skipIf(!haveOpenssl || !haveC2patool || !haveLibrary)(
 		it("says a damaged file is unreadable", async () => {
 			const broken = path.join(dir, "broken.mp4");
 			writeFileSync(broken, "not a video");
-			const o = await readC2paWithLibrary(await loadLibraryReader({}), broken);
+			const o = await readC2paWithLibrary(
+				await loadLibraryReader({}, NO_REMOTE),
+				broken,
+			);
 			expect(o.status).toBe("unreadable");
 			expect(o.error).toMatch(/^C2PA library: /);
 		}, 60000);

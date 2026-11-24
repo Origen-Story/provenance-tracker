@@ -33,7 +33,11 @@ import { writeFileSync } from "node:fs";
 import { scanProject, type ScanReport } from "../scan.ts";
 import { describeFile } from "../show.ts";
 import { verifyProject } from "../verify.ts";
-import { readSettings, updateSettings } from "../settings.ts";
+import {
+	fetchesRemoteCredentials,
+	readSettings,
+	updateSettings,
+} from "../settings.ts";
 import { TOOL } from "../tool.ts";
 import { signAsset } from "../sign/sign-asset.ts";
 import { signOutput } from "../sign/sign-output.ts";
@@ -78,6 +82,8 @@ Usage: npm run cli -- <command> [options]
   show <file>                         Everything the catalog knows about one file
   settings                            Show this machine's settings
   settings person <name>              Set the name your edits are recorded under
+  settings remote-credentials on|off  Whether reading a file fetches Content Credentials it
+                                      says are stored on the web (on unless turned off)
   migrate --dry-run --layout <file>   Build the catalogs from a Postgres dump in a throwaway
                                       folder, check them, and report [--report <file>]
   migrate --write --layout <file>     The same, then put each catalog in its project folder,
@@ -275,13 +281,31 @@ function settings(io: Io, args: string[]): void {
 		io.out(`Edits from this machine will be recorded as made by "${name}".`);
 		return;
 	}
+	if (sub === "remote-credentials") {
+		needArgs(rest, 1, "settings remote-credentials on|off");
+		const value = rest[0].trim().toLowerCase();
+		if (value !== "on" && value !== "off")
+			throw new UsageError('Say "on" or "off"');
+		updateSettings(file, (s) => {
+			s.remoteCredentials = value === "on";
+		});
+		io.out(
+			value === "on"
+				? "Reading a file fetches Content Credentials it says are stored on the web (docs/network.md)."
+				: "Reading a file no longer fetches Content Credentials stored on the web; such a file reads as unreadable, with the address it gives.",
+		);
+		return;
+	}
 	if (sub !== undefined)
 		throw new UsageError(
-			`Unknown settings command "${sub}". Try: settings, settings person`,
+			`Unknown settings command "${sub}". Try: settings, settings person, settings remote-credentials`,
 		);
 	const s = readSettings(file);
 	io.out(`Settings file: ${file}`);
 	io.out(`Person: ${s.person ?? "(not set)"}`);
+	io.out(
+		`Content Credentials stored on the web: ${fetchesRemoteCredentials(s) ? "fetched when a file is read" : "not fetched"}`,
+	);
 	const projects = Object.entries(s.projects);
 	io.out(
 		projects.length

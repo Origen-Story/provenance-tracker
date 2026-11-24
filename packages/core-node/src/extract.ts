@@ -24,6 +24,7 @@ import {
 import { exiftoolVersion, readExif } from "./extract/exiftool.ts";
 import { observePngText } from "./extract/png-text.ts";
 import type { Machine } from "./machine.ts";
+import { fetchesRemoteCredentials, readSettings } from "./settings.ts";
 import type { OpenProject } from "./project.ts";
 import { listRoots } from "./roots.ts";
 import { UNSORTED } from "./scan.ts";
@@ -50,7 +51,11 @@ export interface Reader {
  */
 export async function machineReaders(machine: Machine): Promise<Reader[]> {
 	const exif = await exiftoolVersion();
-	const library = await loadLibraryReader(machine.env);
+	const library = await loadLibraryReader(machine.env, {
+		remoteManifests: fetchesRemoteCredentials(
+			readSettings(machine.settingsPath),
+		),
+	});
 	const c2pa = "unavailable" in library ? null : library.version;
 	return [
 		{

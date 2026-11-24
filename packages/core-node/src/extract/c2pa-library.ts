@@ -7,8 +7,11 @@
 // C2PA_LIBRARY_PATH when set; never from what the package's install script
 // may have downloaded. Trust comes from the pinned C2PA trust list
 // (tools/trust-lists/), given as text, so nothing is fetched to load it.
-// Reading never goes online: remote manifests are not fetched, OCSP is off,
-// and the library is handed a fetch that refuses (docs/network.md).
+// What reading may send out (docs/network.md): only a request for Content
+// Credentials a file says are stored on the web (Adobe Firefly video), and
+// only while this machine's setting allows it (on unless turned off). OCSP is
+// off, the trust lists are given as text, and the library is handed a fetch
+// that refuses, so it can never fetch a trust list.
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -82,16 +85,22 @@ export function libraryBinary(
 	return { path: PINNED_BINARY };
 }
 
-/** The settings every reading uses: the pinned trust list, nothing fetched. */
-export function readerSettings(trustAnchors: string, userAnchors?: string) {
+/**
+ * The settings every reading uses: the pinned trust list, no OCSP, and
+ * remote manifests fetched only when this machine allows it.
+ */
+export function readerSettings(
+	trustAnchors: string,
+	opts: { userAnchors?: string; remoteManifests: boolean },
+) {
 	return {
 		trust: {
 			trustAnchors,
-			...(userAnchors ? { userAnchors } : {}),
+			...(opts.userAnchors ? { userAnchors: opts.userAnchors } : {}),
 		},
 		verify: {
 			verifyTrust: true,
-			remoteManifestFetch: false,
+			remoteManifestFetch: opts.remoteManifests,
 			ocspFetch: false,
 		},
 	};
@@ -109,17 +118,19 @@ const loaded = new Map<
 >();
 
 /**
- * Load the library once per process (and once per set of extra anchors).
- * Its binary path is read by the library on first use, so it is set before
- * the first import.
+ * Load the library once per process (and once per set of options). Its
+ * binary path is read by the library on first use, so it is set before the
+ * first import.
+ * @param opts.remoteManifests fetch Content Credentials a file says are
+ *   stored on the web (the machine's setting; tests pass false)
  * @param opts.userAnchors certificates this machine also trusts, as PEM text:
  *   the library reports a file signed under one as trusted by a "User" anchor
  */
 export function loadLibraryReader(
 	env: Env,
-	opts: { userAnchors?: string } = {},
+	opts: { remoteManifests: boolean; userAnchors?: string },
 ): Promise<LibraryReader | { unavailable: string }> {
-	const key = opts.userAnchors ?? "";
+	const key = `${opts.remoteManifests}|${opts.userAnchors ?? ""}`;
 	const known = loaded.get(key);
 	if (known) return known;
 	const attempt = (async () => {
@@ -150,7 +161,7 @@ export function loadLibraryReader(
 			}
 		).version;
 		const context = new lib.Context(
-			readerSettings(readFileSync(TRUST_LIST, "utf8"), opts.userAnchors),
+			readerSettings(readFileSync(TRUST_LIST, "utf8"), opts),
 			undefined,
 			{ trustFetch: { fetch: refuseNetwork } },
 		);

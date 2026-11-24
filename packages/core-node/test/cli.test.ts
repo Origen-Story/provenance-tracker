@@ -92,6 +92,24 @@ describe("the command line", () => {
 		expect(shown).toContain("0 root(s) outside the project folder placed here");
 	});
 
+	it("turns fetching Content Credentials stored on the web off and on (D51)", async () => {
+		const m = t.machine();
+		const c = cli(m, t.tempDir());
+		expect((await c.run("settings")).out).toContain(
+			"Content Credentials stored on the web: fetched when a file is read",
+		);
+		expect((await c.run("settings", "remote-credentials", "off")).code).toBe(0);
+		expect(readSettings(m.settingsPath).remoteCredentials).toBe(false);
+		expect((await c.run("settings")).out).toContain(
+			"Content Credentials stored on the web: not fetched",
+		);
+		expect(
+			await c.run("settings", "remote-credentials", "maybe"),
+		).toMatchObject({ code: 2 });
+		await c.run("settings", "remote-credentials", "on");
+		expect(readSettings(m.settingsPath).remoteCredentials).toBe(true);
+	});
+
 	it("asks for a name before recording an edit, and changes nothing until it has one", async () => {
 		const m = t.machine();
 		const work = t.tempDir();

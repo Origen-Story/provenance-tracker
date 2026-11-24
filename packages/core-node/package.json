@@ -9,6 +9,7 @@
 		"./*": "./src/*"
 	},
 	"dependencies": {
+		"@contentauth/c2pa-node": "0.10.1",
 		"@provenancetracker/core": "0.2.0",
 		"exiftool-vendored": "39.1.0"
 	},

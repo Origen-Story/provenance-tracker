@@ -1,18 +1,22 @@
 #!/usr/bin/env node
-// Download the helper programs the tracker runs (today: c2patool) at the
-// version pinned in scripts/lib/pinned-tools.mjs, check each download's
-// SHA-256 against the recorded one, and install it under tools/.
+// Download what the tracker runs or reads from outside npm, at the version
+// pinned in scripts/lib/pinned-tools.mjs, check each download's SHA-256
+// against the recorded one, and install it under tools/: c2patool, the C2PA
+// library's native binary, and the C2PA trust lists.
 //
 // Usage: npm run tools:fetch            install, or confirm what is installed
 //        npm run tools:fetch -- --force replace an installed copy of another version
 //
-// Network: one HTTPS download per tool from github.com (docs/network.md).
+// Network: one HTTPS download per tool from github.com, and the trust lists
+// from raw.githubusercontent.com (docs/network.md).
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	chmodSync,
 	copyFileSync,
 	existsSync,
 	mkdirSync,
+	readFileSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
@@ -20,6 +24,7 @@ import {
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+	DATA,
 	TOOLS,
 	assetFor,
 	reportsVersion,
@@ -47,12 +52,34 @@ function installedVersion(binary) {
 	}
 }
 
+const sha256Of = (file) =>
+	createHash("sha256").update(readFileSync(file)).digest("hex");
+
+/**
+ * A library cannot be asked its version, so installing one writes a marker
+ * beside it with the version and the installed file's SHA-256; the marker
+ * counts only while the file still has that hash.
+ */
+function installedLibrary(target) {
+	const marker = `${target}.pinned.json`;
+	if (!existsSync(target) || !existsSync(marker)) return null;
+	try {
+		const m = JSON.parse(readFileSync(marker, "utf8"));
+		return m.sha256 === sha256Of(target)
+			? String(m.version)
+			: "(changed since it was installed)";
+	} catch {
+		return "(unreadable marker)";
+	}
+}
+
 async function fetchTool(name) {
 	const asset = assetFor(name, process.platform, process.arch);
+	const library = TOOLS[name].kind === "library";
 	const destDir = join(repo, "tools", name);
 	const target = join(destDir, basename(asset.binaryInArchive));
 
-	const current = installedVersion(target);
+	const current = library ? installedLibrary(target) : installedVersion(target);
 	if (current && reportsVersion(current, asset.version)) {
 		console.log(
 			`${name}: ${asset.version} already installed at tools/${name}/${basename(target)}`,
@@ -93,8 +120,10 @@ async function fetchTool(name) {
 			throw new Error(
 				`${name}: ${asset.binaryInArchive} is not in ${asset.file}`,
 			);
-		if (process.platform !== "win32") chmodSync(extracted, 0o755);
-		const reported = installedVersion(extracted);
+		if (!library && process.platform !== "win32") chmodSync(extracted, 0o755);
+		const reported = library
+			? `${name} ${asset.version}`
+			: installedVersion(extracted);
 		if (!reportsVersion(reported, asset.version)) {
 			throw new Error(
 				`${name}: the downloaded binary reports "${reported}", expected ${asset.version}`,
@@ -106,8 +135,13 @@ async function fetchTool(name) {
 		mkdirSync(destDir, { recursive: true });
 		const staged = `${target}.new`;
 		copyFileSync(extracted, staged);
-		if (process.platform !== "win32") chmodSync(staged, 0o755);
+		if (!library && process.platform !== "win32") chmodSync(staged, 0o755);
 		renameSync(staged, target);
+		if (library)
+			writeFileSync(
+				`${target}.pinned.json`,
+				`${JSON.stringify({ version: asset.version, archive: asset.file, archiveSha256: asset.sha256, sha256: sha256Of(target) }, null, 2)}\n`,
+			);
 		for (const doc of ["README.md", "CHANGELOG.md"]) {
 			const from = join(dirname(extracted), doc);
 			if (existsSync(from)) copyFileSync(from, join(destDir, doc));
@@ -120,8 +154,44 @@ async function fetchTool(name) {
 	}
 }
 
+/** Plain files pinned by commit and hash: kept when already there with the right hash. */
+async function fetchData(name) {
+	const set = DATA[name];
+	const destDir = join(repo, "tools", name);
+	mkdirSync(destDir, { recursive: true });
+	for (const [file, sha256] of Object.entries(set.files)) {
+		const target = join(destDir, file);
+		if (existsSync(target) && sha256Of(target) === sha256) {
+			console.log(
+				`${name}: ${file} already installed (${set.commit.slice(0, 7)})`,
+			);
+			continue;
+		}
+		const url = set.baseUrl + file;
+		console.log(
+			`${name}: downloading ${file} from ${set.source} at ${set.commit.slice(0, 7)}`,
+		);
+		const res = await fetch(url, { redirect: "follow" });
+		if (!res.ok)
+			throw new Error(
+				`${name}: download failed, HTTP ${res.status} from ${url}`,
+			);
+		const bytes = Buffer.from(await res.arrayBuffer());
+		verifySha256(bytes, sha256, file);
+		const staged = `${target}.new`;
+		writeFileSync(staged, bytes);
+		renameSync(staged, target);
+		console.log(`${name}: installed ${file}`);
+	}
+	writeFileSync(
+		join(destDir, "SOURCE.md"),
+		`These files are downloaded by \`npm run tools:fetch\` from ${set.source} at commit ${set.commit}, each checked against the SHA-256 in scripts/lib/pinned-tools.mjs. They are not part of this repository.\n`,
+	);
+}
+
 try {
 	for (const name of Object.keys(TOOLS)) await fetchTool(name);
+	for (const name of Object.keys(DATA)) await fetchData(name);
 } catch (err) {
 	console.error(err.message);
 	process.exit(1);

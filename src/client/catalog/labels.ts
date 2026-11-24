@@ -27,6 +27,7 @@ export const LINK_LABEL: Record<string, { parent: string; child: string }> = {
 	},
 	output_of: { parent: "Used in the edit", child: "Is an edit that used" },
 	sidecar_of: { parent: "Has the sidecar", child: "Is the sidecar of" },
+	thumbnail_of: { parent: "Has the thumbnail", child: "Is the thumbnail of" },
 	started_from: {
 		parent: "A later edit started from it",
 		child: "Started from the edit",

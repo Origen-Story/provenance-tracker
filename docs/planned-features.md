@@ -77,7 +77,17 @@ Note: Origen Story's projects currently use only the high-priority set. Deferred
 - **License URL on archival imports** — both archival import forms (`ArchivalIngest.jsx` and the archival form in `ImportHub.jsx`) send a `licenseUrl` that no input lets anyone enter, so it is always saved empty. Found by the linter on 2026-11-21; deferred to the app cutover, when the import pages are rebuilt. Rights information on archival material matters, so it should not wait longer than that.
 
 - **Say in plain words what a file's credentials are, on its page** (2026-11-24). The asset page lists each reading with its raw data; for a C2PA reading it should also say the verdict as `manifest/verify.js` works it out ("Trusted, signed by …", "Valid, unrecognised issuer", "Content does not match", "Invalid"), with problems inside ingredients listed under those ingredients. The library's own one-word state is not that verdict (D51).
+- **Cuts within one asset in the creator statement and the viewer** (2026-11-24). The signed `c2pa.placed` actions keep every cut (D52), but the statement's per-lane intervals (`compactIntervals` in `build.js`) join back-to-back stretches that play the same assets, so the statement, the public export and the viewer's strip show an interview cut into seven pieces as one stretch. Matt is happy with the viewer as it is; revisit if a reader needs to see where a take was cut. It would be a statement v4 with a viewer change.
 - **A design pass on the app's pages, after the cutover** — the pages on the catalogs (Phase 6, slice 6) are built to work first; what is visible at once, the layout and the order of sections are decided once every page exists, from getting files in to signing. Anything that makes a mistake easy (a buried save, a dangerous button among everyday ones) is fixed as it is found rather than waiting for this. Noted so far, on 2026-11-23: the asset page is one long column of sections, and an AI-generated asset's view is fine for now but should be reviewed with the rest.
+
+### Signing, left for after Phase 7 (2026-11-24)
+
+- **A thumbnail taken from the film** — the claim thumbnail is an image the person picks (D52). Taking a frame from the film itself, with a choice of where, needs ffmpeg as a new pinned helper program (`npm run tools:fetch`).
+- **Other places to keep the signing key** — the credential-holder seam (Phase 7 step 4) starts with key files on this machine; a system keychain, a hardware token and a remote signing service are later modules.
+- **Writing a verified-accounts identity** (CAWG identity claims aggregation) — the open library can check one but not issue one yet. Read it, don't offer writing it.
+- **A delegation record** ("on whose authority") — waits for CAWG issue #286 and CAWG 2.0. The credits table's `on_behalf_of` holds it until then.
+- **C2PA conformance for the tool** — a claim certificate on the C2PA trust list depends on it, so until then signed files read "valid, unrecognised issuer".
+- **Code-signing the native binaries** — for Windows Smart App Control and a downloadable app (D15).
 
 ---
 

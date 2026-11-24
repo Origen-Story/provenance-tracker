@@ -9,7 +9,7 @@ A local web tool that records where the material in a film came from (camera, ar
 3. **Reads what each file says**: ExifTool metadata, embedded C2PA manifests, PNG text, `.xmp` and `.c2pa` sidecars, and the generation details of AI platforms (prompt, model, seed).
 4. **Classifies each asset** by how it was made (captured, generated, enhanced, composite, ...), from what its file says. Every class a person sets or confirms is kept in the history.
 5. **Reads the edit's timeline** (Final Cut Pro XML from Premiere or Resolve), matches each clip to its asset, and works out the film's composition moment by moment.
-6. **Signs a new copy of the finished edit**, with every asset it uses as an ingredient, its class, and your creator statement; and signs source files into `.c2pa` sidecars.
+6. **Signs a new copy of the finished edit**, with every asset it uses as an ingredient, its class and when it plays, a thumbnail you pick, and your creator statement; and signs source files into `.c2pa` sidecars.
 7. **Exports a public record** of a signed copy (`<name>.provenance.json`) that the [public viewer](public-viewer/README.md) shows on any web page.
 
 ## Quick start
@@ -40,7 +40,7 @@ Open [http://localhost:5173](http://localhost:5173). A `.env` file is optional (
 4. **Finished edits.** Mark the cut as "A finished edit" on its page (importing a timeline does it too). On its page:
    - **Composition**: import the timeline; check each file is matched to the right asset, and give a clip a class of its own where it needs one. A re-export of the edit is imported again, and clip classes carry over.
    - **Statement**: your words and the film's public title, beside exactly what will be signed.
-   - **Signing**: sign a new copy, `<name>.signed.v<N>.<ext>`, beside the cut. The cut itself is never changed.
+   - **Signing**: pick the thumbnail verifiers show (a JPEG or PNG from the project), and sign a new copy, `<name>.signed.v<N>.<ext>`, beside the cut. The cut itself is never changed.
    - **Export**: the public record of a signed copy, to download.
 5. **Settings.** The project's name, its creator and identity link, and the certificate and key that sign it on this machine (kept in this machine's settings, never in the project, so they are entered once per machine).
 

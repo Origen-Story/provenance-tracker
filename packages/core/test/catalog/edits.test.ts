@@ -12,6 +12,8 @@ import {
 	removeCredit,
 	setGeneration,
 	setRemoved,
+	setThumbnail,
+	thumbnailOf,
 	unlink,
 	type PersonEdit,
 } from "../../src/catalog/edits.ts";
@@ -304,6 +306,91 @@ describe("links", () => {
 			{ n: 0 },
 		);
 		expect(() => unlink(db, link, ME)).toThrow(NotFoundError);
+	});
+});
+
+describe("the thumbnail an edit is shown by (D52)", () => {
+	/** An asset found at `name` in a root, as a scan records it. */
+	function found(db: DatabaseSync, name: string, n: string): number {
+		const id = Number(createRow(db, "assets", { kind: "produced" }, PERSON));
+		let root = (
+			db.prepare("SELECT id FROM roots LIMIT 1").get() as
+				{ id: number } | undefined
+		)?.id;
+		if (root === undefined)
+			root = Number(
+				createRow(
+					db,
+					"roots",
+					{ name: "media", folder_in_project: "media" },
+					PERSON,
+				),
+			);
+		const run = startRun(db, { kind: "scan", tool: TEST_TOOL, now: AT });
+		createRow(
+			db,
+			"contents",
+			{ sha256: sha(n), size: 10, asset_id: id, first_run_id: run },
+			{ actor: { kind: "tool", name: "t", runId: run }, now: AT },
+		);
+		db.prepare(
+			"INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id) VALUES (?, ?, ?, 0, ?, ?)",
+		).run(sha(n), root, name, run, run);
+		finishRun(db, run, { outcome: "ok", now: AT });
+		return id;
+	}
+	function edit() {
+		const { db, id } = withAsset({ is_output: true });
+		return {
+			db,
+			film: id,
+			poster: found(db, "stills/poster.JPG", "a"),
+			other: found(db, "stills/other.png", "b"),
+			clip: found(db, "takes/take-01.mp4", "c"),
+		};
+	}
+
+	it("links one image to the edit, replaces it on a new pick, and clears it, each in the history", () => {
+		const { db, film, poster, other } = edit();
+		expect(thumbnailOf(db, film)).toBeNull();
+		const first = setThumbnail(db, film, poster, ME);
+		expect(row(db, "relationships", first!)).toMatchObject({
+			parent_id: film,
+			child_id: poster,
+			type: "thumbnail_of",
+			match_method: "manual",
+		});
+		expect(setThumbnail(db, film, poster, ME)).toBe(first);
+		const second = setThumbnail(db, film, other, ME);
+		expect(thumbnailOf(db, film)).toBe(other);
+		expect(
+			db
+				.prepare(
+					"SELECT count(*) AS n FROM relationships WHERE type = 'thumbnail_of'",
+				)
+				.get(),
+		).toEqual({ n: 1 });
+		expect(setThumbnail(db, film, null, ME)).toBeNull();
+		expect(thumbnailOf(db, film)).toBeNull();
+		const kept = historyOf(db, "relationships", first!).concat(
+			historyOf(db, "relationships", second!),
+		);
+		expect(kept.every((h) => h.actor === PERSON.actor.name)).toBe(true);
+		expect(kept.length).toBeGreaterThanOrEqual(4);
+	});
+
+	it("takes only a JPEG or PNG the catalog has found, for a finished edit", () => {
+		const { db, film, poster, clip } = edit();
+		expect(() => setThumbnail(db, film, clip, ME)).toThrow(/JPEG or PNG/);
+		const unfiled = Number(
+			createRow(db, "assets", { kind: "produced" }, PERSON),
+		);
+		expect(() => setThumbnail(db, film, unfiled, ME)).toThrow(/JPEG or PNG/);
+		expect(() => setThumbnail(db, film, film, ME)).toThrow(/own thumbnail/);
+		expect(() => setThumbnail(db, film, 999, ME)).toThrow(NotFoundError);
+		expect(() => setThumbnail(db, poster, film, ME)).toThrow(/finished edit/);
+		setRemoved(db, poster, true, ME);
+		expect(() => setThumbnail(db, film, poster, ME)).toThrow(/removed/);
 	});
 });
 

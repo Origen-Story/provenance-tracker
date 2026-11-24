@@ -20,6 +20,7 @@ import {
 import { publicExport } from "@provenancetracker/core/catalog/signatures.ts";
 import { validate } from "../../core/test/helpers/json-schema-lite.js";
 import { editRow } from "@provenancetracker/core/catalog/edit.ts";
+import { setThumbnail } from "@provenancetracker/core/catalog/edits.ts";
 import { c2patoolPath } from "../src/extract/c2patool.ts";
 import { createProject, openProject } from "../src/project.ts";
 import { addRoot } from "../src/roots.ts";
@@ -196,6 +197,32 @@ async function world(opts: { signing?: boolean; statement?: boolean } = {}) {
 	const cert = opts.signing === false ? null : devCertificate(dir);
 	if (cert) await setSigning(m, p.projectId, cert);
 	return { m, p, dir, media, film, statementId, cert, id };
+}
+
+/** A poster image found by a scan and picked as the edit's thumbnail (D52). */
+async function withPoster(w: Awaited<ReturnType<typeof world>>) {
+	tinyPng(path.join(w.media, "poster.png"), [255, 0, 0]);
+	await scanProject(w.p, w.m);
+	const poster = w.id("poster.png");
+	setThumbnail(w.p.db, w.film.id, poster.id, { actor: ME, tool: TOOL });
+	return poster;
+}
+
+/** The time range of each placed action in a definition. */
+function placements(definition: Record<string, unknown>) {
+	const assertions = definition.assertions as Array<{
+		label: string;
+		data: {
+			actions: Array<{
+				action: string;
+				changes?: Array<{ region?: Array<{ time?: unknown }> }>;
+			}>;
+		};
+	}>;
+	return assertions
+		.find((a) => a.label.startsWith("c2pa.actions"))!
+		.data.actions.filter((a) => a.action === "c2pa.placed")
+		.map((a) => a.changes?.[0]?.region?.[0]?.time);
 }
 
 /** A stand-in signer: copies the file and remembers what it was asked. */
@@ -427,6 +454,72 @@ describe.skipIf(!haveOpenssl)("signOutput", () => {
 		expect(everything).not.toContain("private_key");
 	});
 
+	it("places each source over the stretch of the edit it plays in (D17)", async () => {
+		const w = await world();
+		const { engine, calls } = stubEngine();
+		await signOutput(w.p, w.m, { assetId: w.film.id, engine });
+		// The still and the tone each play over the whole one-second cut.
+		expect(placements(calls[0].definition)).toEqual([
+			{ type: "npt", start: "0", end: "1" },
+			{ type: "npt", start: "0", end: "1" },
+		]);
+		expect(calls[0].resources).toEqual([]);
+		expect(calls[0].definition.thumbnail).toBeUndefined();
+	});
+
+	it("carries the picked thumbnail, named by its hash, and refuses when its bytes changed (D52)", async () => {
+		const w = await world();
+		const poster = await withPoster(w);
+		expect(
+			previewOutputStatement(w.p, w.m, { assetId: w.film.id }),
+		).toMatchObject({ blockers: [], thumbnailAssetId: poster.id });
+		const { engine, calls } = stubEngine();
+		const r = await signOutput(w.p, w.m, { assetId: w.film.id, engine });
+		const thumbnail = {
+			format: "image/png",
+			identifier: `${poster.sha256}.png`,
+		};
+		expect(calls[0].definition.thumbnail).toEqual(thumbnail);
+		expect(calls[0].resources).toEqual([
+			{
+				identifier: thumbnail.identifier,
+				filePath: path.join(w.media, "poster.png"),
+			},
+		]);
+		// Recorded by hash, never by path.
+		const stored = w.p.db
+			.prepare("SELECT definition FROM signatures WHERE id = ?")
+			.get(r.signatureId) as { definition: string };
+		expect(JSON.parse(stored.definition).thumbnail).toEqual(thumbnail);
+		expect(stored.definition).not.toContain("poster.png");
+
+		tinyPng(path.join(w.media, "poster.png"), [0, 0, 0]);
+		await expect(
+			signOutput(w.p, w.m, { assetId: w.film.id, engine }),
+		).rejects.toThrow(/thumbnail image has changed since it was scanned/);
+	});
+
+	it("says when the thumbnail cannot be used here: not on this machine, or not an image", async () => {
+		const w = await world();
+		await withPoster(w);
+		rmSync(path.join(w.media, "poster.png"));
+		expect(
+			previewOutputStatement(w.p, w.m, { assetId: w.film.id }).blockers,
+		).toEqual([
+			expect.stringMatching(/thumbnail image is not on this machine/),
+		]);
+		await expect(
+			signOutput(w.p, w.m, { assetId: w.film.id, engine: stubEngine().engine }),
+		).rejects.toThrow(/thumbnail image is not on this machine/);
+
+		// A file named like a PNG that is not one.
+		writeFileSync(path.join(w.media, "poster.png"), "not an image");
+		await scanProject(w.p, w.m);
+		expect(
+			previewOutputStatement(w.p, w.m, { assetId: w.film.id }).blockers,
+		).toEqual([expect.stringMatching(/not a JPEG or PNG/)]);
+	});
+
 	it("counts on from the catalog's versions and never replaces a file already there", async () => {
 		const w = await world();
 		const { engine } = stubEngine();
@@ -491,6 +584,25 @@ const haveC2patool = (() => {
 describe.skipIf(!haveOpenssl || !haveC2patool)(
 	"signOutput with c2patool",
 	() => {
+		it("writes the time ranges and the thumbnail into the file, where a reader finds them", async () => {
+			const w = await world();
+			await withPoster(w);
+			const r = await signOutput(w.p, w.m, { assetId: w.film.id });
+			const report = JSON.parse(
+				spawnSync(
+					c2patoolPath({}, process.platform),
+					[path.join(w.media, r.path)],
+					{ encoding: "utf8" },
+				).stdout,
+			);
+			const active = report.manifests[report.active_manifest];
+			expect(active.thumbnail).toMatchObject({ format: "image/png" });
+			expect(placements(active)).toEqual([
+				{ type: "npt", start: "0", end: "1" },
+				{ type: "npt", start: "0", end: "1" },
+			]);
+		}, 120000);
+
 		it("signs for real with a throwaway certificate, and the public export builds from the record and meets its published schema", async () => {
 			const w = await world();
 			const r = await signOutput(w.p, w.m, { assetId: w.film.id });

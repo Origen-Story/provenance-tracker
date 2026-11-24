@@ -85,6 +85,7 @@ import {
 	removeCredit,
 	setGeneration,
 	setRemoved,
+	setThumbnail,
 	startFromEdit,
 	unlink,
 	type PersonEdit,
@@ -588,6 +589,31 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 					opts,
 				);
 				res.json({ copied, asset: assetRecord(project.db, id) });
+			});
+		},
+	);
+
+	// The image a finished edit is shown by in its credentials (D52), or none.
+	api.put(
+		"/projects/:projectId/assets/:assetId/thumbnail",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.assetId, "asset");
+			withEdit(machine, req, (project, opts, fields) => {
+				const unknown = Object.keys(fields).filter((k) => k !== "image_id");
+				const image = fields.image_id;
+				if (
+					unknown.length ||
+					!(
+						image === null ||
+						(typeof image === "number" && Number.isSafeInteger(image))
+					)
+				)
+					throw new HttpError(
+						400,
+						'Give { "image_id": <an asset id> } or { "image_id": null }',
+					);
+				setThumbnail(project.db, id, image as number | null, opts);
+				answerAsset(project, res, id);
 			});
 		},
 	);

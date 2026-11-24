@@ -4,10 +4,12 @@ import {
 	copyFileSync,
 	existsSync,
 	mkdirSync,
+	mkdtempSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { deflateSync } from "node:zlib";
 import {
@@ -218,6 +220,24 @@ function stubEngine() {
 	};
 	return { engine, calls };
 }
+
+describe.skipIf(!haveOpenssl)("the development certificate script", () => {
+	it("names the authority key identifier, which c2patool requires and macOS's openssl does not add unasked", () => {
+		const dir = mkdtempSync(path.join(tmpdir(), "pt-devcert-"));
+		try {
+			const cert = devCertificate(dir)!;
+			const text = spawnSync(
+				"openssl",
+				["x509", "-in", cert.certificate, "-noout", "-text"],
+				{ encoding: "utf8" },
+			).stdout;
+			expect(text).toContain("Authority Key Identifier");
+			expect(text).toContain("E-mail Protection");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
 
 describe.skipIf(!haveOpenssl)("signing settings", () => {
 	it("sets the certificate and key for a project on this machine, says what signs, and forgets them", async () => {

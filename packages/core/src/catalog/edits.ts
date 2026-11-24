@@ -403,7 +403,7 @@ export interface StartedFrom {
 
 /**
  * Start a new export as a finished edit from an earlier one (D50), once: it is
- * marked a finished edit, and takes the earlier edit's public details (only
+ * marked a finished edit, made "produced" unless a person chose its kind, and takes the earlier edit's public details (only
  * where its own are empty), its credits (if it has none), its newest statement
  * (if it has none) and, in its timeline, the classes a person gave the same
  * clips. A copy, not a link: changing either edit afterwards leaves the other
@@ -439,7 +439,16 @@ export function startFromEdit(
 	return inTransaction(db, () => {
 		const values: Record<string, unknown> = {};
 		if (asset.is_output !== 1) values.is_output = true;
-		if (asset.kind === "unsorted") values.kind = "produced";
+		// A finished edit is something made. Its kind changes unless a person
+		// chose it: classify can read an editor's own credentials on the export
+		// (Premiere writes them) as an AI-generated asset.
+		const kindBy = db
+			.prepare(
+				"SELECT actor_kind FROM history WHERE table_name = 'assets' AND row_key = ? AND field = 'kind' ORDER BY id DESC LIMIT 1",
+			)
+			.get(String(assetId)) as { actor_kind: string } | undefined;
+		if (asset.kind !== "produced" && kindBy?.actor_kind !== "person")
+			values.kind = "produced";
 		for (const f of STARTED_FROM_FIELDS)
 			if (!String(asset[f] ?? "").trim() && String(from[f] ?? "").trim())
 				values[f] = from[f];

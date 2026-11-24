@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { projects, type AssetRecord } from "../api.ts";
 import { SIGNED_STATUS } from "../labels.ts";
-import { useSignJob, useSigning } from "../output/SigningTab.tsx";
+import { Interrupted, useSignJob, useSigning } from "../output/SigningTab.tsx";
 import { Button, Card, Checkbox, Problem, TextField, when } from "../ui.tsx";
 import { str } from "./shared.ts";
 
@@ -42,7 +42,7 @@ export default function SignSidecar({
 		queryKey: ["catalog", projectId, "summary"],
 		queryFn: () => projects.summary(projectId),
 	});
-	const { start, job, busy } = useSignJob(projectId, asset.id);
+	const { start, job, busy, interrupted } = useSignJob(projectId, asset.id);
 	const sidecars = asset.signatures.filter((s) => s.kind === "asset");
 	const running = job?.state === "running";
 	const problem = signing.data?.problem ?? null;
@@ -168,6 +168,7 @@ export default function SignSidecar({
 					</div>
 					<Problem error={start.error} />
 					{job?.state === "failed" && <Problem error={job.error} />}
+					{interrupted && <Interrupted />}
 					{job?.state === "done" && (
 						<p className="text-sm text-accent">
 							Signed: the sidecar is listed above.

@@ -22,13 +22,14 @@ Nothing runs in the background: the server makes no requests of its own.
 
 ## What stays local
 
-Scanning and importing, metadata extraction (ExifTool), reading credentials (c2patool), classification, timeline import and matching, building the manifest, signing itself, and building the public export all run on your machine. The app's pages load no fonts, scripts or images from other sites.
+Scanning and importing, metadata extraction (ExifTool), reading credentials (the C2PA library, against the pinned trust lists on disk), classification, timeline import and matching, building the manifest, signing itself, and building the public export all run on your machine. The app's pages load no fonts, scripts or images from other sites.
 
 ## Not measured yet
 
 Stated so nobody has to take the table above on trust further than it has been checked.
 
-- The C2PA reader may fetch a manifest from the web when a file's metadata points to one stored remotely instead of inside the file. Whether `c2patool` does so with the options the tracker uses has not been measured. It will be, with the network watched, when the signing engine is reworked.
+- **A correction (24 Nov 2026):** some files keep their Content Credentials on the web and carry only an address for them; Adobe Firefly's videos point to `cai-manifests.adobe.com`. Until D51, `c2patool` fetched such a manifest whenever it read the file, at `extract` and, for ingredients, while signing, and this statement did not say so. The request names the manifest, which identifies the file, and comes from your machine's address. It was found by checking the bytes of a Firefly video that `c2patool` had read in full: it contains no manifest, only the address.
+- A C2PA reader may also check a certificate's revocation online (OCSP). The C2PA library that now reads files is set up so it does neither: remote manifests and OCSP are switched off, the trust lists are given to it as text, and it is handed a fetch function that refuses every request (`packages/core-node/src/extract/c2pa-library.ts`, D51). That is from its settings and code, not yet from watching the network. `c2patool`, which still signs and reads back what it signed, has not been measured; that comes when signing moves to the library.
 - This statement comes from reading the code, not from a packet capture.
 
 ## The public viewer is a separate thing
@@ -37,4 +38,4 @@ Stated so nobody has to take the table above on trust further than it has been c
 
 ## Development
 
-`npm install` downloads packages from the npm registry. `npm run tools:fetch` downloads each pinned helper program (today c2patool) from `github.com` release pages and checks it against a recorded SHA-256; it sends nothing but the request for that file. Tests use no network. CI and Renovate run on GitHub, not on your machine.
+`npm install` downloads packages from the npm registry. The C2PA library's install script also downloads its native binary from `github.com`, unchecked, unless `SKIP_BINARY_DOWNLOAD=1` is set (CI sets it); the tracker never loads that copy. `npm run tools:fetch` downloads each pinned helper program and the C2PA library's native binary from `github.com` release pages, and the C2PA trust lists from `raw.githubusercontent.com` at a pinned commit, and checks each against a recorded SHA-256; it sends nothing but the request for that file. Tests use no network. CI and Renovate run on GitHub, not on your machine.

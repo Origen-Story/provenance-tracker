@@ -14,9 +14,13 @@ import {
 } from "@provenancetracker/core/catalog/edit.ts";
 import { inTransaction } from "@provenancetracker/core/catalog/format.ts";
 import { finishRun, startRun } from "@provenancetracker/core/catalog/runs.ts";
+import { LIBRARY_EXTRACTOR } from "@provenancetracker/core/extraction/c2pa-library-read.ts";
 import type { Observation } from "@provenancetracker/core/extraction/observation.ts";
 import { pairSidecars } from "@provenancetracker/core/extraction/sidecars.ts";
-import { c2patoolPath, c2patoolVersion, readC2pa } from "./extract/c2patool.ts";
+import {
+	loadLibraryReader,
+	readC2paWithLibrary,
+} from "./extract/c2pa-library.ts";
 import { exiftoolVersion, readExif } from "./extract/exiftool.ts";
 import { observePngText } from "./extract/png-text.ts";
 import type { Machine } from "./machine.ts";
@@ -39,11 +43,15 @@ export interface Reader {
 	read: (file: string, sidecar?: string) => Promise<Observation>;
 }
 
-/** The readers on this machine: ExifTool, c2patool, the PNG text reader, and the sidecar readings. */
+/**
+ * The readers on this machine: ExifTool, the C2PA library (the only reader
+ * that may judge camera files, D15, D51; c2patool no longer reads), the PNG
+ * text reader, and the sidecar readings.
+ */
 export async function machineReaders(machine: Machine): Promise<Reader[]> {
-	const tool = c2patoolPath(machine.env, machine.platform);
 	const exif = await exiftoolVersion();
-	const c2pa = await c2patoolVersion(tool);
+	const library = await loadLibraryReader(machine.env);
+	const c2pa = "unavailable" in library ? null : library.version;
 	return [
 		{
 			kind: "exif",
@@ -53,9 +61,9 @@ export async function machineReaders(machine: Machine): Promise<Reader[]> {
 		},
 		{
 			kind: "c2pa",
-			extractor: "c2patool",
+			extractor: LIBRARY_EXTRACTOR,
 			version: c2pa,
-			read: (f) => readC2pa(f, { tool }),
+			read: (f) => readC2paWithLibrary(library, f),
 		},
 		{
 			kind: "png-text",
@@ -72,9 +80,9 @@ export async function machineReaders(machine: Machine): Promise<Reader[]> {
 		},
 		{
 			kind: "c2pa-sidecar",
-			extractor: "c2patool",
+			extractor: LIBRARY_EXTRACTOR,
 			version: c2pa,
-			read: (f, sidecar) => readC2pa(f, { tool, sidecar }),
+			read: (f, sidecar) => readC2paWithLibrary(library, f, sidecar),
 		},
 	];
 }

@@ -149,6 +149,11 @@ function ownContent(db: DatabaseSync, assetId: number): string | null {
 	return row?.sha256 ?? null;
 }
 
+/**
+ * The newest reading of a content by one kind of reader. A reading that says
+ * only that the reader was not available on that machine says nothing about
+ * the file, so it never hides an earlier one (D51).
+ */
 function newestReading(
 	db: DatabaseSync,
 	sha256: string,
@@ -157,7 +162,8 @@ function newestReading(
 	const row = db
 		.prepare(
 			`SELECT id, status, data, error, validation FROM observations
-			 WHERE content_sha256 = ? AND kind = ? ORDER BY id DESC LIMIT 1`,
+			 WHERE content_sha256 = ? AND kind = ? AND status <> 'unavailable'
+			 ORDER BY id DESC LIMIT 1`,
 		)
 		.get(sha256, kind) as Row | undefined;
 	if (!row) return null;

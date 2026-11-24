@@ -1,12 +1,18 @@
 name: CI
 
 # Runs the test suite on the same Node major the app targets (package.json
-# engines), on Linux and on Windows: the maintainer works on Windows and most
-# recurring bugs there are path and line-ending bugs Linux never shows.
+# engines), on Linux, Windows and macOS: the maintainer works on Windows, where
+# most recurring bugs are path and line-ending bugs Linux never shows, and
+# many video editors work on Macs.
 # `npm test` runs vitest inside the repo guard (scripts/test.mjs): it fails if
 # any test changes the checkout or the suite takes over 60 s.
-# Tests are pure: no Postgres, no network, no signing.
-# Branch protection on main requires both "test (ubuntu-latest)" and
+# The tests themselves use no network. Before them, `npm run tools:fetch`
+# installs the pinned c2patool, the C2PA library's native binary and the trust
+# lists (each checked against its SHA-256), so signing and reading are tested
+# for real with throwaway certificates, never certs/.
+# `npm ci` runs with SKIP_BINARY_DOWNLOAD=1: the C2PA library's install script
+# would otherwise download its binary unchecked (docs/dependencies.md).
+# Branch protection on main requires "test (ubuntu-latest)" and
 # "test (windows-latest)"; renaming the job or the matrix changes those names.
 
 on:
@@ -23,7 +29,7 @@ jobs:
       # One OS failing must not hide whether the other passed.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -37,6 +43,11 @@ jobs:
 
       - name: Install (exact versions from package-lock.json)
         run: npm ci
+        env:
+          SKIP_BINARY_DOWNLOAD: "1"
+
+      - name: Helper programs and trust lists (pinned, checksummed)
+        run: npm run tools:fetch
 
       - name: Audit dependencies (high+, with the dated allowlist in scripts/audit.mjs)
         run: npm run audit
@@ -61,6 +72,8 @@ jobs:
           cache: npm
 
       - run: npm ci
+        env:
+          SKIP_BINARY_DOWNLOAD: "1"
 
       - name: Type check (tsc, nothing emitted)
         run: npm run typecheck

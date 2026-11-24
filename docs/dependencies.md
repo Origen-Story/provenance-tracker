@@ -14,6 +14,13 @@ A tool that signs files is worth attacking through its dependencies: a tampered 
 
 `pg`, `drizzle-orm` and `drizzle-kit` went when the app moved onto the project catalogs, which use SQLite through Node's built-in `node:sqlite` with plain SQL (D14, D49). `@notionhq/client` went with the parked Notion sync, and `c2pa-node` 0.5.26 with the old reader, taking the `sharp` advisories that `scripts/audit.mjs` allowed with it: reading and signing are c2patool's. `png-chunk-text` and `png-chunks-extract` went earlier: nothing imported them (`packages/core-node/src/extract/png-text.ts` reads PNG chunks itself).
 
-## When adding the C2PA library
+## The C2PA library
 
-`@contentauth/c2pa-node` downloads its native binary during `npm install` without checking a checksum (D15). It will be installed with `SKIP_BINARY_DOWNLOAD=1`, and its binary added to `pinned-tools.mjs` and supplied through `C2PA_LIBRARY_PATH`, so rule 4 covers it like c2patool.
+`@contentauth/c2pa-node` (D51) reads Content Credentials; it is the only reader allowed to judge camera files (D15). Its install script downloads its native binary without checking a checksum, so:
+
+- `npm ci` runs with `SKIP_BINARY_DOWNLOAD=1` in CI. Where it is not set, the script's download still happens, but the tracker never loads it.
+- `npm run tools:fetch` installs the binary for this machine from the same release, checked against the SHA-256 in [`scripts/lib/pinned-tools.mjs`](../scripts/lib/pinned-tools.mjs) (rule 4), at `tools/c2pa-node/index.node`, with a record of its hash. The tracker loads only that copy, through `C2PA_LIBRARY_PATH`, and refuses one whose hash has changed.
+- The package's version in `package-lock.json` and the binary's in `pinned-tools.mjs` must match; a test fails otherwise. A Renovate update to the package therefore needs the binary's version and checksums bumped in the same pull request.
+- The package brings about 130 others, nearly all used only by its install script (downloading, unpacking, a progress bar). They are never loaded by the tracker.
+
+The C2PA trust lists are pinned the same way: one commit of `c2pa-org/conformance-public`, a SHA-256 per file, installed by `tools:fetch` under `tools/trust-lists/`. The lists change every week or two; moving to a newer commit is a deliberate change, like a tool bump.

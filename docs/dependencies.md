@@ -18,7 +18,7 @@ A tool that signs files is worth attacking through its dependencies: a tampered 
 
 `@contentauth/c2pa-node` (D51) reads Content Credentials; it is the only reader allowed to judge camera files (D15). Its install script downloads its native binary without checking a checksum, so:
 
-- `npm ci` runs with `SKIP_BINARY_DOWNLOAD=1` in CI. Where it is not set, the script's download still happens, but the tracker never loads it.
+- `npm ci` runs with `SKIP_RUST_BUILD=1` in CI, which stops the install script altogether. (`SKIP_BINARY_DOWNLOAD=1` alone is not enough: on a machine with Rust installed, as GitHub's are, the script then tries to compile the library from source, and fails.) Where neither is set, the script's download still happens, but the tracker never loads it.
 - `npm run tools:fetch` installs the binary for this machine from the same release, checked against the SHA-256 in [`scripts/lib/pinned-tools.mjs`](../scripts/lib/pinned-tools.mjs) (rule 4), at `tools/c2pa-node/index.node`, with a record of its hash. The tracker loads only that copy, through `C2PA_LIBRARY_PATH`, and refuses one whose hash has changed.
 - The package's version in `package-lock.json` and the binary's in `pinned-tools.mjs` must match; a test fails otherwise. A Renovate update to the package therefore needs the binary's version and checksums bumped in the same pull request.
 - The package brings about 130 others, nearly all used only by its install script (downloading, unpacking, a progress bar). They are never loaded by the tracker.

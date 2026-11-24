@@ -40,6 +40,28 @@ const tar =
 		? join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe")
 		: "tar";
 
+/**
+ * Unpack an archive into a folder. Windows' and macOS's tar (bsdtar) read
+ * .zip as well as .tar.gz; GNU tar on Linux reads only tar archives, so a
+ * .zip there goes to unzip.
+ */
+function unpack(archive, into) {
+	const zipOnLinux = archive.endsWith(".zip") && process.platform === "linux";
+	const [program, args] = zipOnLinux
+		? ["unzip", ["-q", "-o", archive, "-d", into]]
+		: [tar, ["-xf", archive, "-C", into]];
+	try {
+		execFileSync(program, args, { stdio: ["ignore", "ignore", "pipe"] });
+	} catch (err) {
+		if (err.code === "ENOENT")
+			throw new Error(
+				`${program} is needed to unpack ${basename(archive)} and is not installed here.`,
+				{ cause: err },
+			);
+		throw err;
+	}
+}
+
 function installedVersion(binary) {
 	if (!existsSync(binary)) return null;
 	try {
@@ -111,9 +133,7 @@ async function fetchTool(name) {
 	try {
 		const archive = join(work, asset.file);
 		writeFileSync(archive, bytes);
-		execFileSync(tar, ["-xf", archive, "-C", work], {
-			stdio: ["ignore", "ignore", "pipe"],
-		});
+		unpack(archive, work);
 
 		const extracted = join(work, asset.binaryInArchive);
 		if (!existsSync(extracted))

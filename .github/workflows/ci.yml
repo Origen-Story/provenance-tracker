@@ -10,8 +10,10 @@ name: CI
 # installs the pinned c2patool, the C2PA library's native binary and the trust
 # lists (each checked against its SHA-256), so signing and reading are tested
 # for real with throwaway certificates, never certs/.
-# `npm ci` runs with SKIP_BINARY_DOWNLOAD=1: the C2PA library's install script
-# would otherwise download its binary unchecked (docs/dependencies.md).
+# `npm ci` runs with SKIP_RUST_BUILD=1, which stops the C2PA library's install
+# script doing anything: it would otherwise download its binary unchecked, or,
+# told not to (SKIP_BINARY_DOWNLOAD) on a machine with Rust, as GitHub's are,
+# try to compile it from source and fail (docs/dependencies.md).
 # Branch protection on main requires "test (ubuntu-latest)" and
 # "test (windows-latest)"; renaming the job or the matrix changes those names.
 
@@ -44,7 +46,7 @@ jobs:
       - name: Install (exact versions from package-lock.json)
         run: npm ci
         env:
-          SKIP_BINARY_DOWNLOAD: "1"
+          SKIP_RUST_BUILD: "1"
 
       - name: Helper programs and trust lists (pinned, checksummed)
         run: npm run tools:fetch
@@ -73,7 +75,7 @@ jobs:
 
       - run: npm ci
         env:
-          SKIP_BINARY_DOWNLOAD: "1"
+          SKIP_RUST_BUILD: "1"
 
       - name: Type check (tsc, nothing emitted)
         run: npm run typecheck

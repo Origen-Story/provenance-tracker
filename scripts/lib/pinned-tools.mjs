@@ -39,7 +39,7 @@ export const TOOLS = {
 	},
 	// The native part of @contentauth/c2pa-node (D15, D51). Its install script
 	// would download this without a checksum; npm installs it with
-	// SKIP_BINARY_DOWNLOAD=1 and the app loads this pinned copy through
+	// SKIP_RUST_BUILD=1 (in CI) and the app loads this pinned copy through
 	// C2PA_LIBRARY_PATH. The version must equal the package's in
 	// package-lock.json (test/unit/tools/pinned-tools.test.js checks).
 	"c2pa-node": {

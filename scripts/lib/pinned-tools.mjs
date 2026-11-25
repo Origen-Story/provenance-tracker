@@ -44,36 +44,36 @@ export const TOOLS = {
 	// package-lock.json (test/unit/tools/pinned-tools.test.js checks).
 	"c2pa-node": {
 		kind: "library",
-		version: "0.10.1",
-		// The release tag is "@contentauth/c2pa-node@0.10.1", URL-encoded.
+		version: "0.12.1",
+		// The release tag is "@contentauth/c2pa-node@0.12.1", URL-encoded.
 		releaseUrl:
-			"https://github.com/contentauth/c2pa-js/releases/download/%40contentauth%2Fc2pa-node%400.10.1/",
+			"https://github.com/contentauth/c2pa-js/releases/download/%40contentauth%2Fc2pa-node%400.12.1/",
 		binary: { default: "index.node" },
 		assets: {
 			"win32-x64": {
-				file: "c2pa-node_x86_64-pc-windows-msvc-v0.10.1.zip",
+				file: "c2pa-node_x86_64-pc-windows-msvc-v0.12.1.zip",
 				sha256:
-					"3001fa3c696461127c04962d65be43aa354c65996b07b8fc7bd62353b7f76a27",
+					"8b6f6bd33765f838efe27fc77e139e5ce92205f3091ec6600f6ff894dbc026eb",
 			},
 			"linux-x64": {
-				file: "c2pa-node_x86_64-unknown-linux-gnu-v0.10.1.zip",
+				file: "c2pa-node_x86_64-unknown-linux-gnu-v0.12.1.zip",
 				sha256:
-					"dd6aa62be23ce14b9915eb8c70044531a666296b3c6ff3e63f54b6ee84d66a13",
+					"47a83f5dc0f138aa13edc1bebf8089f0706bae75cfcc41a609ccad18c38c2061",
 			},
 			"linux-arm64": {
-				file: "c2pa-node_aarch64-unknown-linux-gnu-v0.10.1.zip",
+				file: "c2pa-node_aarch64-unknown-linux-gnu-v0.12.1.zip",
 				sha256:
-					"c89814bc509898bfb25d658d125634997a08264b7d147e4945cff85282c21fc7",
+					"3421ff2ed9b57f16b6946972b0ab16273b2d13f3958866ace0357ded93da5f71",
 			},
 			"darwin-x64": {
-				file: "c2pa-node_x86_64-apple-darwin-v0.10.1.zip",
+				file: "c2pa-node_x86_64-apple-darwin-v0.12.1.zip",
 				sha256:
-					"6216399f6cdf5e2562a83de640ff69c09993d030c48d002e3482b5831e83b8d3",
+					"58b709363a0cc74e11fb5193fecab4f88d5c393ba12e525ed6de6b8320abd211",
 			},
 			"darwin-arm64": {
-				file: "c2pa-node_aarch64-apple-darwin-v0.10.1.zip",
+				file: "c2pa-node_aarch64-apple-darwin-v0.12.1.zip",
 				sha256:
-					"618ce6feb247fcdc53a847837184a66e217eed60973b240b5421176f6212a5e7",
+					"6155d01d3f2f154e430471d23f577a514526fa1aca1782dfa51ec5758f8d43c5",
 			},
 		},
 	},

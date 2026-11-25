@@ -4,9 +4,11 @@
 
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { findOpenssl } from "../../../scripts/lib/openssl.mjs";
 
-export const haveOpenssl =
-	spawnSync("openssl", ["version"], { encoding: "utf8" }).status === 0;
+/** openssl on this machine (on the path, or Git for Windows' copy), or null. */
+export const OPENSSL = findOpenssl() as string | null;
+export const haveOpenssl = OPENSSL !== null;
 
 const SCRIPT = path.resolve(
 	import.meta.dirname,

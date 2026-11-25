@@ -177,6 +177,37 @@ Short numbered log of decisions that shape the code. Add a line when one is made
     - the same verdict as the tracker's reader: content matches, claim signature valid, signer not on the trust list, time stamp valid from an authority not on the C2PA list.
 
     It needs a bundler (it imports other packages by name and runs in a worker), and the viewer has no build step. So it comes, if taken, as a reading function the page passes to the viewer, built by the page's own bundler; the viewer keeps no dependency and the repo no 9 MB file. That is the next pull request.
+- **D59 (2026-11-25) A timeline file holding several sequences: the one the edit was exported from, never the first by chance.** Phase 8, step 6, first part; no new dependency, no catalog change.
+  - _The problem._ A Premiere Pro export of a whole project holds every sequence in it. On 15 Nov 2026 the xmeml reader took the first one without saying so: a 631-second assembly instead of the 146-second film.
+  - _Listing._ The xmeml reader lists the sequences a file holds as its own (`sequences()`): at the top level, then in a project, then in the project's bins, bin by bin. A sequence nested inside a clip is part of the sequence that uses it, never a choice. `parse(text, { sequence })` reads the one asked for. The format registry has `listSequences` and passes the choice on; a format with one sequence per file need not say.
+  - _Choosing_ (`packages/core/src/timeline/sequence-choice.js`, pure):
+    - the sequence a person chose;
+    - else the only one;
+    - else the one whose length is within half a second (or a frame) of the edit's own file, read from the catalog's `technical` view, if exactly one is;
+    - else none: the import is refused, naming the sequences, and nothing is kept or written.
+  - _The app._ `POST …/assets/<id>/timelines` takes one more named field, `sequence` (a sequence's number). A refusal answers 409 with `{ error, sequences: [{ index, name, seconds }] }`. The Composition tab then lists the sequences by name and length to choose from. Every import says which sequence it took, of how many, and how (`chosen`, `only`, `length`).
+  - _Checked:_
+    - on the demo project's three kept timeline files, the reader's output is identical before and after this change, each holding one sequence;
+    - a committed fixture shaped like a whole-project export (three sequences of 146, 631 and 144 s, and one nested in a clip) is tested through the reader, the rule, the API and the client.
+- **D60 (2026-11-25) Versions and deliverables, built on links.** Phase 8, step 6, second part; Matt's decision 1 (the whole item, without a public line, editors' feedback after). No catalog format and no new dependency: every link is a row in `relationships`, whose `type` has no fixed list.
+  - _Next revision or made from._ Starting a new export from an earlier edit (D50) now says which it is:
+    - its next revision, a `started_from` link, as before;
+    - or made from it (a vertical cut, a trailer, a transcode), a new `made_from` link, which a person can also make by hand (`LINK_TYPES`).
+
+    Either way the copy of details is the same, and the earlier edit's clip classes carry to the first timeline (`startedFrom` reads both). `setEditRelation` switches the link's kind with history, and existing `started_from` links read as "next revision" until a person says otherwise.
+
+  - _The revisions view_ (`catalog/revisions.ts`, `GET …/assets/<id>/revisions`, the "Versions of this film" card on the edit's page). It shows:
+    - the line of revisions, earliest first, branches after their parent (going back to an earlier revision and branching is a second link from it), each with its signed copies and how many are published (D56);
+    - what the edit was made from, and what was made from it;
+    - its own re-renders at the same path (new contents of the same asset, D29), each with the signed copies made from it.
+
+    A loop of links stops the walk. `PUT …/assets/<id>/relation` takes `as` and nothing else.
+
+  - _A suggested earlier edit._ The start-from card preselects the newest earlier edit whose file name matches once a trailing version, the extension and the signed-copy suffix are set aside (`files/edit-names.ts`): "tracker-demo-RoughCutV1_1" and "…RoughCutV2" agree. The person confirms before anything is copied.
+  - _Not in the public record._ Nothing about revisions goes into the export or the viewer: a "replaces the version signed on …" line waits for editors' feedback and would be a later export format.
+  - _Checked:_
+    - in tests, a family of edits on the sample catalog (two revisions, a branch, a trailer made from the newest), the API, and the name matching;
+    - on a copy of the demo project, never the project itself, the app showed the film's two revisions with their signed and published copies.
 - **D61 (2026-11-25) The viewer can read the credentials inside a visitor's copy, through a reader the page passes in.** Phase 8, step 3, second part; Matt's decision 2 (the spike decides; linking to an independent verifier is an acceptable fallback). No new dependency in the repo.
   - _The spike._ `@contentauth/c2pa-web` 0.16.1, in a desktop browser, read the signed 354 MB demo film's credentials in about 2 s, against the pinned C2PA trust list, and reached the tracker's own verdict (D58).
   - _Why it comes from the page._ The library imports other packages by name and runs in a worker, so it needs a bundler. The viewer has none and stays plain modules with no dependencies, and a 9 MB WebAssembly file doesn't belong in this repository. So a page passes `readCredentials(file) → report | null` to `mountViewer`, built with its own bundler. The viewer README shows how, with c2pa-web.

@@ -19,7 +19,11 @@ import {
 } from "@provenancetracker/core/catalog/timelines.ts";
 import { fromCatalogPath } from "@provenancetracker/core/catalog/paths.ts";
 import { segmentsFromTimeline } from "@provenancetracker/core/timeline/breakdown.js";
-import { parseTimeline } from "@provenancetracker/core/timeline/formats/index.js";
+import {
+	listSequences,
+	parseTimeline,
+} from "@provenancetracker/core/timeline/formats/index.js";
+import { chooseSequence } from "@provenancetracker/core/timeline/sequence-choice.js";
 import {
 	buildMatchIndex,
 	matchClips,
@@ -110,6 +114,35 @@ function ownCut(project: OpenProject, assetId: number): string | null {
 	return row?.sha256 ?? null;
 }
 
+/** A sequence of a timeline file, as a person chooses among them. */
+export interface SequenceChoice {
+	index: number;
+	name: string;
+	seconds: number | null;
+}
+
+/**
+ * The timeline file holds several sequences and none can be told to be this
+ * edit's (Phase 8 step 6): import again with `sequence` set to one of
+ * `choices`. Nothing was kept or written.
+ */
+export class SequenceChoiceError extends Error {
+	choices: SequenceChoice[];
+	constructor(message: string, choices: SequenceChoice[]) {
+		super(message);
+		this.name = "SequenceChoiceError";
+		this.choices = choices;
+	}
+}
+
+/** The length of one of the project's files, as its reading says; null if unknown. */
+function secondsOf(project: OpenProject, sha256: string): number | null {
+	const row = project.db
+		.prepare("SELECT duration_seconds FROM technical WHERE content_sha256 = ?")
+		.get(sha256) as { duration_seconds: number | null } | undefined;
+	return row?.duration_seconds ?? null;
+}
+
 export interface TimelineImport {
 	timelineId: number;
 	runId: number;
@@ -119,6 +152,13 @@ export interface TimelineImport {
 	clips: number;
 	/** Clips given the class they had in the previous import of this edit. */
 	carriedClasses: number;
+	/** Which sequence of the file was imported, and how it was chosen. */
+	sequence: {
+		index: number;
+		name: string;
+		of: number;
+		by: "chosen" | "only" | "length";
+	};
 }
 
 /**
@@ -136,16 +176,34 @@ export async function importTimeline(
 		contentSha256?: string;
 		primaryTrackIndex?: number;
 		includeOverlays?: boolean;
+		/** Which of the file's sequences, by its index, when it holds several. */
+		sequence?: number | null;
 		now?: () => string;
 	},
 ): Promise<TimelineImport> {
 	const decoded = opts.bytes.toString("utf8");
 	// A byte-order mark at the start is not part of the XML.
 	const text = decoded.charCodeAt(0) === 0xfeff ? decoded.slice(1) : decoded;
-	const parsed = parseTimeline(text);
 	const content = opts.contentSha256 ?? ownCut(project, opts.outputAssetId);
 	if (!content)
 		throw new Error("This output has no file of its own to hang a timeline on");
+	// A whole-project export holds every sequence: never take the first
+	// without saying so (Phase 8 step 6).
+	const list = listSequences(text);
+	const choice = chooseSequence(list, {
+		requested: opts.sequence ?? null,
+		outputSeconds: secondsOf(project, content),
+	});
+	if ("refuse" in choice)
+		throw new SequenceChoiceError(
+			choice.refuse,
+			choice.choices.map((c: SequenceChoice) => ({
+				index: c.index,
+				name: c.name,
+				seconds: c.seconds,
+			})),
+		);
+	const parsed = parseTimeline(text, { sequence: choice.index });
 	const sha256 = createHash("sha256").update(opts.bytes).digest("hex");
 	keepFile(project.folder, opts.bytes, sha256);
 
@@ -188,6 +246,12 @@ export async function importTimeline(
 		matched: [...bySource.values()].filter((m) => m.asset).length,
 		clips: segments.length,
 		carriedClasses,
+		sequence: {
+			index: choice.index,
+			name: parsed.sequence.name ?? "",
+			of: list.length,
+			by: choice.by,
+		},
 	};
 }
 

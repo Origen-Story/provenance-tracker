@@ -35,6 +35,7 @@ import {
 import { scanProject } from "@provenancetracker/core-node/scan.ts";
 import {
 	importTimeline,
+	SequenceChoiceError,
 	matchEvidence,
 } from "@provenancetracker/core-node/timeline-import.ts";
 import {
@@ -67,6 +68,10 @@ import {
 	signingStatus,
 } from "@provenancetracker/core-node/sign/signing-settings.ts";
 import { publicExport } from "@provenancetracker/core/catalog/signatures.ts";
+import {
+	revisionsOf,
+	type EditRelation,
+} from "@provenancetracker/core/catalog/revisions.ts";
 import { fromCatalogPath } from "@provenancetracker/core/catalog/paths.ts";
 import { existsSync } from "node:fs";
 import { BusyError, JobRunner, type JobKind } from "./jobs.ts";
@@ -89,6 +94,7 @@ import {
 	PUBLICATION_FIELDS,
 	setGeneration,
 	setPublication,
+	setEditRelation,
 	setRemoved,
 	setThumbnail,
 	startFromEdit,
@@ -582,19 +588,57 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 		(req: Request, res: Response) => {
 			const id = idParam(req.params.assetId, "asset");
 			withEdit(machine, req, (project, opts, fields) => {
-				const unknown = Object.keys(fields).filter((k) => k !== "from_id");
+				const unknown = Object.keys(fields).filter(
+					(k) => k !== "from_id" && k !== "as",
+				);
 				if (unknown.length)
 					throw new HttpError(
 						400,
-						`Starting from an edit takes only from_id, not ${unknown.join(", ")}`,
+						`Starting from an edit takes only from_id and as, not ${unknown.join(", ")}`,
 					);
 				const copied = startFromEdit(
 					project.db,
 					id,
 					Number(fields.from_id),
 					opts,
+					(fields.as ?? "revision") as EditRelation,
 				);
 				res.json({ copied, asset: assetRecord(project.db, id) });
+			});
+		},
+	);
+
+	// A finished edit's revisions, what it was made from and what was made
+	// from it, and its own re-renders (D60): read from links.
+	api.get(
+		"/projects/:projectId/assets/:assetId/revisions",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.assetId, "asset");
+			withProject(machine, String(req.params.projectId), (project) => {
+				if (!project.db.prepare("SELECT 1 FROM assets WHERE id = ?").get(id))
+					throw new HttpError(404, "There is no such asset");
+				res.json(revisionsOf(project.db, id));
+			});
+		},
+	);
+
+	// Whether this edit is the next revision of the one it started from, or made from it (D60).
+	api.put(
+		"/projects/:projectId/assets/:assetId/relation",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.assetId, "asset");
+			withEdit(machine, req, (project, opts, fields) => {
+				const unknown = Object.keys(fields).filter((k) => k !== "as");
+				if (unknown.length)
+					throw new HttpError(
+						400,
+						'Give { "as": "revision" } or { "as": "made_from" }',
+					);
+				setEditRelation(project.db, id, fields.as, opts);
+				res.json({
+					revisions: revisionsOf(project.db, id),
+					asset: assetRecord(project.db, id),
+				});
 			});
 		},
 	);
@@ -1051,7 +1095,10 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 		}
 	};
 
-	// Import a timeline file (form field "timeline") for an output.
+	// Import a timeline file (form field "timeline") for an output. A file
+	// holding several sequences needs form field "sequence" (its index) unless
+	// one matches the edit's length: otherwise the answer is 409 with the
+	// sequences to choose from (Phase 8 step 6).
 	api.post(
 		"/projects/:projectId/assets/:assetId/timelines",
 		(req: Request, res: Response, next: NextFunction) =>
@@ -1066,6 +1113,22 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 					400,
 					'Send the timeline file as form field "timeline"',
 				);
+			const fields = (req.body ?? {}) as Record<string, unknown>;
+			const unknown = Object.keys(fields).filter((k) => k !== "sequence");
+			if (unknown.length)
+				throw new HttpError(
+					400,
+					`A timeline import has no field ${unknown.join(", ")}`,
+				);
+			let sequence: number | null = null;
+			if (fields.sequence !== undefined && fields.sequence !== "") {
+				sequence = Number(fields.sequence);
+				if (!Number.isSafeInteger(sequence) || sequence < 0)
+					throw new HttpError(
+						400,
+						"sequence is a sequence's number: 0, 1, ...",
+					);
+			}
 			const project = openById(machine, String(req.params.projectId));
 			try {
 				if (!project.db.prepare("SELECT 1 FROM assets WHERE id = ?").get(id))
@@ -1076,8 +1139,15 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 						outputAssetId: id,
 						bytes: file.buffer,
 						fileName: file.originalname,
+						sequence,
 					});
 				} catch (err) {
+					if (err instanceof SequenceChoiceError) {
+						res
+							.status(409)
+							.json({ error: err.message, sequences: err.choices });
+						return;
+					}
 					if (err instanceof HttpError || err instanceof NotFoundError)
 						throw err;
 					// Not a timeline this tracker reads, or a cut that is not the output's.

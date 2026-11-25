@@ -29,6 +29,11 @@ export interface ProjectSettings {
 	 * returned by the API.
 	 */
 	signing?: { certificate: string; privateKey: string };
+	/**
+	 * Where the creator's identity certificate and key are on this machine
+	 * (D55), kept apart from the signing pair. Paths only, like signing.
+	 */
+	identity?: { certificate: string; privateKey: string };
 }
 
 export interface Settings {
@@ -118,8 +123,9 @@ export function readSettings(file: string): Settings {
 				throw damaged(file, `root ${rootId} folder is not text`);
 		}
 		project.roots = roots;
-		if (project.signing !== undefined) {
-			const s = project.signing as Record<string, unknown>;
+		for (const pair of ["signing", "identity"] as const) {
+			if (project[pair] === undefined) continue;
+			const s = project[pair] as Record<string, unknown>;
 			if (
 				!isPlainObject(s) ||
 				typeof s.certificate !== "string" ||
@@ -127,7 +133,7 @@ export function readSettings(file: string): Settings {
 			)
 				throw damaged(
 					file,
-					`project ${id} signing is not a certificate and a key`,
+					`project ${id} ${pair} is not a certificate and a key`,
 				);
 		}
 	}

@@ -29,12 +29,23 @@ export type DevKeyType = "es256" | "es384" | "ps256" | "ed25519";
 export function devCertificate(
 	dir: string,
 	keyType: DevKeyType = "es256",
+	/** A person's name: an identity certificate in that name (D55). */
+	name?: string,
 ): { certificate: string; privateKey: string } | null {
 	if (!haveOpenssl) return null;
-	const certDir = path.join(dir, `test-certs-${keyType}`);
+	const certDir = path.join(
+		dir,
+		`test-certs-${keyType}${name ? "-identity" : ""}`,
+	);
 	const r = spawnSync(
 		process.execPath,
-		[SCRIPT, certDir, "--key-type", keyType],
+		[
+			SCRIPT,
+			certDir,
+			"--key-type",
+			keyType,
+			...(name ? ["--name", name, "--org", "Test Studio"] : []),
+		],
 		{
 			encoding: "utf8",
 		},

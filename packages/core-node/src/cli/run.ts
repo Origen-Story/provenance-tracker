@@ -46,7 +46,10 @@ import { TOOL } from "../tool.ts";
 import { signAsset } from "../sign/sign-asset.ts";
 import { signOutput } from "../sign/sign-output.ts";
 import {
+	clearIdentity,
 	clearSigning,
+	identityStatus,
+	setIdentity,
 	setSigning,
 	signingStatus,
 	type SigningStatus,
@@ -80,6 +83,12 @@ Usage: npm run cli -- <command> [options]
   signing                             Whether this project can be signed here, and with what
   signing --certificate <f> --key <f> Set the certificate and key that sign it on this machine
   signing --clear                     Forget them
+  identity                            Whether your identity (CAWG) is added when this project
+                                      is signed here, and whose
+  identity --certificate <f> --key <f> Set your identity certificate and key on this machine
+                                      (separate from the signing pair; npm run cert:generate
+                                      -- --name "Your Name" makes a test one)
+  identity --clear                    Forget them: signing goes on without an identity
   sign <asset id> [--timestamp <url>] Sign it: a finished edit gets a signed copy beside its
        [--engine library|c2patool]    file; any other asset a .c2pa sidecar beside it. The
                                       engine is this machine's setting unless named
@@ -534,6 +543,62 @@ async function signing(
 	});
 }
 
+function printIdentity(io: Io, status: SigningStatus): void {
+	if (!status.configured) {
+		io.out(
+			"No identity is set up for this project on this machine: files are signed without one.",
+		);
+		return;
+	}
+	const c = status.certificate;
+	if (c)
+		io.out(
+			`Signed files say they are by ${c.commonName} (identity issued by ${c.issuer}), valid to ${c.validTo.slice(0, 10)}. Certificate SHA-256 ${c.fingerprint}.`,
+		);
+	io.out(
+		status.problem
+			? `It cannot be added now, so signing would stop: ${status.problem}.`
+			: "Added to every signing here (the C2PA library signs it).",
+	);
+}
+
+/** The creator's identity certificate and key for this project here (D55). */
+async function identity(
+	io: Io,
+	args: string[],
+	values: Values,
+): Promise<number> {
+	if (
+		args.length ||
+		(values.clear && (values.certificate || values.key)) ||
+		!values.certificate !== !values.key
+	)
+		throw new UsageError(
+			"Usage: npm run cli -- identity [--certificate <file> --key <file> | --clear]",
+		);
+	return withProject(io, values, async (project) => {
+		if (values.clear) {
+			clearIdentity(io.machine, project.projectId);
+			io.out(
+				"This project's identity is forgotten on this machine; files are signed without one.",
+			);
+			return 0;
+		}
+		if (values.certificate && values.key) {
+			printIdentity(
+				io,
+				await setIdentity(io.machine, project.projectId, {
+					certificate: resolveFrom(io, values.certificate),
+					privateKey: resolveFrom(io, values.key),
+				}),
+			);
+			return 0;
+		}
+		printIdentity(io, await identityStatus(io.machine, project.projectId));
+		return 0;
+	});
+}
+
 async function sign(io: Io, args: string[], values: Values): Promise<number> {
 	needArgs(
 		args,
@@ -918,6 +983,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
 				return await classify(io, args, values);
 			case "signing":
 				return await signing(io, args, values);
+			case "identity":
+				return await identity(io, args, values);
 			case "sign":
 				return await sign(io, args, values);
 			case "verify":

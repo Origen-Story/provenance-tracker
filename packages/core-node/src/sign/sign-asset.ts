@@ -34,6 +34,7 @@ import {
 import { signingEngineFor } from "./engines/index.ts";
 import {
 	holderOrRefuse,
+	identityFor,
 	NotReadyError,
 	refuseUnlessSetUp,
 } from "./sign-output.ts";
@@ -54,6 +55,8 @@ export interface AssetSigningOptions {
 	engine?: SigningEngine;
 	/** What holds the key; this machine's setup for the project when not given. */
 	holder?: CredentialHolder;
+	/** What holds the creator's identity key; this machine's setup for the project, if any, when not given. */
+	identityHolder?: CredentialHolder;
 	timestampUrl?: string;
 	now?: () => string;
 }
@@ -198,7 +201,14 @@ export async function signAsset(
 	}
 	const { definition, ingredients } = built;
 
-	// The key is opened for this signing only, and let go with the holder.
+	// The keys are opened for this signing only, and let go with the holders.
+	const identity = await identityFor(
+		machine,
+		project.projectId,
+		engine,
+		definition as Record<string, unknown>,
+		opts.identityHolder,
+	);
 	const holder =
 		opts.holder ?? (await holderOrRefuse(machine, project.projectId));
 	if (plan.action === "rotate") renameSync(plan.archive.from, plan.archive.to);
@@ -210,6 +220,7 @@ export async function signAsset(
 			definition: definition as Record<string, unknown>,
 			ingredients: ingredients as SignIngredient[],
 			holder,
+			identity,
 			timestampUrl: opts.timestampUrl,
 			sidecar: true,
 		}));

@@ -185,6 +185,10 @@ export async function signWithC2patool(
 	// c2patool opens the key files itself, so it signs only with a holder
 	// that has them (D54). Opening that holder checked the key against the
 	// certificate: c2patool would otherwise leave a broken signature.
+	if (opts.identity)
+		throw new Error(
+			"c2patool cannot add your identity (CAWG). Sign with the C2PA library: npm run cli -- settings signing-engine library",
+		);
 	const files = opts.holder.keyFiles;
 	if (!files)
 		throw new Error(

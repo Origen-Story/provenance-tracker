@@ -56,7 +56,12 @@ export function interpretReport(report) {
 	const active = report.manifests[report.active_manifest] || {};
 	const results = report.validation_results?.activeManifest || {};
 	// Older reports carry only `validation_status`, which lists failures.
-	const failures = codes(results.failure || report.validation_status);
+	// The creator's identity (cawg.*) is read on its own (identity.ts, D55):
+	// an identity issuer not trusted here, or even a forged identity, says
+	// nothing about the claim's signature or the file's integrity.
+	const failures = codes(results.failure || report.validation_status).filter(
+		(f) => !f.code.startsWith("cawg."),
+	);
 	const successes = codes(results.success);
 	const untrusted = failures.some((f) => f.code === UNTRUSTED);
 	const blocking = failures.filter((f) => f.code !== UNTRUSTED);

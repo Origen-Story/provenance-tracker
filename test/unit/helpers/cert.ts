@@ -19,12 +19,16 @@ const SCRIPT = path.resolve(
 
 export function devCertificate(
 	dir: string,
+	/** A person's name: an identity certificate in that name (D55). */
+	name?: string,
 ): { certificate: string; privateKey: string } | null {
 	if (!haveOpenssl) return null;
-	const certDir = path.join(dir, "test-certs");
-	const r = spawnSync(process.execPath, [SCRIPT, certDir], {
-		encoding: "utf8",
-	});
+	const certDir = path.join(dir, name ? "test-identity" : "test-certs");
+	const r = spawnSync(
+		process.execPath,
+		[SCRIPT, certDir, ...(name ? ["--name", name] : [])],
+		{ encoding: "utf8" },
+	);
 	if (r.status !== 0)
 		throw new Error(`certificate generation failed: ${r.stderr || r.stdout}`);
 	return {

@@ -1,8 +1,10 @@
-// Which certificate and key sign a project's files on this machine (D41).
-// Paths only, in this machine's settings: never in a catalog, because a
+// Which certificate and key sign a project's files on this machine (D41),
+// and which identity certificate and key say who the creator is (D55): two
+// separate pairs, set the same way. Paths only, in this machine's settings:
+// never in a catalog, because a
 // catalog travels and a key path is true on one machine. The public
 // certificate is read (its name, issuer, fingerprint, expiry); the private
-// key is only checked to be a file here; only the signing engine reads it.
+// key is only checked to be a file here; only its holder reads it, to sign.
 
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
@@ -32,11 +34,21 @@ function checkFile(p: string, what: string, machine: Machine): string {
 	return path.resolve(p);
 }
 
-/**
- * Say which certificate and key sign this project here. The certificate must
- * read as one; the key must be a file, and not the certificate.
- */
-export async function setSigning(
+/** The two key pairs a project can have on this machine. */
+type Pair = "signing" | "identity";
+
+const SETUP_HINT: Record<Pair, string> = {
+	signing: "npm run cli -- signing --certificate <file> --key <file>",
+	identity: "npm run cli -- identity --certificate <file> --key <file>",
+};
+const NONE: Record<Pair, string> = {
+	signing: "No certificate and key are set for this project on this machine",
+	identity:
+		"No identity certificate and key are set for this project on this machine",
+};
+
+async function setPair(
+	pair: Pair,
 	machine: Machine,
 	projectId: string,
 	paths: { certificate: string; privateKey: string },
@@ -54,35 +66,28 @@ export async function setSigning(
 		);
 	}
 	updateSettings(machine.settingsPath, (s) => {
-		projectEntry(s, projectId).signing = { certificate, privateKey };
+		projectEntry(s, projectId)[pair] = { certificate, privateKey };
 	});
-	return signingStatus(machine, projectId);
+	return pairStatus(pair, machine, projectId);
 }
 
-/** Forget this project's signing paths on this machine. */
-export function clearSigning(machine: Machine, projectId: string): void {
+function clearPair(pair: Pair, machine: Machine, projectId: string): void {
 	updateSettings(machine.settingsPath, (s) => {
-		delete projectEntry(s, projectId).signing;
+		delete projectEntry(s, projectId)[pair];
 	});
 }
 
-/** Whether this project can be signed here, and with what certificate. */
-export async function signingStatus(
+async function pairStatus(
+	pair: Pair,
 	machine: Machine,
 	projectId: string,
 ): Promise<SigningStatus> {
-	const signing = readSettings(machine.settingsPath).projects[projectId]
-		?.signing;
-	if (!signing)
-		return {
-			configured: false,
-			problem:
-				"No certificate and key are set for this project on this machine",
-			certificate: null,
-		};
+	const set = readSettings(machine.settingsPath).projects[projectId]?.[pair];
+	if (!set)
+		return { configured: false, problem: NONE[pair], certificate: null };
 	let certificate: NonNullable<SigningStatus["certificate"]>;
 	try {
-		certificate = await certificateInfo(signing.certificate);
+		certificate = await certificateInfo(set.certificate);
 	} catch {
 		return {
 			configured: true,
@@ -90,7 +95,7 @@ export async function signingStatus(
 			certificate: null,
 		};
 	}
-	if (!existsSync(signing.privateKey))
+	if (!existsSync(set.privateKey))
 		return {
 			configured: true,
 			problem: "The private key file is not there",
@@ -105,19 +110,67 @@ export async function signingStatus(
 	return { configured: true, problem: null, certificate };
 }
 
+function pairPaths(
+	pair: Pair,
+	machine: Machine,
+	projectId: string,
+): { certificatePath: string; privateKeyPath: string } | null {
+	const set = readSettings(machine.settingsPath).projects[projectId]?.[pair];
+	return set
+		? { certificatePath: set.certificate, privateKeyPath: set.privateKey }
+		: null;
+}
+
+/**
+ * Say which certificate and key sign this project here. The certificate must
+ * read as one; the key must be a file, and not the certificate.
+ */
+export const setSigning = (
+	machine: Machine,
+	projectId: string,
+	paths: { certificate: string; privateKey: string },
+) => setPair("signing", machine, projectId, paths);
+
+/** Forget this project's signing paths on this machine. */
+export const clearSigning = (machine: Machine, projectId: string) =>
+	clearPair("signing", machine, projectId);
+
+/** Whether this project can be signed here, and with what certificate. */
+export const signingStatus = (machine: Machine, projectId: string) =>
+	pairStatus("signing", machine, projectId);
+
 /** The paths to sign with, or why there are none. For signing only; never returned to a caller. */
 export function signerPaths(
 	machine: Machine,
 	projectId: string,
 ): { certificatePath: string; privateKeyPath: string } {
-	const signing = readSettings(machine.settingsPath).projects[projectId]
-		?.signing;
-	if (!signing)
+	const paths = pairPaths("signing", machine, projectId);
+	if (!paths)
 		throw new Error(
-			"This project has no certificate and key on this machine. Set them with: npm run cli -- signing --certificate <file> --key <file>",
+			`This project has no certificate and key on this machine. Set them with: ${SETUP_HINT.signing}`,
 		);
-	return {
-		certificatePath: signing.certificate,
-		privateKeyPath: signing.privateKey,
-	};
+	return paths;
 }
+
+/**
+ * Say which identity certificate and key say who signs this project's files
+ * here (D55): a certificate issued to the creator, kept apart from the one
+ * that signs the claim.
+ */
+export const setIdentity = (
+	machine: Machine,
+	projectId: string,
+	paths: { certificate: string; privateKey: string },
+) => setPair("identity", machine, projectId, paths);
+
+/** Forget this project's identity paths on this machine; signing goes on without one. */
+export const clearIdentity = (machine: Machine, projectId: string) =>
+	clearPair("identity", machine, projectId);
+
+/** Whether an identity is set up for this project here, and whose. */
+export const identityStatus = (machine: Machine, projectId: string) =>
+	pairStatus("identity", machine, projectId);
+
+/** The identity's paths, or null when none is set up (it is optional). Never returned to a caller. */
+export const identityPaths = (machine: Machine, projectId: string) =>
+	pairPaths("identity", machine, projectId);

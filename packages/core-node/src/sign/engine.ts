@@ -36,6 +36,15 @@ export interface SignArgs {
 	resources?: SignResource[];
 	/** What holds the key and signs (holders/); opened for this signing. */
 	holder: CredentialHolder;
+	/**
+	 * The creator's identity (D55): a CAWG identity assertion signed by its
+	 * own holder, vouching for these assertion labels in these roles.
+	 */
+	identity?: {
+		holder: CredentialHolder;
+		covers: string[];
+		roles: string[];
+	};
 	/** RFC 3161 time-stamp authority; left out in tests (no network). */
 	timestampUrl?: string;
 	/** Write the manifest to outputPath as a .c2pa sidecar; the input is untouched. */

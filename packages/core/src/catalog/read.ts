@@ -9,6 +9,20 @@
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { EDITABLE, EDITABLE_META } from "./fields.ts";
 import { ORIGIN_CLASS_DEFS, POSITIONS } from "../origin-vocabulary.js";
+import { readIdentity } from "../manifest/identity.ts";
+
+/** The identity a stored reading shows, by name and verdict (D55). */
+function identityOf(
+	report: string | null,
+): { name: string; status: string } | null {
+	if (!report) return null;
+	try {
+		const reading = readIdentity(JSON.parse(report));
+		return reading ? { name: reading.name, status: reading.status } : null;
+	} catch {
+		return null;
+	}
+}
 
 type Row = Record<string, unknown>;
 
@@ -349,6 +363,8 @@ export interface AssetRecord {
 		engine: string;
 		engineVersion: string;
 		signerName: string;
+		/** The creator's identity the copy carries, as its reading says (D55); null without one. */
+		identity: { name: string; status: string } | null;
 		status: string;
 		timestamped: boolean;
 		signedAt: string;
@@ -489,7 +505,7 @@ export function assetRecord(
 		signatures: (
 			db
 				.prepare(
-					`SELECT id, kind, version, source_sha256, signed_sha256, engine, engine_version, signer_name,
+					`SELECT id, kind, version, source_sha256, signed_sha256, engine, engine_version, signer_name, report,
 					        status, timestamped, signed_at FROM signatures WHERE asset_id = ? ORDER BY id`,
 				)
 				.all(id) as Row[]
@@ -502,6 +518,7 @@ export function assetRecord(
 			engine: s.engine as string,
 			engineVersion: s.engine_version as string,
 			signerName: s.signer_name as string,
+			identity: identityOf(s.report as string | null),
 			status: s.status as string,
 			timestamped: bool(s.timestamped),
 			signedAt: s.signed_at as string,

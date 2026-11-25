@@ -8,7 +8,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { projects, type AssetRecord } from "../api.ts";
-import { engineLabel, SIGNED_STATUS } from "../labels.ts";
+import { engineLabel, IDENTITY_STATUS, SIGNED_STATUS } from "../labels.ts";
 import { Interrupted, useSignJob, useSigning } from "../output/SigningTab.tsx";
 import { Button, Card, Checkbox, Problem, TextField, when } from "../ui.tsx";
 import { str } from "./shared.ts";
@@ -60,6 +60,8 @@ export default function SignSidecar({
 								with {engineLabel(s.engine, s.engineVersion)},{" "}
 								{when(s.signedAt)} · {SIGNED_STATUS[s.status] ?? s.status}
 								{s.timestamped && " · time-stamped"}
+								{s.identity &&
+									` · identity of ${s.identity.name} (${IDENTITY_STATUS[s.identity.status] ?? s.identity.status})`}
 							</li>
 						))}
 				</ul>

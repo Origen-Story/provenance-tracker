@@ -33,6 +33,7 @@ import {
 	readStore,
 } from "../src/extract/c2pa-library.ts";
 import { interpretReport } from "@provenancetracker/core/manifest/verify.js";
+import { readIdentity } from "@provenancetracker/core/manifest/identity.ts";
 import { signAsset } from "../src/sign/sign-asset.ts";
 import {
 	NotReadyError,
@@ -42,6 +43,7 @@ import {
 } from "../src/sign/sign-output.ts";
 import {
 	clearSigning,
+	setIdentity,
 	setSigning,
 	signingStatus,
 } from "../src/sign/signing-settings.ts";
@@ -677,6 +679,66 @@ describe.each(ENGINES)("signOutput with $name", ({ name, recorded, ready }) => {
 				),
 			);
 			expect(validate(schema, data)).toEqual([]);
+		},
+		120000,
+	);
+
+	it.skipIf(!haveOpenssl || !ready)(
+		name === "library"
+			? "adds the creator's identity once it is set up, says so beforehand, and warns when the names differ (D55)"
+			: "refuses to sign without the identity once it is set up, before anything is written (D55)",
+		async () => {
+			const w = await world();
+			const id = devCertificate(folder("identity"), "es256", "Test Person")!;
+			await setIdentity(w.m, w.p.projectId, id);
+			const preview = previewOutputStatement(w.p, w.m, { assetId: w.film.id });
+			expect(preview.identity).toMatchObject({
+				name: "Test Person",
+				issuer: "Origen Story Dev Root CA",
+				role: "cawg.creator",
+				// The statement's author is "A. Maker".
+				authorDiffers: true,
+			});
+			const engine = await signingEngineFor(w.m, name);
+			if (name === "c2patool") {
+				await expect(
+					signOutput(w.p, w.m, { assetId: w.film.id, engine }),
+				).rejects.toThrow(/c2patool cannot add it/);
+				expect(existsSync(path.join(w.media, "export.signed.v1.png"))).toBe(
+					false,
+				);
+				return;
+			}
+			expect(preview.blockers).toEqual([]);
+			const r = await signOutput(w.p, w.m, { assetId: w.film.id, engine });
+			const report = JSON.parse(
+				w.p.db
+					.prepare("SELECT report FROM signatures WHERE id = ?")
+					.get(r.signatureId)!.report as string,
+			);
+			expect(readIdentity(report)).toMatchObject({
+				status: "unrecognised_issuer",
+				name: "Test Person",
+				roles: ["cawg.creator"],
+			});
+			expect(r.status).toBe("unrecognised_issuer");
+			// Signed source assets carry it too, for what their record holds.
+			const tone = await signAsset(w.p, w.m, {
+				assetId: w.id("tone.wav").id,
+				engine,
+			});
+			const toneReport = JSON.parse(
+				w.p.db
+					.prepare("SELECT report FROM signatures WHERE id = ?")
+					.get(tone.signatureId)!.report as string,
+			);
+			expect(readIdentity(toneReport)?.covers).toEqual(
+				expect.arrayContaining([
+					"c2pa.actions.v2",
+					"stds.schema-org.CreativeWork",
+					"c2pa.training-mining",
+				]),
+			);
 		},
 		120000,
 	);

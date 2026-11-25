@@ -60,6 +60,9 @@ export default function ProjectSettings() {
 			<Section title="What signs this project on this machine">
 				<SigningSetUp projectId={p} />
 			</Section>
+			<Section title="Your identity in what this project signs">
+				<SigningSetUp projectId={p} pair="identity" />
+			</Section>
 			<Section title="Forget this project here">
 				<Forget summary={data} />
 			</Section>

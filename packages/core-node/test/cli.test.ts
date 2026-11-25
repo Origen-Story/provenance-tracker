@@ -6,6 +6,7 @@ import { run, type Io } from "../src/cli/run.ts";
 import type { Machine } from "../src/machine.ts";
 import { catalogPathOf } from "../src/project.ts";
 import { readSettings } from "../src/settings.ts";
+import { devCertificate, haveOpenssl } from "./helpers/cert.ts";
 import { machinesForTests, peek } from "./helpers/machine.ts";
 
 const t = machinesForTests();
@@ -134,6 +135,51 @@ describe("the command line", () => {
 			code: 2,
 		});
 	});
+
+	it.skipIf(!haveOpenssl)(
+		"sets your identity for a project apart from its signing pair, says whose, and forgets it (D55)",
+		async () => {
+			const m = t.machine();
+			const work = t.tempDir();
+			const c = cli(m, work);
+			await c.run("init", "Demo");
+			expect((await c.run("identity", "--project", "Demo")).out).toContain(
+				"No identity is set up for this project on this machine",
+			);
+			const id = devCertificate(work, "es256", "Test Person")!;
+			const set = await c.run(
+				"identity",
+				"--certificate",
+				id.certificate,
+				"--key",
+				id.privateKey,
+				"--project",
+				"Demo",
+			);
+			expect(set.code).toBe(0);
+			expect(set.out).toContain("Signed files say they are by Test Person");
+			const projectId = Object.keys(readSettings(m.settingsPath).projects)[0];
+			const entry = readSettings(m.settingsPath).projects[projectId];
+			expect(entry.identity).toEqual({
+				certificate: id.certificate,
+				privateKey: id.privateKey,
+			});
+			expect(entry.signing).toBeUndefined();
+			expect(
+				await c.run(
+					"identity",
+					"--certificate",
+					id.certificate,
+					"--project",
+					"Demo",
+				),
+			).toMatchObject({ code: 2 });
+			await c.run("identity", "--clear", "--project", "Demo");
+			expect(
+				readSettings(m.settingsPath).projects[projectId].identity,
+			).toBeUndefined();
+		},
+	);
 
 	it("asks for a name before recording an edit, and changes nothing until it has one", async () => {
 		const m = t.machine();

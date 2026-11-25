@@ -11,9 +11,12 @@
 // end-entity cert. A proper chain (even a trivially-rooted one) satisfies it.
 //
 // Usage:  node scripts/generate-dev-cert.mjs [output-dir] [--key-type <type>]
+//                [--name <subject name>] [--org <organisation>]
 //         (output-dir defaults to ./certs; the key type to es256, a P-256 key.
 //         The others: es384 (P-384), ps256 (RSA 2048, signed with RSA-PSS) and
-//         ed25519. Every type the tracker signs with is tested with these.)
+//         ed25519. Every type the tracker signs with is tested with these.
+//         --name makes it a test identity certificate in that name, for
+//         `npm run cli -- identity`, D55.)
 //
 // The cert is self-issued so signatures won't show "trusted publisher" on
 // contentcredentials.org. Creator trust comes from the CAWG identity
@@ -33,17 +36,38 @@ const KEY_TYPES = {
 	ps256: ["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"],
 	ed25519: ["genpkey", "-algorithm", "ED25519"],
 };
+// Options: --key-type <type>, --name <subject name>, --org <organisation>.
+// A name or organisation goes into an openssl config file, so it is held to
+// letters, digits, spaces and simple punctuation, and cannot start a new line.
+const SAFE = /^[\p{L}\p{N} .,'()&-]{1,64}$/u;
+const opts = { "--key-type": "es256", "--name": "", "--org": "" };
+const positional = [];
 const args = process.argv.slice(2);
-const typeAt = args.indexOf("--key-type");
-const keyType = typeAt >= 0 ? args[typeAt + 1] : "es256";
+for (let i = 0; i < args.length; i++) {
+	if (args[i] in opts) {
+		opts[args[i]] = args[++i] ?? "";
+		continue;
+	}
+	positional.push(args[i]);
+}
+const keyType = opts["--key-type"];
 if (!KEY_TYPES[keyType]) {
 	console.error(
 		`Unknown key type "${keyType}". Use one of: ${Object.keys(KEY_TYPES).join(", ")}`,
 	);
 	process.exit(1);
 }
-const positional =
-	typeAt < 0 ? args : args.filter((a, i) => i !== typeAt && i !== typeAt + 1);
+for (const o of ["--name", "--org"])
+	if (opts[o] && !SAFE.test(opts[o])) {
+		console.error(
+			`${o} takes up to 64 letters, digits, spaces and . , ' ( ) & -`,
+		);
+		process.exit(1);
+	}
+// The signer's name: a person's, for an identity certificate (D55), or the
+// development signing certificate's.
+const subjectName = opts["--name"] || "Origen Story Dev Signing Cert";
+const organisation = opts["--org"] || "Origen Story";
 const outDir = path.resolve(positional[0] || "certs");
 if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
 
@@ -94,9 +118,11 @@ writeFileSync(
 	`[req]
 distinguished_name = dn
 prompt = no
+utf8 = yes
+string_mask = utf8only
 [dn]
-CN = Origen Story Dev Signing Cert
-O = Origen Story
+CN = "${subjectName}"
+O = "${organisation}"
 [v3_ee]
 basicConstraints = critical, CA:FALSE
 keyUsage = critical, digitalSignature, nonRepudiation

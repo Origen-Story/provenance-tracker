@@ -29,6 +29,7 @@ Scanning and importing, metadata extraction (ExifTool), reading credentials (the
 
 Stated so nobody has to take the table above on trust further than it has been checked.
 
+- **Your identity (D55)** adds nothing that leaves the machine: the identity assertion is signed here, with your identity key, and has no time stamp of its own.
 - **A correction (24 Nov 2026):** some files keep their Content Credentials on the web and carry only an address for them; Adobe Firefly's videos point to `cai-manifests.adobe.com`. Until D51, `c2patool` fetched such a manifest whenever it read the file, at `extract` and, for ingredients, while signing, and this statement did not say so. The request names the manifest, which identifies the file, and comes from your machine's address. It was found by checking the bytes of a Firefly video that `c2patool` had read in full: it contains no manifest, only the address.
 - A C2PA reader may also check a certificate's revocation online (OCSP), and could fetch a trust list given to it as an address. The C2PA library that now reads files does neither: OCSP is off, the trust lists are given to it as text, and it is handed a fetch function that refuses every request it would make for a trust list (`packages/core-node/src/extract/c2pa-library.ts`, D51). Credentials stored on the web, in the table above, are the one thing it fetches. That is from its settings and code, not yet from watching the network.
 - This statement comes from reading the code, not from a packet capture.

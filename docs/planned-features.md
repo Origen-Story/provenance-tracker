@@ -96,6 +96,11 @@ Note: Origen Story's projects currently use only the high-priority set. Deferred
 - **C2PA conformance for the tool** — a claim certificate on the C2PA trust list depends on it, so until then signed files read "valid, unrecognised issuer".
 - **Code-signing the native binaries** — for Windows Smart App Control and a downloadable app (D15).
 
+- **Choosing the identity's role per edit** (D55, 2026-11-25). The identity signs as `cawg.creator` always. Someone who edits or publishes another person's work would sign as `cawg.editor` or `cawg.publisher`. It ties into the credits table, which already keeps "made by" apart from "on behalf of".
+- **Trusting an identity's issuer** (D55). No CAWG trust list is pinned, so every identity reads "valid, unrecognised issuer". Pin CAWG's interim trust list (extended to 31 Dec 2027) the way the C2PA lists are (`npm run tools:fetch`, by commit and checksum), and add a per-machine setting for extra identity anchors, beside the one planned for claim anchors. Re-check CAWG's new certificate profile first.
+- **The identity in the public export and the viewer** (Phase 8). The Signing tab shows it; the public export (`spec/public-export.v1.schema.json`) and the viewer don't yet. That needs a new export version showing identity, signer and file integrity as separate results.
+- **A certificate request for a real identity certificate.** Make the key and a CSR in the tool, to take to a CA that issues CAWG identity certificates, rather than only a self-issued test one. It waits for the experts conversation.
+
 ---
 
 ## Later: worth a funded study

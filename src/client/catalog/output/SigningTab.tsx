@@ -282,7 +282,7 @@ const PAIRS = {
 		forget:
 			"Forget your identity for this project on this machine? Files are then signed without it. The files are not touched.",
 		about:
-			'Says who the creator is in every file signed here (a CAWG identity), signed with its own certificate, apart from the certificate that signs. For trying it out: npm run cert:generate -- --name "Your Name" makes a test one.',
+			'Says who the creator is in every file signed here (a CAWG identity), signed with its own certificate, apart from the certificate that signs. For trying it out: npm run cert:generate -- --name "Your Name" <folder> makes a test one.',
 	},
 } as const;
 

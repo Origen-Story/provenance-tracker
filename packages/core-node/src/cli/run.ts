@@ -87,7 +87,7 @@ Usage: npm run cli -- <command> [options]
                                       is signed here, and whose
   identity --certificate <f> --key <f> Set your identity certificate and key on this machine
                                       (separate from the signing pair; npm run cert:generate
-                                      -- --name "Your Name" makes a test one)
+                                      -- --name "Your Name" <folder> makes a test one)
   identity --clear                    Forget them: signing goes on without an identity
   sign <asset id> [--timestamp <url>] Sign it: a finished edit gets a signed copy beside its
        [--engine library|c2patool]    file; any other asset a .c2pa sidecar beside it. The

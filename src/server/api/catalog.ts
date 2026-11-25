@@ -1444,10 +1444,39 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 				"training_mining_opt_out",
 			];
 			const unknown = Object.keys(fields).filter(
-				(k) => k !== "timestamp" && !ASSET_FIELDS.includes(k),
+				(k) =>
+					k !== "timestamp" && k !== "withhold" && !ASSET_FIELDS.includes(k),
 			);
 			if (unknown.length)
 				throw new HttpError(400, `Signing has no field ${unknown.join(", ")}`);
+			// What a finished edit keeps out of its signed file (D62):
+			// { redact: [assertion addresses], leave_out: [asset ids] }.
+			let withhold: { redact: string[]; leaveOut: number[] } | undefined;
+			if (fields.withhold !== undefined) {
+				const w = fields.withhold as Record<string, unknown> | null;
+				const extra = w
+					? Object.keys(w).filter((k) => k !== "redact" && k !== "leave_out")
+					: [];
+				const redact = w?.redact ?? [];
+				const leaveOut = w?.leave_out ?? [];
+				if (
+					!w ||
+					typeof w !== "object" ||
+					extra.length ||
+					!Array.isArray(redact) ||
+					!redact.every((u) => typeof u === "string") ||
+					!Array.isArray(leaveOut) ||
+					!leaveOut.every((n) => Number.isSafeInteger(n))
+				)
+					throw new HttpError(
+						400,
+						'withhold is { "redact": [addresses], "leave_out": [asset ids] }',
+					);
+				withhold = {
+					redact: redact as string[],
+					leaveOut: leaveOut as number[],
+				};
+			}
 			if (
 				fields.timestamp !== undefined &&
 				typeof fields.timestamp !== "boolean"
@@ -1470,6 +1499,10 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 						.prepare("SELECT is_output FROM assets WHERE id = ?")
 						.get(id) as { is_output: number } | undefined;
 					if (!asset) throw new Error("There is no such asset");
+					if (asset.is_output !== 1 && withhold)
+						throw new Error(
+							"Keeping details out is for a finished edit's signed copy",
+						);
 					if (asset.is_output === 1) {
 						const extra = Object.keys(fields).filter((k) =>
 							ASSET_FIELDS.includes(k),
@@ -1482,6 +1515,7 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 							assetId: id,
 							engine,
 							timestampUrl,
+							withhold,
 						});
 					}
 					return await signAsset(project, machine, {

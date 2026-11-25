@@ -314,9 +314,14 @@ export function buildPublicExport({
 			fromRecord: Array.isArray(publication?.withheld)
 				? publication.withheld.length
 				: 0,
-			fromSignedFile: Array.isArray(definition?.redactions)
-				? definition.redactions.length
-				: 0,
+			// Assertions redacted, and sources whose credentials were left out (D62).
+			fromSignedFile:
+				(Array.isArray(definition?.redactions)
+					? definition.redactions.length
+					: 0) +
+				(Array.isArray(definition?.credentials_left_out)
+					? definition.credentials_left_out.length
+					: 0),
 		},
 		vocabulary,
 	};

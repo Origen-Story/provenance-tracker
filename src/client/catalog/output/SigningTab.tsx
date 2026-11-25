@@ -19,6 +19,11 @@ import {
 } from "../ui.tsx";
 import { previewKey } from "./shared.tsx";
 import Thumbnail from "./Thumbnail.tsx";
+import Reveals, {
+	revealedAgain,
+	startingChoice,
+	type WithholdChoice,
+} from "./Reveals.tsx";
 
 export const signingKey = (projectId: string) => [
 	"catalog",
@@ -105,6 +110,13 @@ function SignOutput({
 		queryKey: previewKey(projectId, asset.id),
 		queryFn: () => outputs.preview(projectId, asset.id),
 	});
+	// What to keep out of the signed film (D62): starts from the last signing.
+	const [choice, setChoice] = useState<WithholdChoice | null>(null);
+	const reveals = preview.data?.reveals ?? [];
+	const last = preview.data?.lastWithheld ?? null;
+	const chosen = choice ?? startingChoice(reveals, last);
+	const again = revealedAgain(chosen, last, reveals);
+	const withholding = chosen.redact.size + chosen.leaveOut.size > 0;
 	const { start, job, busy, interrupted } = useSignJob(projectId, asset.id);
 	const next =
 		Math.max(
@@ -128,6 +140,35 @@ function SignOutput({
 				Ingredients that carry credentials of their own keep them inside the new
 				file.
 			</p>
+			{preview.data?.statement && (
+				<details
+					className="border border-border rounded-lg p-3"
+					open={reveals.some((r) => r.reveal.items.length > 0)}
+				>
+					<summary className="text-sm text-text-primary cursor-pointer">
+						What the signed film will reveal
+						{withholding &&
+							` · keeping ${chosen.redact.size + chosen.leaveOut.size} out`}
+					</summary>
+					<div className="mt-3">
+						<Reveals
+							statement={preview.data.statement}
+							identityName={preview.data.identity?.name ?? null}
+							signerName={signing.data?.certificate?.commonName ?? null}
+							reveals={reveals}
+							choice={chosen}
+							onChange={setChoice}
+							disabled={running}
+						/>
+					</div>
+				</details>
+			)}
+			{again.length > 0 && (
+				<p className="text-xs text-warning">
+					The last signed copy kept out {again.join("; ")}. This one would
+					reveal {again.length === 1 ? "it" : "them"}.
+				</p>
+			)}
 			<Checkbox
 				label="Add a trusted time stamp"
 				checked={timestamp}
@@ -143,7 +184,15 @@ function SignOutput({
 			)}
 			<div className="flex items-center gap-3">
 				<Button
-					onClick={() => start.mutate({ timestamp })}
+					onClick={() =>
+						start.mutate({
+							timestamp,
+							withhold: {
+								redact: [...chosen.redact],
+								leave_out: [...chosen.leaveOut],
+							},
+						})
+					}
 					disabled={blockers.length > 0 || start.isPending || running || !!busy}
 				>
 					{running ? "Signing…" : `Sign a new copy (v${next})`}

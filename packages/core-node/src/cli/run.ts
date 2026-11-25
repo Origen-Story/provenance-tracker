@@ -640,6 +640,10 @@ async function sign(io: Io, args: string[], values: Values): Promise<number> {
 			io.out(
 				`Signed copy v${r.version}: ${r.root}/${r.path} (${r.status || "read back"}).`,
 			);
+			if (r.withheld.redacted || r.withheld.leftOut)
+				io.out(
+					`Kept out of it, as in the last signing (change it on the Signing tab): ${r.withheld.redacted} detail(s) redacted from sources' credentials, ${r.withheld.leftOut} source(s)' credentials left out.`,
+				);
 			return 0;
 		}
 		// A source asset: its credentials go in a .c2pa sidecar beside it.

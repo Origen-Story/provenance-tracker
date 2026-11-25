@@ -692,6 +692,100 @@ export function copyVerdict(hex, exp) {
 	};
 }
 
+const CONTENT_MATCH =
+	/^assertion\.(dataHash|bmffHash|boxesHash|collectionHash)\.match$/;
+
+/**
+ * What the Content Credentials inside a visitor's copy say (D61), from a C2PA
+ * reader's report (the JSON `Reader.json()` gives in @contentauth/c2pa-web,
+ * which a page passes in as `readCredentials`). Read the way the tracker reads
+ * its own (packages/core/src/manifest/verify.js): the content hash first, then
+ * the claim signature, then trust. The creator's identity (cawg.*) never
+ * changes this result. Returns { status, signer, issuer, contentChecked }:
+ * status is none, changed, invalid, trusted or unrecognised_issuer.
+ */
+export function readCopyCredentials(report) {
+	if (!report?.active_manifest || !report.manifests)
+		return {
+			status: "none",
+			signer: "",
+			issuer: "",
+			contentChecked: false,
+		};
+	const active = report.manifests[report.active_manifest] || {};
+	const results = report.validation_results?.activeManifest || {};
+	const codes = (list) => (list || []).map((c) => String(c.code || ""));
+	const failures = codes(results.failure).filter((c) => !c.startsWith("cawg."));
+	const blocking = failures.filter((c) => c !== UNTRUSTED);
+	const status = blocking.some((c) => HASH_MISMATCH.test(c))
+		? "changed"
+		: blocking.length
+			? "invalid"
+			: failures.includes(UNTRUSTED)
+				? "unrecognised_issuer"
+				: "trusted";
+	return {
+		status,
+		signer: active.signature_info?.common_name || "",
+		issuer: active.signature_info?.issuer || "",
+		contentChecked: codes(results.success).some((c) => CONTENT_MATCH.test(c)),
+		failures: blocking,
+	};
+}
+
+/** That reading in plain words: { tone, headline, detail }, said against what the record names. */
+export function credentialVerdict(reading, exp) {
+	const recorded =
+		exp?.formatVersion === 1
+			? exp?.signature?.signer?.commonName
+			: exp?.signer?.commonName;
+	const who = reading.signer || "an unnamed certificate";
+	const same =
+		recorded && reading.signer
+			? reading.signer === recorded
+				? ` That is the signer this record names.`
+				: ` This record names ${recorded}, not ${reading.signer}.`
+			: "";
+	// "Unchanged" only when the reader said the content matched what was signed.
+	const unchanged = reading.contentChecked ? ", and unchanged" : "";
+	const content = reading.contentChecked
+		? "Its own credentials check out: the content matches what was signed."
+		: "Its signature checks out, but the reader did not say whether the content matches what was signed.";
+	switch (reading.status) {
+		case "none":
+			return {
+				tone: "bad",
+				headline: "No Content Credentials in this copy",
+				detail:
+					"The file carries no credentials. A copy from a video platform usually has none, because platforms re-encode and strip them.",
+			};
+		case "changed":
+			return {
+				tone: "bad",
+				headline: "The credentials no longer match the content",
+				detail: `Signed by ${who}, but the content changed after it was signed.${same}`,
+			};
+		case "invalid":
+			return {
+				tone: "bad",
+				headline: "Its credentials did not validate",
+				detail: `Failures: ${(reading.failures || []).join(", ") || "unspecified"}.${same}`,
+			};
+		case "trusted":
+			return {
+				tone: reading.contentChecked ? "good" : "caution",
+				headline: `Signed by ${who}, a recognised signer${unchanged}`,
+				detail: `${content} The certificate is on the Content Credentials trust list.${same}`,
+			};
+		default:
+			return {
+				tone: "caution",
+				headline: `Signed by ${who}${unchanged}; signer not on the trust list`,
+				detail: `${content} The certificate is not on the public Content Credentials trust list.${same}`,
+			};
+	}
+}
+
 /** What the creator left out, in a sentence, or null when nothing was. */
 export function withheldSentence(withheld) {
 	const fromRecord = withheld?.fromRecord || 0;

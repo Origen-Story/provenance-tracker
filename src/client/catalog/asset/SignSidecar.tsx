@@ -8,7 +8,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { projects, type AssetRecord } from "../api.ts";
-import { SIGNED_STATUS } from "../labels.ts";
+import { engineLabel, SIGNED_STATUS } from "../labels.ts";
 import { Interrupted, useSignJob, useSigning } from "../output/SigningTab.tsx";
 import { Button, Card, Checkbox, Problem, TextField, when } from "../ui.tsx";
 import { str } from "./shared.ts";
@@ -56,7 +56,8 @@ export default function SignSidecar({
 						.reverse()
 						.map((s) => (
 							<li key={s.id}>
-								Sidecar v{s.version} by {s.signerName || "an unnamed signer"},{" "}
+								Sidecar v{s.version} by {s.signerName || "an unnamed signer"}{" "}
+								with {engineLabel(s.engine, s.engineVersion)},{" "}
 								{when(s.signedAt)} · {SIGNED_STATUS[s.status] ?? s.status}
 								{s.timestamped && " · time-stamped"}
 							</li>

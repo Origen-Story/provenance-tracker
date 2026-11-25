@@ -347,6 +347,7 @@ export interface AssetRecord {
 		sourceSha256: string;
 		signedSha256: string;
 		engine: string;
+		engineVersion: string;
 		signerName: string;
 		status: string;
 		timestamped: boolean;
@@ -488,7 +489,7 @@ export function assetRecord(
 		signatures: (
 			db
 				.prepare(
-					`SELECT id, kind, version, source_sha256, signed_sha256, engine, signer_name,
+					`SELECT id, kind, version, source_sha256, signed_sha256, engine, engine_version, signer_name,
 					        status, timestamped, signed_at FROM signatures WHERE asset_id = ? ORDER BY id`,
 				)
 				.all(id) as Row[]
@@ -499,6 +500,7 @@ export function assetRecord(
 			sourceSha256: s.source_sha256 as string,
 			signedSha256: s.signed_sha256 as string,
 			engine: s.engine as string,
+			engineVersion: s.engine_version as string,
 			signerName: s.signer_name as string,
 			status: s.status as string,
 			timestamped: bool(s.timestamped),

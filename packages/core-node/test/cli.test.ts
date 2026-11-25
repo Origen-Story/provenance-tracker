@@ -110,6 +110,31 @@ describe("the command line", () => {
 		expect(readSettings(m.settingsPath).remoteCredentials).toBe(true);
 	});
 
+	it("chooses what signs on this machine: the C2PA library unless set to c2patool (D53)", async () => {
+		const m = t.machine();
+		const c = cli(m, t.tempDir());
+		expect((await c.run("settings")).out).toContain(
+			"Signing engine: the C2PA library",
+		);
+		expect((await c.run("settings", "signing-engine", "c2patool")).code).toBe(
+			0,
+		);
+		expect(readSettings(m.settingsPath).signingEngine).toBe("c2patool");
+		expect((await c.run("settings")).out).toContain(
+			"Signing engine: c2patool (the fallback)",
+		);
+		expect(await c.run("settings", "signing-engine", "openssl")).toMatchObject({
+			code: 2,
+		});
+		expect(readSettings(m.settingsPath).signingEngine).toBe("c2patool");
+		await c.run("settings", "signing-engine", "LIBRARY");
+		expect(readSettings(m.settingsPath).signingEngine).toBe("library");
+		// A sign command naming an engine that doesn't exist stops before opening anything.
+		expect(await c.run("sign", "1", "--engine", "nope")).toMatchObject({
+			code: 2,
+		});
+	});
+
 	it("asks for a name before recording an edit, and changes nothing until it has one", async () => {
 		const m = t.machine();
 		const work = t.tempDir();

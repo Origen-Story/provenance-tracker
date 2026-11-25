@@ -119,6 +119,10 @@ describe("readSettings and writeSettings", () => {
 			],
 			['{"format": 1, "person": 3, "projects": {}}', "person is not text"],
 			[
+				'{"format": 1, "signingEngine": "openssl", "projects": {}}',
+				"signingEngine is not one of library, c2patool",
+			],
+			[
 				'{"format": 1, "remoteCredentials": "no", "projects": {}}',
 				"remoteCredentials is not true or false",
 			],

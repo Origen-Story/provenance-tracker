@@ -23,7 +23,7 @@ import {
 	readerSettings,
 } from "../src/extract/c2pa-library.ts";
 import { c2patoolPath } from "../src/extract/c2patool.ts";
-import { signWithC2patool } from "../src/sign/c2patool-sign.ts";
+import { signWithC2patool } from "../src/sign/engines/c2patool.ts";
 import { devCertificate, haveOpenssl } from "./helpers/cert.ts";
 
 const haveC2patool =

@@ -235,6 +235,7 @@ export interface AssetRecord {
 		sourceSha256: string;
 		signedSha256: string;
 		engine: string;
+		engineVersion: string;
 		signerName: string;
 		status: string;
 		timestamped: boolean;

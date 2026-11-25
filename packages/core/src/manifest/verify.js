@@ -77,13 +77,28 @@ export function interpretReport(report) {
 			codes(d.validationDeltas?.failure).filter((f) => f.code !== UNTRUSTED),
 		);
 	}
-	const ingredients = (active.ingredients || []).map((i) => ({
-		label: i.label || "",
-		title: i.title || "",
-		relationship: i.relationship || "componentOf",
-		credentials: i.active_manifest ? "present" : "none",
-		problems: deltas.get(i.label) || [],
-	}));
+	// An ingredient's problems are what was recorded about it when it was
+	// signed in, plus what a reader now finds different (the deltas). The C2PA
+	// library records its own findings (D53), so an ElevenLabs track's EKU
+	// problem sits in the record; c2patool recorded an older, laxer reading, so
+	// the library reports the same problem as a delta. Both are the
+	// ingredient's, and an unrecognised signer is not a problem here either.
+	const ingredients = (active.ingredients || []).map((i) => {
+		const recorded = codes(
+			i.validation_results?.activeManifest?.failure,
+		).filter((f) => f.code !== UNTRUSTED);
+		const seen = new Set();
+		const problems = [...recorded, ...(deltas.get(i.label) || [])].filter(
+			(p) => !seen.has(p.code) && seen.add(p.code),
+		);
+		return {
+			label: i.label || "",
+			title: i.title || "",
+			relationship: i.relationship || "componentOf",
+			credentials: i.active_manifest ? "present" : "none",
+			problems,
+		};
+	});
 
 	const si = active.signature_info || null;
 	return {

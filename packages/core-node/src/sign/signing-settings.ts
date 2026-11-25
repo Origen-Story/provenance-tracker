@@ -2,14 +2,14 @@
 // Paths only, in this machine's settings: never in a catalog, because a
 // catalog travels and a key path is true on one machine. The public
 // certificate is read (its name, issuer, fingerprint, expiry); the private
-// key is only checked to be a file, and is only ever passed to c2patool.
+// key is only checked to be a file here; only the signing engine reads it.
 
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { isFullPath } from "@provenancetracker/core/catalog/paths.ts";
 import type { Machine } from "../machine.ts";
 import { projectEntry, readSettings, updateSettings } from "../settings.ts";
-import { certificateInfo } from "./c2patool-sign.ts";
+import { certificateInfo } from "./certificates.ts";
 
 export interface SigningStatus {
 	configured: boolean;

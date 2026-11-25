@@ -36,8 +36,12 @@ import { verifyProject } from "../verify.ts";
 import {
 	fetchesRemoteCredentials,
 	readSettings,
+	SIGNING_ENGINES,
+	signingEngineOf,
 	updateSettings,
+	type SigningEngineName,
 } from "../settings.ts";
+import { signingEngineFor } from "../sign/engines/index.ts";
 import { TOOL } from "../tool.ts";
 import { signAsset } from "../sign/sign-asset.ts";
 import { signOutput } from "../sign/sign-output.ts";
@@ -77,13 +81,17 @@ Usage: npm run cli -- <command> [options]
   signing --certificate <f> --key <f> Set the certificate and key that sign it on this machine
   signing --clear                     Forget them
   sign <asset id> [--timestamp <url>] Sign it: a finished edit gets a signed copy beside its
-                                      file; any other asset a .c2pa sidecar beside it
+       [--engine library|c2patool]    file; any other asset a .c2pa sidecar beside it. The
+                                      engine is this machine's setting unless named
   verify [--hash] [--root <name>]    Check the catalog, and that every file is still as it was
   show <file>                         Everything the catalog knows about one file
   settings                            Show this machine's settings
   settings person <name>              Set the name your edits are recorded under
   settings remote-credentials on|off  Whether reading a file fetches Content Credentials it
                                       says are stored on the web (on unless turned off)
+  settings signing-engine library|c2patool
+                                      What signs on this machine: the C2PA library (the
+                                      default) or c2patool, the fallback
   migrate --dry-run --layout <file>   Build the catalogs from a Postgres dump in a throwaway
                                       folder, check them, and report [--report <file>]
   migrate --write --layout <file>     The same, then put each catalog in its project folder,
@@ -114,6 +122,7 @@ const OPTIONS = {
 	key: { type: "string" },
 	clear: { type: "boolean" },
 	timestamp: { type: "string" },
+	engine: { type: "string" },
 } as const;
 
 type Values = {
@@ -133,7 +142,16 @@ type Values = {
 	key?: string;
 	clear?: boolean;
 	timestamp?: string;
+	engine?: string;
 };
+
+/** A signing engine's name as typed, or a usage error naming the choices. */
+function engineName(raw: string): SigningEngineName {
+	const value = raw.trim().toLowerCase();
+	if (!SIGNING_ENGINES.includes(value as SigningEngineName))
+		throw new UsageError(`Say ${SIGNING_ENGINES.join(" or ")}`);
+	return value as SigningEngineName;
+}
 
 function needArgs(args: string[], count: number, usage: string): void {
 	if (args.length !== count)
@@ -296,15 +314,31 @@ function settings(io: Io, args: string[]): void {
 		);
 		return;
 	}
+	if (sub === "signing-engine") {
+		needArgs(rest, 1, "settings signing-engine library|c2patool");
+		const value = engineName(rest[0]);
+		updateSettings(file, (s) => {
+			s.signingEngine = value;
+		});
+		io.out(
+			value === "library"
+				? "This machine signs with the C2PA library (the default)."
+				: "This machine signs with c2patool, the fallback. It fetches Content Credentials an ingredient says are stored on the web whatever remote-credentials says (docs/network.md). Switch back with: npm run cli -- settings signing-engine library",
+		);
+		return;
+	}
 	if (sub !== undefined)
 		throw new UsageError(
-			`Unknown settings command "${sub}". Try: settings, settings person, settings remote-credentials`,
+			`Unknown settings command "${sub}". Try: settings, settings person, settings remote-credentials, settings signing-engine`,
 		);
 	const s = readSettings(file);
 	io.out(`Settings file: ${file}`);
 	io.out(`Person: ${s.person ?? "(not set)"}`);
 	io.out(
 		`Content Credentials stored on the web: ${fetchesRemoteCredentials(s) ? "fetched when a file is read" : "not fetched"}`,
+	);
+	io.out(
+		`Signing engine: ${signingEngineOf(s) === "library" ? "the C2PA library" : "c2patool (the fallback)"}`,
 	);
 	const projects = Object.entries(s.projects);
 	io.out(
@@ -501,21 +535,29 @@ async function signing(
 }
 
 async function sign(io: Io, args: string[], values: Values): Promise<number> {
-	needArgs(args, 1, "sign <asset id> [--timestamp <url>]");
+	needArgs(
+		args,
+		1,
+		"sign <asset id> [--timestamp <url>] [--engine library|c2patool]",
+	);
 	const id = Number(args[0]);
 	if (!Number.isSafeInteger(id) || id < 1)
 		throw new UsageError("The asset id is a whole number (see the asset list)");
+	const chosen =
+		values.engine === undefined ? undefined : engineName(values.engine);
 	return withProject(io, values, async (project) => {
 		const asset = project.db
 			.prepare("SELECT is_output FROM assets WHERE id = ?")
 			.get(id) as { is_output: number } | undefined;
 		if (!asset) throw new Error(`There is no asset ${id}`);
+		const engine = await signingEngineFor(io.machine, chosen);
 		if (asset.is_output === 1) {
 			io.out(
-				"Signing; c2patool reads the whole film and each source it places.",
+				`Signing with ${engine.name === "c2patool" ? "c2patool" : "the C2PA library"} ${engine.version}; it reads the whole film and each source it places.`,
 			);
 			const r = await signOutput(project, io.machine, {
 				assetId: id,
+				engine,
 				timestampUrl: values.timestamp,
 			});
 			io.out(
@@ -526,6 +568,7 @@ async function sign(io: Io, args: string[], values: Values): Promise<number> {
 		// A source asset: its credentials go in a .c2pa sidecar beside it.
 		const r = await signAsset(project, io.machine, {
 			assetId: id,
+			engine,
 			timestampUrl: values.timestamp,
 		});
 		io.out(

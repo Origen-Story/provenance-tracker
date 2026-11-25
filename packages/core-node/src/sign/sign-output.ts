@@ -31,7 +31,8 @@ import type { Machine } from "../machine.ts";
 import type { OpenProject } from "../project.ts";
 import { listRoots } from "../roots.ts";
 import { TOOL } from "../tool.ts";
-import { certificateInfo } from "./certificates.ts";
+import { certificateInfoOf } from "./certificates.ts";
+import { openHolder, type CredentialHolder } from "./holders/index.ts";
 import {
 	storableDefinition,
 	type SignIngredient,
@@ -55,6 +56,27 @@ export const TIMESTAMP_URL = "http://timestamp.digicert.com";
 
 /** A refusal before anything is signed: the caller's to fix (HTTP 400). */
 export class NotReadyError extends Error {}
+
+/** Refuse, in words, when this project has no signing set up on this machine. */
+export function refuseUnlessSetUp(machine: Machine, projectId: string): void {
+	try {
+		signerPaths(machine, projectId);
+	} catch (err) {
+		throw new NotReadyError((err as Error).message);
+	}
+}
+
+/** Open what holds this project's key for one signing; a holder that can't open is a refusal. */
+export async function holderOrRefuse(
+	machine: Machine,
+	projectId: string,
+): Promise<CredentialHolder> {
+	try {
+		return await openHolder(machine, projectId);
+	} catch (err) {
+		throw new NotReadyError((err as Error).message);
+	}
+}
 
 type Row = Record<string, unknown>;
 
@@ -388,6 +410,8 @@ export async function signOutput(
 	opts: {
 		assetId: number;
 		engine?: SigningEngine;
+		/** What holds the key; this machine's setup for the project when not given. */
+		holder?: CredentialHolder;
 		timestampUrl?: string;
 		now?: () => string;
 	},
@@ -398,12 +422,8 @@ export async function signOutput(
 		.prepare("SELECT * FROM assets WHERE id = ?")
 		.get(opts.assetId) as Row | undefined;
 	if (!asset) throw new NotReadyError("There is no such asset");
-	let signer;
-	try {
-		signer = signerPaths(machine, project.projectId);
-	} catch (err) {
-		throw new NotReadyError((err as Error).message);
-	}
+	// Whether signing is set up here at all is said before anything else.
+	if (!opts.holder) refuseUnlessSetUp(machine, project.projectId);
 
 	const cut = ownContent(project, opts.assetId);
 	const places = placesHere(project, machine);
@@ -505,14 +525,16 @@ export async function signOutput(
 		nextSignatureVersion(db, opts.assetId, "output"),
 	);
 	const engine = opts.engine ?? (await signingEngineFor(machine));
+	// The key is opened for this signing only, and let go with the holder.
+	const holder =
+		opts.holder ?? (await holderOrRefuse(machine, project.projectId));
 	const { report } = await engine.sign({
 		inputPath: cutPlace.file,
 		outputPath,
 		definition: definition as Record<string, unknown>,
 		ingredients: ingredients as SignIngredient[],
 		resources: resources as SignResource[],
-		certificatePath: signer.certificatePath,
-		privateKeyPath: signer.privateKeyPath,
+		holder,
 		timestampUrl: opts.timestampUrl,
 	});
 	const rel = toCatalogPath(cutPlace.rootFolder, outputPath, machine.platform);
@@ -534,8 +556,7 @@ export async function signOutput(
 			},
 			engine: engine.name,
 			engineVersion: engine.version,
-			certificateSha256: (await certificateInfo(signer.certificatePath))
-				.fingerprint,
+			certificateSha256: certificateInfoOf(holder.chain).fingerprint,
 			definition: storableDefinition(definition as Record<string, unknown>),
 			statementId: statement.id as number,
 			statement: signedStatement,

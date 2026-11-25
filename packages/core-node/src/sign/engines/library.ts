@@ -1,9 +1,7 @@
 // Signing through the C2PA library (@contentauth/c2pa-node): the default
-// engine (D53). The library builds and embeds the manifest; this machine's
-// Node signs the bytes it is handed (a callback), so the private key is read
-// here, once per signing, and never passes into the library. Node reads the
-// key as the files hold it (SEC1, PKCS#1 or PKCS#8 PEM), so nothing is
-// converted.
+// engine (D53). The library builds and embeds the manifest, and asks for the
+// bytes it hands over to be signed (a callback), so the private key is held
+// by whatever holds it (holders/, D54) and never passes into the library.
 //
 // Ingredients are read by the library itself, against the same trust lists
 // and remote-credentials setting as `extract` (c2pa-library.ts): D15's "the
@@ -12,12 +10,7 @@
 // only embedded ones, so the sidecar goes in as the ingredient's manifest
 // store, with the library's reading of it, as the c2patool engine does.
 
-import {
-	constants,
-	sign as cryptoSign,
-	X509Certificate,
-	type KeyObject,
-} from "node:crypto";
+import { X509Certificate } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -25,46 +18,10 @@ import path from "node:path";
 import { sidecarPathFor } from "@provenancetracker/core/manifest/build.js";
 import { mediaTypeForSigning } from "@provenancetracker/core/manifest/formats.ts";
 import { readStore, type LoadedLibrary } from "../../extract/c2pa-library.ts";
-import { algorithmFor, type SigningAlg } from "../certificates.ts";
-import {
-	checkSignArgs,
-	loadSigningKey,
-	type SignArgs,
-	type SigningEngine,
-} from "../engine.ts";
+import { checkSignArgs, type SignArgs, type SigningEngine } from "../engine.ts";
 
 /** The name recorded on signatures the library made (the reader's name too). */
 export const LIBRARY_ENGINE = "c2pa-node";
-
-const DIGEST: Record<SigningAlg, string | null> = {
-	es256: "sha256",
-	es384: "sha384",
-	es512: "sha512",
-	ps256: "sha256",
-	ed25519: null,
-};
-
-/**
- * Sign bytes as the C2PA algorithm wants them: ECDSA as the raw r‖s pair
- * (not DER), RSA as PSS with a salt the length of the digest, Ed25519 as it
- * is. The library wraps the signature in COSE itself.
- */
-export function signBytes(
-	alg: SigningAlg,
-	key: KeyObject,
-	data: Buffer,
-): Buffer {
-	const digest = DIGEST[alg];
-	if (alg.startsWith("es"))
-		return cryptoSign(digest, data, { key, dsaEncoding: "ieee-p1363" });
-	if (alg === "ps256")
-		return cryptoSign(digest, data, {
-			key,
-			padding: constants.RSA_PKCS1_PSS_PADDING,
-			saltLength: 32,
-		});
-	return cryptoSign(null, data, key);
-}
 
 /** Room the library leaves for the signature: the chain, the signature itself, and a time stamp's reply. */
 export function reserveFor(chainPem: string, timeStamped: boolean): number {
@@ -124,20 +81,16 @@ export async function signWithLibrary(
 ): Promise<{ report: Record<string, unknown> | null }> {
 	checkSignArgs(args);
 	const { lib, context } = loaded;
-	const alg = await algorithmFor(args.certificatePath);
-	const { chain, key } = await loadSigningKey(
-		args.certificatePath,
-		args.privateKeyPath,
-	);
+	const { holder } = args;
 	const signer = lib.CallbackSigner.newSigner(
 		{
-			alg,
-			certs: [Buffer.from(chain)],
-			reserveSize: reserveFor(chain, !!args.timestampUrl),
+			alg: holder.alg,
+			certs: [Buffer.from(holder.chain)],
+			reserveSize: reserveFor(holder.chain, !!args.timestampUrl),
 			...(args.timestampUrl ? { tsaUrl: args.timestampUrl } : {}),
 			directCoseHandling: false,
 		},
-		async (data) => signBytes(alg, key, data),
+		(data) => holder.sign(data),
 	);
 	const input = {
 		path: args.inputPath,

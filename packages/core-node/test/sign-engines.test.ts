@@ -22,7 +22,10 @@ import {
 import { updateSettings } from "../src/settings.ts";
 import type { SigningEngine } from "../src/sign/engine.ts";
 import { signingEngineFor } from "../src/sign/engines/index.ts";
-import { reserveFor, signBytes } from "../src/sign/engines/library.ts";
+import { reserveFor } from "../src/sign/engines/library.ts";
+import { signBytes } from "../src/sign/holder.ts";
+import { keyFilesHolder } from "../src/sign/holders/key-files.ts";
+import { memoryHolder } from "./helpers/holder.ts";
 import {
 	devCertificate,
 	haveOpenssl,
@@ -240,8 +243,10 @@ describe.each(ENGINES)("the $name engine", ({ name, ready }) => {
 						useInput: true,
 					},
 				],
-				certificatePath: cert.certificate,
-				privateKeyPath: cert.privateKey,
+				holder: await keyFilesHolder({
+					certificatePath: cert.certificate,
+					privateKeyPath: cert.privateKey,
+				}),
 			};
 			const embedded = await engine.sign({
 				...base,
@@ -274,30 +279,135 @@ describe.each(ENGINES)("the $name engine", ({ name, ready }) => {
 		},
 	);
 
-	it("refuses a key that is not the certificate's, or an output already there, writing nothing", async () => {
+	it("refuses an output already there, writing nothing", async () => {
 		const dir = folder(`${name}-refuse`);
 		const cert = devCertificate(dir)!;
-		const other = devCertificate(folder(`${name}-other`))!;
 		const engine = await engineHere(dir);
 		const input = path.join(dir, "still.png");
 		tinyPng(input);
 		const out = path.join(dir, "still.signed.png");
-		const args = {
-			inputPath: input,
-			outputPath: out,
-			definition: DEFINITION,
-			ingredients: [],
-			certificatePath: cert.certificate,
-			privateKeyPath: other.privateKey,
-		};
-		await expect(engine.sign(args)).rejects.toThrow(
-			/does not belong to the signing certificate/,
-		);
-		expect(existsSync(out)).toBe(false);
 		writeFileSync(out, "already here");
 		await expect(
-			engine.sign({ ...args, privateKeyPath: cert.privateKey }),
+			engine.sign({
+				inputPath: input,
+				outputPath: out,
+				definition: DEFINITION,
+				ingredients: [],
+				holder: await keyFilesHolder({
+					certificatePath: cert.certificate,
+					privateKeyPath: cert.privateKey,
+				}),
+			}),
 		).rejects.toThrow(/Refusing to overwrite/);
 		expect(readFileSync(out, "utf8")).toBe("already here");
 	}, 120000);
+
+	it(
+		name === "library"
+			? "signs with a holder that keeps its key in memory and has no key files (D54)"
+			: "refuses a holder with no key files, in words, writing nothing (D54)",
+		async () => {
+			const dir = folder(`${name}-memory`);
+			const holder = memoryHolder(devCertificate(dir)!);
+			const engine = await engineHere(dir);
+			const input = path.join(dir, "still.png");
+			tinyPng(input);
+			const out = path.join(dir, "still.signed.png");
+			const sign = engine.sign({
+				inputPath: input,
+				outputPath: out,
+				definition: DEFINITION,
+				ingredients: [],
+				holder,
+			});
+			if (name === "c2patool") {
+				await expect(sign).rejects.toThrow(
+					/c2patool signs only with key files on this machine.*held by "memory"/,
+				);
+				expect(existsSync(out)).toBe(false);
+				return;
+			}
+			const v = interpretReport((await sign).report) as { status: string };
+			expect(v.status).toBe("unrecognised_issuer");
+		},
+		120000,
+	);
+});
+
+describe.skipIf(!haveOpenssl)("key files on this machine", () => {
+	it("open as a holder only when the key belongs to the certificate, and say why not", async () => {
+		const dir = folder("key-files");
+		const cert = devCertificate(dir)!;
+		const other = devCertificate(folder("key-files-other"))!;
+		const holder = await keyFilesHolder({
+			certificatePath: cert.certificate,
+			privateKeyPath: cert.privateKey,
+		});
+		expect(holder).toMatchObject({
+			kind: "key-files",
+			alg: "es256",
+			keyFiles: {
+				certificatePath: cert.certificate,
+				privateKeyPath: cert.privateKey,
+			},
+		});
+		expect(holder.chain).toContain("BEGIN CERTIFICATE");
+		await expect(
+			keyFilesHolder({
+				certificatePath: cert.certificate,
+				privateKeyPath: other.privateKey,
+			}),
+		).rejects.toThrow(/does not belong to the signing certificate/);
+		await expect(
+			keyFilesHolder({
+				certificatePath: cert.certificate,
+				privateKeyPath: cert.certificate,
+			}),
+		).rejects.toThrow(/does not read as a private key/);
+		await expect(
+			keyFilesHolder({
+				certificatePath: cert.certificate,
+				privateKeyPath: path.join(dir, "gone.pem"),
+			}),
+		).rejects.toThrow(/signing key is not there/);
+	});
+});
+
+describe.skipIf(!haveOpenssl)("key files on this machine", () => {
+	it("open as a holder only when the key belongs to the certificate, and say why not", async () => {
+		const dir = folder("key-files");
+		const cert = devCertificate(dir)!;
+		const other = devCertificate(folder("key-files-other"))!;
+		const holder = await keyFilesHolder({
+			certificatePath: cert.certificate,
+			privateKeyPath: cert.privateKey,
+		});
+		expect(holder).toMatchObject({
+			kind: "key-files",
+			alg: "es256",
+			keyFiles: {
+				certificatePath: cert.certificate,
+				privateKeyPath: cert.privateKey,
+			},
+		});
+		expect(holder.chain).toContain("BEGIN CERTIFICATE");
+		await expect(
+			keyFilesHolder({
+				certificatePath: cert.certificate,
+				privateKeyPath: other.privateKey,
+			}),
+		).rejects.toThrow(/does not belong to the signing certificate/);
+		await expect(
+			keyFilesHolder({
+				certificatePath: cert.certificate,
+				privateKeyPath: cert.certificate,
+			}),
+		).rejects.toThrow(/does not read as a private key/);
+		await expect(
+			keyFilesHolder({
+				certificatePath: cert.certificate,
+				privateKeyPath: path.join(dir, "gone.pem"),
+			}),
+		).rejects.toThrow(/signing key is not there/);
+	});
 });

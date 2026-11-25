@@ -47,6 +47,7 @@ import {
 } from "../src/sign/signing-settings.ts";
 import { TOOL } from "../src/tool.ts";
 import { devCertificate, haveOpenssl } from "./helpers/cert.ts";
+import { memoryHolder } from "./helpers/holder.ts";
 import { machinesForTests } from "./helpers/machine.ts";
 
 const { machine, folder, track } = machinesForTests();
@@ -676,6 +677,33 @@ describe.each(ENGINES)("signOutput with $name", ({ name, recorded, ready }) => {
 				),
 			);
 			expect(validate(schema, data)).toEqual([]);
+		},
+		120000,
+	);
+
+	it.skipIf(!haveOpenssl || name !== "library" || !ready)(
+		"signs with a holder that keeps its key in memory, with nothing set up on this machine (D54)",
+		async () => {
+			const w = await world({ signing: false });
+			const cert = devCertificate(folder("memory-holder"))!;
+			const fingerprint = (await certificateInfo(cert.certificate)).fingerprint;
+			const holder = memoryHolder(cert);
+			const engine = await signingEngineFor(w.m, name);
+			// Nothing is set up here, so without a holder it says so.
+			await expect(
+				signOutput(w.p, w.m, { assetId: w.film.id, engine }),
+			).rejects.toThrow(/no certificate and key/);
+			const r = await signOutput(w.p, w.m, {
+				assetId: w.film.id,
+				engine,
+				holder,
+			});
+			expect(r.status).toBe("unrecognised_issuer");
+			expect(
+				w.p.db
+					.prepare("SELECT certificate_sha256 FROM signatures WHERE id = ?")
+					.get(r.signatureId),
+			).toEqual({ certificate_sha256: fingerprint });
 		},
 		120000,
 	);

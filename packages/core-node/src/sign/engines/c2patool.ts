@@ -36,10 +36,8 @@ import { promisify } from "node:util";
 import { sidecarPathFor } from "@provenancetracker/core/manifest/build.js";
 import { c2patoolPath, c2patoolVersion } from "../../extract/c2patool.ts";
 import type { Machine } from "../../machine.ts";
-import { algorithmFor } from "../certificates.ts";
 import {
 	checkSignArgs,
-	loadSigningKey,
 	type SignArgs,
 	type SignIngredient,
 	type SigningEngine,
@@ -184,9 +182,14 @@ export async function signWithC2patool(
 ): Promise<{ outputPath: string; report: Record<string, unknown> | null }> {
 	const { tool, inputPath, outputPath } = opts;
 	checkSignArgs({ ...opts, ingredients: opts.ingredients ?? [] });
-	// c2patool would sign with a key that is not the certificate's and leave
-	// a broken signature; check first. The key is read only for this check.
-	await loadSigningKey(opts.certificatePath, opts.privateKeyPath);
+	// c2patool opens the key files itself, so it signs only with a holder
+	// that has them (D54). Opening that holder checked the key against the
+	// certificate: c2patool would otherwise leave a broken signature.
+	const files = opts.holder.keyFiles;
+	if (!files)
+		throw new Error(
+			`c2patool signs only with key files on this machine, and this project's key is held by "${opts.holder.kind}". Sign with the C2PA library: npm run cli -- settings signing-engine library`,
+		);
 	const ingredients = opts.ingredients ?? [];
 	const dir = await mkdtemp(path.join(os.tmpdir(), "pt-c2pa-"));
 	try {
@@ -206,9 +209,9 @@ export async function signWithC2patool(
 			await copyFile(res.filePath, path.join(dir, res.identifier));
 		const full = {
 			...opts.definition,
-			alg: await algorithmFor(opts.certificatePath),
-			sign_cert: path.resolve(opts.certificatePath),
-			private_key: path.resolve(opts.privateKeyPath),
+			alg: opts.holder.alg,
+			sign_cert: path.resolve(files.certificatePath),
+			private_key: path.resolve(files.privateKeyPath),
 			...(opts.timestampUrl ? { ta_url: opts.timestampUrl } : {}),
 			...(ingredientPaths.length ? { ingredient_paths: ingredientPaths } : {}),
 		};

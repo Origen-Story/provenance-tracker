@@ -98,3 +98,12 @@ Short numbered log of decisions that shape the code. Add a line when one is made
     - Both copies read "valid, unrecognised issuer" in both readers, with the content hash verified, 96 placed actions all with time ranges, and 29 ingredients, 3 with credentials of their own.
     - The library took 4 s and c2patool 5 s for the 354 MB film.
   - (9) _The repo guard now covers `certs/` and `.env`_, by name, size and modification time only, never opening them (`scripts/lib/repo-snapshot.mjs`). While this step was built, a bug in the new `--key-type` option made tests write throwaway keys into the checkout's `certs/`, unseen because the folder is gitignored; it was found and fixed before review.
+- **D54 (2026-11-25) What holds the signing key is its own seam.** Phase 7, step 4; no new dependency.
+  - A credential holder (`packages/core-node/src/sign/holder.ts`) gives the certificate chain and the algorithm, and signs the bytes it is handed; the engine never sees the key.
+  - The holders are a registry (`sign/holders/`), with one module: **key files on this machine** (`key-files.ts`), the paths this machine's settings name per project (D41).
+    - It is opened for one signing, just before the engine runs and after every other check, and let go with the signing (D53, decision 4a).
+    - Opening checks that the key reads as one and belongs to the certificate, and says in words when it doesn't. Those are refusals, like every "not ready" (HTTP 400).
+  - c2patool opens key files itself, so it signs only with a holder that has them, and refuses any other, saying which holder the project uses and how to sign with the library instead.
+  - A test holder keeps its key in memory and deletes the key file before signing. The library signs with it, and a finished edit signs with it on a machine with nothing set up, recording the certificate's fingerprint from the holder's chain. That shows the seam takes another kind of holder.
+  - The settings page and the API still say only "ready", the name, issuer, expiry and fingerprint, never paths (D41).
+  - A keychain, a hardware token and a remote signing service are later modules (`docs/planned-features.md`).

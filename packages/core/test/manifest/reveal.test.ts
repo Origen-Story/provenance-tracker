@@ -102,6 +102,30 @@ describe("revealOf (D62)", () => {
 	});
 });
 
+describe("descriptive metadata (D62)", () => {
+	it("lists its values, never the vocabularies its @context declares", () => {
+		const r = revealOf({
+			manifests: {
+				"urn:c2pa:m": {
+					assertions: [
+						{
+							label: "cawg.metadata",
+							data: {
+								"@context": { dc: "http://purl.org/dc/elements/1.1/" },
+								"dc:creator": ["A. Person"],
+							},
+						},
+					],
+				},
+			},
+		});
+		expect(r.items[0]).toMatchObject({
+			kind: "metadata",
+			values: ["A. Person"],
+		});
+	});
+});
+
 describe("checkWithhold (D62)", () => {
 	const sources = [
 		{ assetId: 7, reveal: revealOf(store) },

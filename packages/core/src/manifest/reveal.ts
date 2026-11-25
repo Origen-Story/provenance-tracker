@@ -70,7 +70,9 @@ function strings(value: unknown, keys?: RegExp): string[] {
 			}
 		} else if (Array.isArray(v)) v.forEach((x) => walk(x, key));
 		else if (v && typeof v === "object")
-			for (const [k, x] of Object.entries(v)) walk(x, k);
+			for (const [k, x] of Object.entries(v))
+				// A JSON-LD @context declares vocabularies; it says nothing about anyone.
+				if (k !== "@context") walk(x, k);
 	};
 	walk(value, "");
 	return out;
@@ -104,7 +106,7 @@ function classify(
 			...base,
 			kind: "metadata",
 			what: "Descriptive metadata: creators, rights, descriptions",
-			values: strings(data).filter((s) => !s.startsWith("http://purl.org")),
+			values: strings(data),
 			redactable: true,
 		};
 	if (plain === "stds.schema-org.CreativeWork")

@@ -333,11 +333,15 @@ function newestTimelineOf(
 		.get(assetId) as { id: number } | undefined;
 }
 
-/** The earlier edit this one started from (D50), if any. */
+/**
+ * The earlier edit this one started from (D50), if any: as its next revision
+ * (`started_from`) or as something made from it (`made_from`, D60). Either
+ * way its clip classes carry to this edit's first timeline.
+ */
 export function startedFrom(db: DatabaseSync, assetId: number): number | null {
 	const row = db
 		.prepare(
-			"SELECT parent_id FROM relationships WHERE child_id = ? AND type = 'started_from' ORDER BY id DESC LIMIT 1",
+			"SELECT parent_id FROM relationships WHERE child_id = ? AND type IN ('started_from', 'made_from') ORDER BY id DESC LIMIT 1",
 		)
 		.get(assetId) as { parent_id: number } | undefined;
 	return row?.parent_id ?? null;

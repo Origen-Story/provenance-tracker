@@ -30,6 +30,7 @@ import {
 
 import { EditError, NotFoundError } from "./errors.ts";
 import { publicationOf, type Publication } from "./publications.ts";
+import { RELATION_LINK, type EditRelation } from "./revisions.ts";
 
 export { EditError, NotFoundError };
 
@@ -46,6 +47,8 @@ export const LINK_TYPES: readonly string[] = [
 	"ingredient",
 	"derived_from",
 	"output_of",
+	// A finished edit made from another (a vertical cut, a trailer, a transcode), D60.
+	"made_from",
 ];
 
 /** The asset fields a person may set. The rest are a tool's or derived. */
@@ -507,9 +510,15 @@ export function startFromEdit(
 	assetId: number,
 	fromId: number,
 	opts: PersonEdit,
+	/** The next revision of it (the default), or made from it (D60). */
+	as: EditRelation = "revision",
 ): StartedFrom {
 	if (!Number.isSafeInteger(fromId))
 		throw new EditError("Say which finished edit to start from");
+	if (!Object.hasOwn(RELATION_LINK, as))
+		throw new EditError(
+			'An edit starts from another as its next revision ("revision") or as something made from it ("made_from")',
+		);
 	if (assetId === fromId)
 		throw new EditError("An edit cannot start from itself");
 	const asset = assetRow(db, assetId);
@@ -625,7 +634,7 @@ export function startFromEdit(
 			{
 				parent_id: fromId,
 				child_id: assetId,
-				type: "started_from",
+				type: RELATION_LINK[as],
 				match_method: "manual",
 				confidence: 1,
 				note: "",
@@ -642,6 +651,38 @@ export function startFromEdit(
 			clipClasses,
 		};
 	});
+}
+
+/**
+ * Say whether this edit is the next revision of the edit it started from, or
+ * something made from it (D60): its link changes kind, with history. Existing
+ * started_from links read as "next revision" until a person says otherwise.
+ * @returns the link's id
+ */
+export function setEditRelation(
+	db: DatabaseSync,
+	assetId: number,
+	as: unknown,
+	opts: PersonEdit,
+): number {
+	if (typeof as !== "string" || !Object.hasOwn(RELATION_LINK, as))
+		throw new EditError(
+			'Say "revision" (the next revision) or "made_from" (made from it)',
+		);
+	assetRow(db, assetId);
+	const link = db
+		.prepare(
+			"SELECT id, type FROM relationships WHERE child_id = ? AND type IN ('started_from', 'made_from') ORDER BY id DESC LIMIT 1",
+		)
+		.get(assetId) as { id: number; type: string } | undefined;
+	if (!link)
+		throw new EditError(
+			"This edit did not start from another; start it from one first",
+		);
+	const type = RELATION_LINK[as as EditRelation];
+	if (link.type !== type)
+		editRow(db, "relationships", link.id, { type }, change(opts));
+	return link.id;
 }
 
 /**

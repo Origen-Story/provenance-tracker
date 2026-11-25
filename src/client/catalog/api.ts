@@ -309,7 +309,13 @@ export const assets = {
 		api<Answer>("POST", `/projects/${projectId}/assets/${id}/restore`, {
 			note,
 		}),
-	startFrom: (projectId: string, id: number, fromId: number) =>
+	/** Start a new export from an earlier edit: as its next revision, or made from it (D60). */
+	startFrom: (
+		projectId: string,
+		id: number,
+		fromId: number,
+		as: "revision" | "made_from" = "revision",
+	) =>
 		api<
 			Answer & {
 				copied: {
@@ -322,7 +328,7 @@ export const assets = {
 				};
 			}
 		>("POST", `/projects/${projectId}/assets/${id}/start-from`, {
-			fields: { from_id: fromId },
+			fields: { from_id: fromId, as },
 		}),
 	/** Pick the image the edit is shown by in its credentials, or none (D52). */
 	setThumbnail: (projectId: string, id: number, imageId: number | null) =>
@@ -736,6 +742,40 @@ export function timelineSequences(error: unknown): SequenceChoice[] | null {
 		?.sequences;
 	return Array.isArray(list) ? list : null;
 }
+
+/** A finished edit as the revisions view shows it (D60). */
+export interface EditSummary {
+	assetId: number;
+	title: string;
+	fileName: string;
+	signed: number;
+	published: number;
+	removed: boolean;
+}
+
+/** A finished edit's revisions, what it was made from and what was made from it, and its re-renders (D60). */
+export interface Revisions {
+	line: Array<EditSummary & { depth: number; current: boolean }>;
+	madeFrom: EditSummary | null;
+	deliverables: EditSummary[];
+	renders: Array<{
+		sha256: string;
+		createdAt: string;
+		signedVersions: number[];
+	}>;
+}
+
+export const revisions = {
+	of: (projectId: string, id: number) =>
+		api<Revisions>("GET", `/projects/${projectId}/assets/${id}/revisions`),
+	/** Whether this edit is the next revision of the one it started from, or made from it. */
+	setRelation: (projectId: string, id: number, as: "revision" | "made_from") =>
+		api<{ revisions: Revisions; asset: AssetRecord }>(
+			"PUT",
+			`/projects/${projectId}/assets/${id}/relation`,
+			{ fields: { as } },
+		),
+};
 
 /** Where a signed copy is published (D56). */
 export interface Publication {

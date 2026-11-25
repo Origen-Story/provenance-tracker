@@ -950,6 +950,44 @@ details[open] > .ptv-toggle .ptv-when-closed:has(+ .ptv-when-open) {
 .ptv-verdict-card.ptv-tone-bad {
 	color: var(--ptv-bad);
 }
+/* The file, the signer and the creator: separate results, never one badge (D57). */
+.ptv-results {
+	list-style: none;
+	margin: 0.9rem 0 0.5rem;
+	padding: 0;
+	display: grid;
+	gap: 0.6rem;
+}
+.ptv-results .ptv-verdict-card {
+	margin: 0;
+}
+.ptv-result-h {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.75rem;
+	margin: 0 0 0.3rem;
+	font-size: 0.8rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+.ptv-result-label {
+	color: var(--ptv-text);
+}
+/* The tone in words, so it never rests on colour alone. */
+.ptv-tone-word {
+	border: 1px solid currentColor;
+	border-radius: 999px;
+	padding: 0.05rem 0.55rem;
+	font-size: 0.72rem;
+	letter-spacing: 0.02em;
+	text-transform: none;
+}
+.ptv-verdict-card .ptv-stamp {
+	font-size: 0.85rem;
+	color: var(--ptv-muted, var(--ptv-text));
+}
 
 .ptv-steps {
 	list-style: none;

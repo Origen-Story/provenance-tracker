@@ -17,6 +17,7 @@ import { createRow, type Actor } from "./edit.ts";
 import { EditError, NotFoundError } from "./errors.ts";
 import { inTransaction } from "./format.ts";
 import { finishRun, startRun } from "./runs.ts";
+import { publicationOf } from "./publications.ts";
 
 /** The version the next signing of this kind of this asset gets: one more than the last. */
 export function nextSignatureVersion(
@@ -225,12 +226,12 @@ export function recordSigning(
 /**
  * A signing as buildPublicExport reads it (the app's signatures row): the
  * statement and report as signed, and the signed copy's file name, hash,
- * size, version and time, from the catalog.
+ * size, version and time, from the catalog, and the definition as stored.
  */
 export function signatureForExport(db: DatabaseSync, signatureId: number) {
 	const s = db
 		.prepare(
-			`SELECT s.kind, s.version, s.statement, s.report, s.signed_sha256, s.signed_at, c.size,
+			`SELECT s.kind, s.version, s.statement, s.report, s.definition, s.signed_sha256, s.signed_at, c.size,
 			        (SELECT l.path FROM locations l WHERE l.content_sha256 = s.signed_sha256
 			         ORDER BY l.gone_run_id IS NOT NULL, l.id LIMIT 1) AS path
 			 FROM signatures s JOIN contents c ON c.sha256 = s.signed_sha256 WHERE s.id = ?`,
@@ -241,6 +242,7 @@ export function signatureForExport(db: DatabaseSync, signatureId: number) {
 				version: number;
 				statement: string | null;
 				report: string | null;
+				definition: string;
 				signed_sha256: string;
 				signed_at: string;
 				size: number;
@@ -253,6 +255,7 @@ export function signatureForExport(db: DatabaseSync, signatureId: number) {
 		version: s.version,
 		statementJson: s.statement,
 		reportJson: s.report,
+		definitionJson: s.definition,
 		signedPath: s.path ?? "",
 		signedHash: s.signed_sha256,
 		signedSize: s.size,
@@ -272,9 +275,11 @@ export function publicExport(
 	const signature = signatureForExport(db, signatureId);
 	if (signature.kind !== "output")
 		throw new EditError("Only a signed output has a public export");
+	// Where it is published (D56), so the record links the signed file and its page.
+	const publication = publicationOf(db, signatureId);
 	let data: unknown;
 	try {
-		data = buildPublicExport({ signature, ...opts });
+		data = buildPublicExport({ signature, publication, ...opts });
 	} catch (err) {
 		throw new EditError((err as Error).message);
 	}

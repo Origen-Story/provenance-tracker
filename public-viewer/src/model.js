@@ -449,34 +449,144 @@ export function ingredientProvenance(i) {
 		: "No Content Credentials of its own: classified from its metadata.";
 }
 
-/** The signature's result in plain words: { tone: good|caution|bad, headline, detail }. */
-export function signatureVerdict(sig) {
-	const who = sig?.signer?.commonName || "an unnamed certificate";
-	switch (sig?.status) {
-		case "valid":
+/**
+ * An https address a link may use, or null. A page may load an export it did
+ * not make (`?export=`), so an address is checked here before it becomes a
+ * link, whatever the tracker checked when it wrote it.
+ */
+export function safeLink(value) {
+	if (typeof value !== "string") return null;
+	let url;
+	try {
+		url = new URL(value);
+	} catch {
+		return null;
+	}
+	return url.protocol === "https:" &&
+		url.hostname &&
+		!url.username &&
+		!url.password
+		? url.href
+		: null;
+}
+
+const UNTRUSTED = "signingCredential.untrusted";
+const HASH_MISMATCH =
+	/\.(dataHash|bmffHash|boxesHash|collectionHash)\.mismatch$/;
+
+/**
+ * What an export records about the signed file, whatever its format, as
+ * three results a page shows apart (D57): the file, the signer and the
+ * creator's identity; with where the signed file and its page are
+ * published, and how many details the creator left out. Format 1 kept one
+ * signature block and recorded no identity, so its identity is undefined:
+ * nothing is said about one, which is not the same as "none".
+ */
+export function resultsOf(exp) {
+	if (exp.formatVersion === 1) {
+		const s = exp.signature || {};
+		const failures = s.failures || [];
+		const changed = s.status === "hash_mismatch";
+		const otherFailures = failures.filter(
+			(c) => c !== UNTRUSTED && !HASH_MISMATCH.test(c),
+		);
+		const signerStatus =
+			s.status === "absent" || !s.status
+				? "absent"
+				: otherFailures.length || s.status === "invalid"
+					? "invalid"
+					: failures.includes(UNTRUSTED) || s.status === "unrecognised_issuer"
+						? "unrecognised_issuer"
+						: "trusted";
+		return {
+			file: {
+				status: changed ? "changed" : s.hashVerified ? "matches" : "unchecked",
+				hashVerified: !!s.hashVerified,
+			},
+			signer: {
+				status: signerStatus,
+				commonName: s.signer?.commonName || "",
+				issuer: s.signer?.issuer || "",
+				algorithm: s.algorithm || "",
+				timeStamp: s.timestamped
+					? { time: s.timestampTime || null, authority: "", trusted: null }
+					: null,
+				manifestCount: s.manifestCount ?? 0,
+				failures,
+			},
+			identity: undefined,
+			fileUrl: null,
+			pageUrl: null,
+			withheld: { fromRecord: 0, fromSignedFile: 0 },
+		};
+	}
+	return {
+		file: exp.file,
+		signer: exp.signer,
+		identity: exp.identity,
+		fileUrl: safeLink(exp.signedFile?.url),
+		pageUrl: safeLink(exp.page?.url),
+		withheld: exp.withheld || { fromRecord: 0, fromSignedFile: 0 },
+	};
+}
+
+/** The word a result's tone is shown with, so it never rests on colour alone. */
+export const TONE_WORDS = {
+	good: "Checks out",
+	caution: "Note",
+	bad: "Problem",
+};
+
+/** The file's result in plain words: { tone, headline, detail }. */
+export function fileVerdict(file) {
+	switch (file?.status) {
+		case "matches":
 			return {
 				tone: "good",
-				headline: "Signature verified",
-				detail: `Signed by ${who}. The film has not changed since it was signed, and the signer is on the Content Credentials trust list.`,
+				headline: "The film is as it was signed",
+				detail:
+					"When the film was signed, its content was checked against the signature and matched. To check a copy you have, see the end of this section.",
+			};
+		case "changed":
+			return {
+				tone: "bad",
+				headline: "The film does not match its signature",
+				detail:
+					"The content changed after it was signed, or the tool that checked it could not read that kind of hash.",
+			};
+		default:
+			return {
+				tone: "caution",
+				headline: "The film's content was not checked",
+				detail:
+					"The tool that read the signed film back could not check its content against the signature.",
+			};
+	}
+}
+
+/** The signer's result in plain words: { tone, headline, detail }. */
+export function signerVerdict(signer) {
+	const who = signer?.commonName || "an unnamed certificate";
+	switch (signer?.status) {
+		case "trusted":
+			return {
+				tone: "good",
+				headline: `Signed by ${who}, a recognised signer`,
+				detail:
+					"The signature checks out, and the signing certificate is on the Content Credentials trust list.",
 			};
 		case "unrecognised_issuer":
 			return {
 				tone: "caution",
-				headline: "Signature checks out; signer not yet on the trust list",
-				detail: `Signed by ${who}. The film has not changed since it was signed. The certificate is not on the public Content Credentials trust list, so verification tools will name the signer as unrecognised.`,
-			};
-		case "hash_mismatch":
-			return {
-				tone: "bad",
-				headline: "Content does not match its signature",
+				headline: `Signed by ${who}; signer not yet on the trust list`,
 				detail:
-					"The file changed after it was signed, or the tool that checked it could not read that kind of hash.",
+					"The signature checks out. The certificate is not on the public Content Credentials trust list, so verification tools name the signer as unrecognised.",
 			};
 		case "invalid":
 			return {
 				tone: "bad",
-				headline: "Signature did not validate",
-				detail: `Failures: ${(sig.failures || []).join(", ") || "unspecified"}.`,
+				headline: "The signature did not validate",
+				detail: `Failures: ${(signer.failures || []).join(", ") || "unspecified"}.`,
 			};
 		default:
 			return {
@@ -485,6 +595,94 @@ export function signatureVerdict(sig) {
 				detail: "The signed file carried no credentials when it was checked.",
 			};
 	}
+}
+
+/** A time as "14 November 2026", the same wherever it is read. */
+function dayOf(iso) {
+	const d = new Date(iso);
+	return Number.isNaN(d.getTime())
+		? ""
+		: d.toLocaleDateString("en-GB", {
+				day: "numeric",
+				month: "long",
+				year: "numeric",
+				timeZone: "UTC",
+			});
+}
+
+/**
+ * The signature's time stamp in a sentence, or null without one. "Not on the
+ * list" names who issued it; it never means the time is wrong.
+ */
+export function timeStampSentence(timeStamp) {
+	if (!timeStamp) return null;
+	const day = timeStamp.time ? dayOf(timeStamp.time) : "";
+	const by = timeStamp.authority ? ` by ${timeStamp.authority}` : "";
+	const first = `Time-stamped${day ? ` on ${day}` : ""}${by}.`;
+	if (timeStamp.trusted === true)
+		return `${first} That time-stamp authority is on the C2PA list.`;
+	if (timeStamp.trusted === false)
+		return `${first} That authority is not on the C2PA list of time-stamp authorities: this says who issued the time stamp, not that the time is wrong.`;
+	return first;
+}
+
+const ROLE_WORDS = {
+	"cawg.creator": "Creator",
+	"cawg.contributor": "Contributor",
+	"cawg.editor": "Editor",
+	"cawg.producer": "Producer",
+	"cawg.publisher": "Publisher",
+	"cawg.sponsor": "Sponsor",
+	"cawg.translator": "Translator",
+};
+
+/**
+ * The creator's identity in plain words: { tone, headline, detail }, or null
+ * when there is nothing to say (none in the file, or a format 1 record that
+ * did not record one).
+ */
+export function identityVerdict(identity) {
+	if (!identity) return null;
+	const role =
+		ROLE_WORDS[(identity.roles || []).find((r) => ROLE_WORDS[r])] || "Named";
+	const name = identity.name || "an unnamed person";
+	switch (identity.status) {
+		case "trusted":
+			return {
+				tone: "good",
+				headline: `${role}: ${name}, verified`,
+				detail: `Their identity is signed into the file with a certificate${identity.issuer ? ` from ${identity.issuer}` : ""} that verification tools trust.`,
+			};
+		case "unrecognised_issuer":
+			return {
+				tone: "caution",
+				headline: `${role}: ${name}, self-declared`,
+				detail:
+					"Their identity is signed into the file, apart from the signature, and checks out, but no issuer that verification tools recognise vouches for it. Read the name as the creator's own statement.",
+			};
+		default:
+			return {
+				tone: "bad",
+				headline: "The creator's identity did not validate",
+				detail:
+					"An identity was signed into the file, but it does not check out.",
+			};
+	}
+}
+
+/** What the creator left out, in a sentence, or null when nothing was. */
+export function withheldSentence(withheld) {
+	const fromRecord = withheld?.fromRecord || 0;
+	const fromFile = withheld?.fromSignedFile || 0;
+	if (!fromRecord && !fromFile) return null;
+	const n = (k) => `${k} detail${k === 1 ? "" : "s"}`;
+	const parts = [];
+	if (fromRecord) parts.push(`${n(fromRecord)} from this record`);
+	if (fromFile)
+		parts.push(
+			`${n(fromFile)} from its sources' credentials in the signed film`,
+		);
+	return `The creator chose to leave out ${parts.join(" and ")}. What was left out is not shown; the signed film says where something was removed.`;
 }
 
 /** "a1b2 c3d4 ..." for reading a hash aloud or by eye. */
@@ -507,9 +705,9 @@ export function formatBytes(n) {
 export function assertViewable(exp) {
 	if (!exp || exp.format !== "provenance-tracker.public-export")
 		throw new Error("This is not a provenance tracker public export.");
-	if (exp.formatVersion !== 1)
+	if (exp.formatVersion !== 1 && exp.formatVersion !== 2)
 		throw new Error(
-			`This viewer reads export format 1, not ${exp.formatVersion}.`,
+			`This viewer reads export formats 1 and 2, not ${exp.formatVersion}. A newer viewer may read it.`,
 		);
 	if (!exp.composition?.picture?.intervals)
 		throw new Error("The export has no picture timeline.");

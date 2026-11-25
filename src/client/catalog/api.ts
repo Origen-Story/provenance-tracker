@@ -720,10 +720,26 @@ export interface PublicExport {
 	ingredients: Array<{ title: string; fileName: string }>;
 	composition: { picture?: Lane; audio?: Lane };
 	untracked: unknown[];
-	signedFile: { fileName: string; bytes: number; sha256: string };
-	signature: {
-		statusLabel: string;
-		signer: { commonName?: string } | null;
-		timestamped: boolean;
+	signedFile: {
+		fileName: string;
+		bytes: number;
+		sha256: string;
+		version: number | null;
+		url: string | null;
 	};
+	page: { url: string | null };
+	/** Export format 2 (D57): the file, the signer and the identity, read apart. */
+	file: { status: "matches" | "changed" | "unchecked"; hashVerified: boolean };
+	signer: {
+		status: string;
+		statusLabel: string;
+		commonName: string;
+		timeStamp: {
+			time: string | null;
+			authority: string;
+			trusted: boolean | null;
+		} | null;
+	};
+	identity: { status: string; name: string; roles: string[] } | null;
+	withheld: { fromRecord: number; fromSignedFile: number };
 }

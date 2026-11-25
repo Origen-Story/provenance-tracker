@@ -339,6 +339,7 @@ describe("signatureForExport", () => {
 			version: 1,
 			statementJson: STATEMENT_V2,
 			reportJson: '{"validation_state":"Valid"}',
+			definitionJson: '{"title":"cut.mp4"}',
 			signedPath: "exports/cut.signed.v1.mp4",
 			signedHash: FILES.signed.sha256,
 			signedSize: FILES.signed.size,

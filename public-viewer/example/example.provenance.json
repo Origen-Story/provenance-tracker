@@ -1,6 +1,6 @@
 {
 	"format": "provenance-tracker.public-export",
-	"formatVersion": 1,
+	"formatVersion": 2,
 	"generatedAt": "2026-11-14T09:31:00Z",
 	"generator": {
 		"name": "provenance-tracker",
@@ -21,7 +21,7 @@
 		"organization": "Example Studio",
 		"editedWith": "Premiere Pro",
 		"statedAt": "2026-11-14T09:30:00Z",
-		"statementVersion": 2
+		"statementVersion": 3
 	},
 	"composition": {
 		"picture": {
@@ -394,22 +394,39 @@
 		"sha256": "af02401ae9b5adb63e5187d9ad3fd143ba091eabf1962f621ab6a76d8b376303",
 		"bytes": 412345678,
 		"version": 1,
-		"signedAt": "2026-11-14T09:30:05.000Z"
+		"signedAt": "2026-11-14T09:30:05.000Z",
+		"url": "https://media.example.org/films/morning-market.signed.v1.mp4"
 	},
-	"signature": {
-		"status": "valid",
-		"statusLabel": "Valid",
-		"hashVerified": true,
-		"issuerRecognised": true,
-		"signer": {
-			"commonName": "Example Studio",
-			"issuer": "Example Trust Services CA"
-		},
+	"page": {
+		"url": "https://example.org/films/morning-market"
+	},
+	"file": {
+		"status": "matches",
+		"hashVerified": true
+	},
+	"signer": {
+		"status": "trusted",
+		"statusLabel": "Valid, on the C2PA trust list",
+		"commonName": "Example Studio",
+		"issuer": "Example Trust Services CA",
 		"algorithm": "Es256",
-		"timestamped": true,
-		"timestampTime": "2026-11-14T09:30:04Z",
+		"timeStamp": {
+			"time": "2026-11-14T09:30:04Z",
+			"authority": "Example Time Stamp Authority",
+			"trusted": true
+		},
 		"manifestCount": 7,
 		"failures": []
+	},
+	"identity": {
+		"status": "unrecognised_issuer",
+		"name": "A. Example",
+		"issuer": "Example Identity Issuer",
+		"roles": ["cawg.creator"]
+	},
+	"withheld": {
+		"fromRecord": 0,
+		"fromSignedFile": 0
 	},
 	"vocabulary": {
 		"positions": [

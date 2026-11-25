@@ -1,6 +1,6 @@
 // A small JSON Schema checker for tests: the subset the public export schema
 // uses (type, const, enum, required, properties, additionalProperties, items,
-// minimum, local $ref). Enough to keep a builder and its schema in step
+// minimum, pattern on strings, local $ref). Enough to keep a builder and its schema in step
 // without a validator dependency. Returns a list of problems, empty when valid.
 
 const typeOf = (v) =>
@@ -41,6 +41,14 @@ export function validate(schema, value, root = schema, at = "$") {
 		value < schema.minimum
 	)
 		errors.push(`${at}: below ${schema.minimum}`);
+	if (
+		schema.pattern &&
+		typeof value === "string" &&
+		!new RegExp(schema.pattern, "u").test(value)
+	)
+		errors.push(
+			`${at}: ${JSON.stringify(value)} does not match ${schema.pattern}`,
+		);
 	if (value && typeof value === "object" && !Array.isArray(value)) {
 		for (const k of schema.required || [])
 			if (!(k in value)) errors.push(`${at}: missing ${k}`);

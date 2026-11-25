@@ -8,10 +8,14 @@
 // project carries on. No paths, no database ids: file names only, and the
 // ingredient refs (ing-1, ing-2...) that the manifest itself uses.
 //
-// Schema: spec/public-export.v1.schema.json. Bump EXPORT_FORMAT_VERSION
-// on any change a viewer would have to handle differently.
+// Schema: spec/public-export.v2.schema.json (format 2, D57); format 1's is
+// spec/public-export.v1.schema.json. Bump EXPORT_FORMAT_VERSION on any change
+// a viewer would have to handle differently. Format 1 is still built by
+// buildPublicExportV1, for the Postgres migration's check that its exports
+// come out byte for byte as they were (D34).
 
-import { interpretReport } from "./verify.js";
+import { interpretReport, readTimeStamp } from "./verify.js";
+import { readIdentity } from "./identity.ts";
 import { fileNameOf } from "./build.js";
 import {
 	POSITIONS,
@@ -21,7 +25,7 @@ import {
 } from "../origin-vocabulary.js";
 
 export const EXPORT_FORMAT = "provenance-tracker.public-export";
-export const EXPORT_FORMAT_VERSION = 1;
+export const EXPORT_FORMAT_VERSION = 2;
 const MIN_STATEMENT_VERSION = 2;
 
 function parse(json, what) {
@@ -59,13 +63,15 @@ export function matchReadBack(statementIngredients, readBackIngredients) {
 }
 
 /**
+ * Format 1, as every export was until D57: one `signature` block for the
+ * file, the signer and the time stamp together, and no identity.
  * @param {object} a
  * @param {object} a.signature   a `signatures` row of kind 'output' (statementJson and reportJson
  *                               as stored strings, or already parsed as `statement` / `report`)
  * @param {string} a.generatedAt ISO time
  * @param {object} a.generator   { name, version }
  */
-export function buildPublicExport({ signature, generatedAt, generator }) {
+export function buildPublicExportV1({ signature, generatedAt, generator }) {
 	if (!signature) throw new Error("No signature to export");
 	if (signature.kind !== "output")
 		throw new Error("Only a signed output has a public export");
@@ -124,7 +130,7 @@ export function buildPublicExport({ signature, generatedAt, generator }) {
 
 	return {
 		format: EXPORT_FORMAT,
-		formatVersion: EXPORT_FORMAT_VERSION,
+		formatVersion: 1,
 		generatedAt,
 		generator: {
 			name: generator?.name || "",
@@ -215,6 +221,104 @@ export function buildPublicExport({ signature, generatedAt, generator }) {
 				}),
 			),
 		},
+	};
+}
+
+/** A whole https:// address, as a browser writes it, or null. */
+function httpsOrNull(value) {
+	if (typeof value !== "string" || !URL.canParse(value)) return null;
+	const url = new URL(value);
+	return url.protocol === "https:" &&
+		url.hostname &&
+		!url.username &&
+		!url.password
+		? url.href
+		: null;
+}
+
+const SIGNER_LABELS = {
+	trusted: "Valid, on the C2PA trust list",
+	unrecognised_issuer: "Valid, unrecognised issuer",
+	invalid: "Invalid",
+	absent: "No Content Credentials",
+};
+
+/**
+ * Format 2 (D57): format 1's record of how the film was made, with the
+ * single signature block split into three results that a page shows apart,
+ * never as one badge: the file (does its content match what was signed),
+ * the signer (the claim signature, its issuer and its time stamp), and the
+ * creator's identity (a CAWG identity assertion, read on its own). It also
+ * says where the signed copy is published, and how many details the
+ * creator left out, without saying what.
+ * @param {object} a
+ * @param {object} a.signature    as for buildPublicExportV1, plus `definition` (the stored manifest definition)
+ * @param {object|null} [a.publication] where the signed copy is published: { fileUrl, pageUrl, withheld }
+ * @param {string} a.generatedAt  ISO time
+ * @param {object} a.generator    { name, version }
+ */
+export function buildPublicExport({
+	signature,
+	publication = null,
+	generatedAt,
+	generator,
+}) {
+	const { signature: _single, ...v1 } = buildPublicExportV1({
+		signature,
+		generatedAt,
+		generator,
+	});
+	void _single;
+	const report = parse(
+		signature.report ?? signature.reportJson,
+		"read-back report",
+	);
+	const v = interpretReport(report);
+	const identity = readIdentity(report);
+	const definition = parse(
+		signature.definition ?? signature.definitionJson,
+		"stored definition",
+	);
+	const { vocabulary, signedFile, ...rest } = v1;
+	return {
+		...rest,
+		formatVersion: EXPORT_FORMAT_VERSION,
+		signedFile: { ...signedFile, url: httpsOrNull(publication?.fileUrl) },
+		page: { url: httpsOrNull(publication?.pageUrl) },
+		file: {
+			status:
+				v.status === "hash_mismatch"
+					? "changed"
+					: v.hashVerified
+						? "matches"
+						: "unchecked",
+			hashVerified: v.hashVerified,
+		},
+		signer: {
+			status: v.claim,
+			statusLabel: SIGNER_LABELS[v.claim],
+			commonName: v.signer?.commonName || "",
+			issuer: v.signer?.issuer || "",
+			algorithm: v.signer?.alg || "",
+			timeStamp: readTimeStamp(report),
+			manifestCount: v.manifests,
+			failures: v.failures.map((f) => f.code),
+		},
+		identity: identity && {
+			status: identity.status,
+			name: identity.name,
+			issuer: identity.issuer,
+			roles: identity.roles,
+		},
+		withheld: {
+			fromRecord: Array.isArray(publication?.withheld)
+				? publication.withheld.length
+				: 0,
+			fromSignedFile: Array.isArray(definition?.redactions)
+				? definition.redactions.length
+				: 0,
+		},
+		vocabulary,
 	};
 }
 

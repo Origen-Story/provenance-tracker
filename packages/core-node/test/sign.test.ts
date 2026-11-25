@@ -703,12 +703,22 @@ describe.each(ENGINES)("signOutput with $name", ({ name, recorded, ready }) => {
 						"..",
 						"..",
 						"spec",
-						"public-export.v1.schema.json",
+						"public-export.v2.schema.json",
 					),
 					"utf8",
 				),
 			);
 			expect(validate(schema, data)).toEqual([]);
+			// Three results, read apart (D57). A throwaway certificate, no identity.
+			expect(data).toMatchObject({
+				formatVersion: 2,
+				file: { status: "matches", hashVerified: true },
+				signer: { status: "unrecognised_issuer" },
+				identity: null,
+				signedFile: { url: null },
+				page: { url: null },
+				withheld: { fromRecord: 0, fromSignedFile: 0 },
+			});
 		},
 		120000,
 	);

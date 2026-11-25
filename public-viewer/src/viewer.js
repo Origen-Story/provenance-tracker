@@ -11,8 +11,9 @@
 //   });
 //
 // Everything shown comes from the public export, which may come from anyone:
-// text is only ever set as text (no innerHTML), and links are only the ones
-// the page passes in.
+// text is only ever set as text (no innerHTML). Links are the ones the page
+// passes in, and the signed file's and page's addresses an export records,
+// used only when they are https (safeLink in model.js).
 
 import {
 	SPECTRUM,
@@ -21,7 +22,13 @@ import {
 	filmSummary,
 	sectionDetail,
 	ingredientProvenance,
-	signatureVerdict,
+	resultsOf,
+	fileVerdict,
+	signerVerdict,
+	identityVerdict,
+	timeStampSentence,
+	withheldSentence,
+	TONE_WORDS,
 	groupHash,
 	formatBytes,
 	assertViewable,
@@ -117,6 +124,8 @@ class Viewer {
 		this.root = root;
 		this.exp = exp;
 		this.opts = opts;
+		// The file, the signer and the identity, read the same way from export format 1 or 2.
+		this.results = resultsOf(exp);
 		this.duration =
 			exp.film.durationSeconds ||
 			Math.max(
@@ -1102,7 +1111,7 @@ class Viewer {
 		const s = this.exp.statement;
 		const who =
 			[s.author, s.organization].filter(Boolean).join(", ") ||
-			this.exp.signature.signer?.commonName ||
+			this.results.signer.commonName ||
 			"";
 		const when = this.exp.signedFile.signedAt || s.statedAt;
 		const date = when
@@ -1123,24 +1132,48 @@ class Viewer {
 		);
 	}
 
-	// Always shown: who signed it, whether the signature checks out, and the
-	// technical record behind that, folded.
+	// Always shown: who signed it, then what the signature shows as separate
+	// results, never one badge (D57): the film itself, the signer, and the
+	// creator's identity when the file carries one. Each result says its tone
+	// in words, so it never rests on colour. The technical record is folded.
 	renderSignature() {
-		const { exp, opts } = this;
+		const { exp, opts, results: r } = this;
 		const f = exp.signedFile;
-		const s = exp.signature;
-		const verdict = signatureVerdict(s);
+		const s = r.signer;
+		const card = (label, verdict, ...more) =>
+			h(
+				"li",
+				{ class: `ptv-verdict-card ptv-tone-${verdict.tone}` },
+				h(
+					"h4",
+					{ class: "ptv-result-h" },
+					h("span", { class: "ptv-result-label" }, label),
+					h("span", { class: "ptv-tone-word" }, TONE_WORDS[verdict.tone]),
+				),
+				h("strong", {}, verdict.headline),
+				h("p", {}, verdict.detail),
+				...more,
+			);
+		const stamp = timeStampSentence(s.timeStamp);
+		const identity = identityVerdict(r.identity);
+		const withheld = withheldSentence(r.withheld);
 		return h(
 			"section",
 			{ class: "ptv-signature", "aria-labelledby": "ptv-signature-h" },
 			h("h3", { class: "ptv-h", id: "ptv-signature-h" }, "Signature"),
 			this.signedBy(),
 			h(
-				"div",
-				{ class: `ptv-verdict-card ptv-tone-${verdict.tone}` },
-				h("strong", {}, verdict.headline),
-				h("p", {}, verdict.detail),
+				"ul",
+				{ class: "ptv-results", "aria-label": "What the signature shows" },
+				card("The film", fileVerdict(r.file)),
+				card(
+					"The signer",
+					signerVerdict(s),
+					stamp ? h("p", { class: "ptv-stamp" }, stamp) : null,
+				),
+				identity ? card("The creator", identity) : null,
 			),
+			withheld ? h("p", { class: "ptv-muted ptv-small" }, withheld) : null,
 			h(
 				"details",
 				{ class: "ptv-fold ptv-tech" },
@@ -1159,9 +1192,9 @@ class Viewer {
 					h(
 						"dd",
 						{},
-						s.signer
-							? `${s.signer.commonName || "unnamed"}${s.signer.issuer ? `, issued by ${s.signer.issuer}` : ""}`
-							: "none",
+						s.status === "absent"
+							? "none"
+							: `${s.commonName || "unnamed"}${s.issuer ? `, issued by ${s.issuer}` : ""}`,
 					),
 					h("dt", {}, "Algorithm"),
 					h("dd", { class: "ptv-mono" }, s.algorithm || "–"),
@@ -1169,12 +1202,26 @@ class Viewer {
 					h(
 						"dd",
 						{},
-						s.timestamped && s.timestampTime
-							? new Date(s.timestampTime).toISOString()
+						s.timeStamp?.time
+							? `${new Date(s.timeStamp.time).toISOString()}${s.timeStamp.authority ? `, ${s.timeStamp.authority}` : ""}`
 							: "none",
 					),
+					r.identity
+						? [
+								h("dt", {}, "Creator identity"),
+								h(
+									"dd",
+									{},
+									`${r.identity.name || "unnamed"}${r.identity.issuer ? `, issued by ${r.identity.issuer}` : ""}${r.identity.roles?.length ? ` (${r.identity.roles.join(", ")})` : ""}`,
+								),
+							]
+						: null,
 					h("dt", {}, "Content hash"),
-					h("dd", {}, s.hashVerified ? "verified when signed" : "not verified"),
+					h(
+						"dd",
+						{},
+						r.file.hashVerified ? "verified when signed" : "not verified",
+					),
 					h("dt", {}, "Manifests in the file"),
 					h("dd", {}, String(s.manifestCount)),
 					h("dt", {}, "Validation codes"),
@@ -1189,11 +1236,21 @@ class Viewer {
 						{},
 						`version ${exp.statement.statementVersion}, assertion org.provenancetracker.creator_statement`,
 					),
+					r.pageUrl
+						? [
+								h("dt", {}, "Published at"),
+								h(
+									"dd",
+									{ class: "ptv-mono" },
+									h("a", { href: r.pageUrl, rel: "noopener" }, r.pageUrl),
+								),
+							]
+						: null,
 					h("dt", {}, "Record"),
 					h(
 						"dd",
 						{},
-						`${exp.generator.name} ${exp.generator.version}, ${exp.generatedAt}`,
+						`${exp.generator.name} ${exp.generator.version}, ${exp.generatedAt}, export format ${exp.formatVersion}`,
 						opts.exportUrl
 							? [
 									" · ",
@@ -1226,12 +1283,14 @@ class Viewer {
 				copy.textContent = "Copy";
 			}, 2000);
 		});
-		const download = opts.download?.url
+		// The page's own link first; else where the export says the signed file is (https only).
+		const fileUrl = opts.download?.url || this.results.fileUrl;
+		const download = fileUrl
 			? h(
 					"a",
 					{
 						class: "ptv-button",
-						href: opts.download.url,
+						href: fileUrl,
 						download: f.fileName,
 						rel: "noopener",
 					},

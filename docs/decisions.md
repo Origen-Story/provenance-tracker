@@ -208,3 +208,16 @@ Short numbered log of decisions that shape the code. Add a line when one is made
   - _Checked:_
     - in tests, a family of edits on the sample catalog (two revisions, a branch, a trailer made from the newest), the API, and the name matching;
     - on a copy of the demo project, never the project itself, the app showed the film's two revisions with their signed and published copies.
+- **D61 (2026-11-25) The viewer can read the credentials inside a visitor's copy, through a reader the page passes in.** Phase 8, step 3, second part; Matt's decision 2 (the spike decides; linking to an independent verifier is an acceptable fallback). No new dependency in the repo.
+  - _The spike._ `@contentauth/c2pa-web` 0.16.1, in a desktop browser, read the signed 354 MB demo film's credentials in about 2 s, against the pinned C2PA trust list, and reached the tracker's own verdict (D58).
+  - _Why it comes from the page._ The library imports other packages by name and runs in a worker, so it needs a bundler. The viewer has none and stays plain modules with no dependencies, and a 9 MB WebAssembly file doesn't belong in this repository. So a page passes `readCredentials(file) → report | null` to `mountViewer`, built with its own bundler. The viewer README shows how, with c2pa-web.
+  - _What the viewer does with the report_ (`readCopyCredentials` and `credentialVerdict` in `model.js`, pure):
+    - it reads the report as the tracker reads its own: content hash first, then the claim signature, then trust, with the identity's `cawg.*` codes left out;
+    - it says "unchanged" only when the reader reported a content-hash match;
+    - it says whether the signer is the one the record names.
+
+    The reading runs beside the hash check (D58), in a second card in the same live region, and only when a page passes a reader. Without one, the viewer is as it was, and Content Credentials Verify stays the way to read a copy's credentials.
+
+  - _Checked:_
+    - in tests, with made-up reports in the shape the spike read;
+    - end to end, in a headless browser: the spike page read the demo film with c2pa-web and passed the report to these functions with the film's real format 2 record. They gave "Signed by … and unchanged; signer not on the trust list … That is the signer this record names."

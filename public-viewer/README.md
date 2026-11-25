@@ -50,6 +50,39 @@ Everything shown comes from the export file. The viewer sets text only as text (
 
 **Checking a copy (D58).** Under "Check it yourself", a visitor can pick a copy of the film from their own device. The viewer reads it a slice at a time, works out its SHA-256 with its own code (`src/sha256.js`; the browser's built-in hash wants the whole file in memory at once), and compares it with the record's. The file is read on the visitor's device and never uploaded, and a copy of another size is answered at once. A match says the copy is the file this record describes, byte for byte. It does not make the record true: a record someone else made could carry the fingerprint of any file. So it is worth as much as the place the record came from, normally the creator's own page. The signed 354 MB demo film took about 3 seconds in a desktop browser.
 
+**Reading the credentials inside a copy (D61, optional).** A page can also have the viewer read the Content Credentials inside the copy a visitor picks, independently of this record, by passing `readCredentials`: a function that takes the file and returns a C2PA reader's report, or `null` when the file has none. The viewer has no build step, so it does not bundle a C2PA reader itself; a site that has a bundler builds one with [`@contentauth/c2pa-web`](https://www.npmjs.com/package/@contentauth/c2pa-web) and passes it in. The viewer then shows a second card, "Its Content Credentials": signed by whom, whether the content is unchanged, whether the signer is on the trust list, and whether it is the signer this record names. It reads the report the way the tracker reads its own: content first, then the signature, then trust, with the identity's codes left out of the result.
+
+```js
+import { createC2pa, Reader, Context } from "@contentauth/c2pa-web";
+import wasmSrc from "@contentauth/c2pa-web/resources/c2pa.wasm?url";
+
+const c2pa = await createC2pa({ wasmSrc }); // the site serves the 9 MB .wasm itself
+const trust = new Context({
+	verify: { verifyTrust: true },
+	// The C2PA trust list, hosted by the site (npm run tools:fetch puts a pinned copy in tools/trust-lists/).
+	trust: { trustAnchors: await (await fetch("/C2PA-TRUST-LIST.pem")).text() },
+});
+mountViewer(element, {
+	exportUrl: "/credentials/my-film.provenance.json",
+	readCredentials: async (file) => {
+		const reader = await Reader.fromBlob(
+			c2pa,
+			file.type || "video/mp4",
+			file,
+			trust,
+		);
+		if (!reader) return null;
+		try {
+			return await reader.json();
+		} finally {
+			await reader.free();
+		}
+	},
+});
+```
+
+In a desktop browser, c2pa-web 0.16.1 read the signed 354 MB demo film in about 2 seconds and gave the tracker's own verdict. A phone is untested. Take the newest c2pa-web release at least 14 days old, as the tracker does with its own dependencies.
+
 **Formats.** The viewer reads export formats 1 and 2. Format 2 (D57) shows what the signature says as separate results, never one badge: the film (did its content match what was signed), the signer (whether a reader recognises the certificate, and who issued the time stamp), and the creator's identity when the file carries one, marked self-declared when no recognised issuer vouches for it. Each result says its tone in words as well as colour. A format 1 record has one signature block and no identity, so the viewer shows the film and the signer and says nothing about an identity. A viewer older than format 2 refuses a format 2 export with "This viewer reads export format 1, not 2": update a site's copy of `src/` before publishing a format 2 export ([docs/publishing.md](../docs/publishing.md)).
 
 ## Files

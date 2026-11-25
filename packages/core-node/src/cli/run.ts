@@ -56,6 +56,8 @@ import {
 } from "../sign/signing-settings.ts";
 import { classifyCatalog } from "@provenancetracker/core/catalog/classify.ts";
 import { listAssets } from "@provenancetracker/core/catalog/read.ts";
+import { setPublication } from "@provenancetracker/core/catalog/edits.ts";
+import { publicationOf } from "@provenancetracker/core/catalog/publications.ts";
 
 export interface Io {
 	machine: Machine;
@@ -92,6 +94,10 @@ Usage: npm run cli -- <command> [options]
   sign <asset id> [--timestamp <url>] Sign it: a finished edit gets a signed copy beside its
        [--engine library|c2patool]    file; any other asset a .c2pa sidecar beside it. The
                                       engine is this machine's setting unless named
+  publish <asset id> [--version <n>]  Where a finished edit's signed copies are published (D56)
+       [--file <url>] [--page <url>]  Set where the signed file is hosted and the page that
+                                      shows it (https; "" for none) on the newest signed copy,
+                                      or the one --version names
   verify [--hash] [--root <name>]    Check the catalog, and that every file is still as it was
   show <file>                         Everything the catalog knows about one file
   settings                            Show this machine's settings
@@ -132,6 +138,9 @@ const OPTIONS = {
 	clear: { type: "boolean" },
 	timestamp: { type: "string" },
 	engine: { type: "string" },
+	version: { type: "string" },
+	file: { type: "string" },
+	page: { type: "string" },
 } as const;
 
 type Values = {
@@ -152,6 +161,9 @@ type Values = {
 	clear?: boolean;
 	timestamp?: string;
 	engine?: string;
+	version?: string;
+	file?: string;
+	page?: string;
 };
 
 /** A signing engine's name as typed, or a usage error naming the choices. */
@@ -644,6 +656,64 @@ async function sign(io: Io, args: string[], values: Values): Promise<number> {
 		return 0;
 	});
 }
+/**
+ * Where a finished edit's signed copies are published (D56): list them, or
+ * set the newest's (or --version's) addresses, under the person's name.
+ */
+async function publish(
+	io: Io,
+	args: string[],
+	values: Values,
+): Promise<number> {
+	needArgs(
+		args,
+		1,
+		"publish <asset id> [--version <n>] [--file <url>] [--page <url>]",
+	);
+	const id = Number(args[0]);
+	if (!Number.isSafeInteger(id) || id < 1)
+		throw new UsageError("The asset id is a whole number (see the asset list)");
+	const version = values.version === undefined ? null : Number(values.version);
+	if (version !== null && (!Number.isSafeInteger(version) || version < 1))
+		throw new UsageError("--version is a signed copy's number: 1, 2, ...");
+	const setting = values.file !== undefined || values.page !== undefined;
+	return withProject(io, values, (project) => {
+		const signed = project.db
+			.prepare(
+				"SELECT id, version FROM signatures WHERE asset_id = ? AND kind = 'output' ORDER BY version",
+			)
+			.all(id) as Array<{ id: number; version: number }>;
+		if (signed.length === 0)
+			throw new Error(
+				`Asset ${id} has no signed copy of a finished edit. Sign it first: npm run cli -- sign ${id}`,
+			);
+		if (setting) {
+			const target =
+				version === null
+					? signed[signed.length - 1]
+					: signed.find((s) => s.version === version);
+			if (!target)
+				throw new Error(`Asset ${id} has no signed copy v${version}`);
+			const fields: Record<string, string> = {};
+			if (values.file !== undefined) fields.file_url = values.file;
+			if (values.page !== undefined) fields.page_url = values.page;
+			setPublication(project.db, target.id, fields, {
+				actor: person(io, values),
+				note: values.note,
+				tool: TOOL,
+			});
+		}
+		for (const s of signed) {
+			if (version !== null && s.version !== version) continue;
+			const p = publicationOf(project.db, s.id);
+			io.out(`Signed copy v${s.version}:`);
+			io.out(`  signed file: ${p?.fileUrl || "(not published)"}`);
+			io.out(`  page:        ${p?.pageUrl || "(none)"}`);
+		}
+		return 0;
+	});
+}
+
 async function classify(
 	io: Io,
 	args: string[],
@@ -987,6 +1057,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
 				return await identity(io, args, values);
 			case "sign":
 				return await sign(io, args, values);
+			case "publish":
+				return await publish(io, args, values);
 			case "verify":
 				return await verify(io, args, values);
 			case "show":

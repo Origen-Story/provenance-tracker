@@ -7,7 +7,12 @@ The formats that other people's software relies on. Each has a version number, e
 | Creator statement: the data of the C2PA assertion `org.provenancetracker.creator_statement`, signed into a finished film | 3       | [`creator-statement.v3.schema.json`](creator-statement.v3.schema.json) | `buildCreatorStatement` in [`packages/core/src/manifest/build.js`](../packages/core/src/manifest/build.js)             |
 | Public export: `<name>.provenance.json`, what the public viewer reads                                                    | 1       | [`public-export.v1.schema.json`](public-export.v1.schema.json)         | `buildPublicExport` in [`packages/core/src/manifest/public-export.js`](../packages/core/src/manifest/public-export.js) |
 
-The catalog, one SQLite file per project, is also a format with a version: [`catalog/catalog.v1.sql`](catalog/catalog.v1.sql) is format 1's SQL, written from [`packages/core/src/catalog/schema-v1.ts`](../packages/core/src/catalog/schema-v1.ts) by `npm run catalog:write`, with its opening and upgrade rules in docs/decisions.md D26. Format 1 is released: the first real catalogs were written in it (D35), so it is fixed, and a change is format 2.
+The catalog, one SQLite file per project, is also a format with a version, with its opening and upgrade rules in docs/decisions.md D26. Each format's SQL is written from its source by `npm run catalog:write`:
+
+- [`catalog/catalog.v1.sql`](catalog/catalog.v1.sql), format 1, from [`schema-v1.ts`](../packages/core/src/catalog/schema-v1.ts): the first real catalogs were written in it (D35).
+- [`catalog/catalog.v2.sql`](catalog/catalog.v2.sql), format 2, from [`schema-v2.ts`](../packages/core/src/catalog/schema-v2.ts): format 1 plus `publications`, where a signed copy is published (D56). The current format.
+
+Both are released, so neither changes: a change is format 3, with an upgrade step. Opening a format 1 catalog upgrades it to format 2.
 
 The origin classes used in the statement and the export are IPTC Digital Source Type codes or `unknown`; their definitions and colours are in [`docs/vocabulary.md`](../docs/vocabulary.md).
 

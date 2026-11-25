@@ -10,6 +10,7 @@ import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { EDITABLE, EDITABLE_META } from "./fields.ts";
 import { ORIGIN_CLASS_DEFS, POSITIONS } from "../origin-vocabulary.js";
 import { readIdentity } from "../manifest/identity.ts";
+import { publicationOf } from "./publications.ts";
 
 /** The identity a stored reading shows, by name and verdict (D55). */
 function identityOf(
@@ -368,6 +369,8 @@ export interface AssetRecord {
 		status: string;
 		timestamped: boolean;
 		signedAt: string;
+		/** Where this signed copy is published (D56); null if never. */
+		publication: { fileUrl: string; pageUrl: string } | null;
 	}>;
 	/** The newest changes to the asset's own fields, newest first. */
 	history: Array<{
@@ -522,6 +525,7 @@ export function assetRecord(
 			status: s.status as string,
 			timestamped: bool(s.timestamped),
 			signedAt: s.signed_at as string,
+			publication: publishedAt(db, s.id as number),
 		})),
 		history: (
 			db
@@ -540,4 +544,13 @@ export function assetRecord(
 			note: h.note as string,
 		})),
 	};
+}
+
+/** A signed copy's web addresses, as an asset's record shows them. */
+function publishedAt(
+	db: DatabaseSync,
+	signatureId: number,
+): { fileUrl: string; pageUrl: string } | null {
+	const p = publicationOf(db, signatureId);
+	return p ? { fileUrl: p.fileUrl, pageUrl: p.pageUrl } : null;
 }

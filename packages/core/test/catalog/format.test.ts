@@ -12,6 +12,8 @@ import {
 	refusalMessage,
 } from "../../src/catalog/format.ts";
 import { createCatalog, CURRENT_SCHEMA_SQL } from "../../src/catalog/create.ts";
+import { CATALOG_V1_SQL } from "../../src/catalog/schema-v1.ts";
+import { PUBLICATIONS_SQL } from "../../src/catalog/schema-v2.ts";
 import { upgradeCatalog, UPGRADES } from "../../src/catalog/upgrade.ts";
 import { editRow, removeRow } from "../../src/catalog/edit.ts";
 import {
@@ -333,12 +335,13 @@ describe("opening rules", () => {
 });
 
 describe("upgrading", () => {
-	// A made-up format 2, to test the machinery before a real one exists.
-	const toV2 = [
+	// A made-up next format, to test the machinery on whatever format is current.
+	const N = CATALOG_FORMAT;
+	const toNext = [
 		{
-			from: 1,
-			to: 2,
-			sql: "ALTER TABLE roots ADD COLUMN colour TEXT NOT NULL DEFAULT ''; PRAGMA user_version = 2;",
+			from: N,
+			to: N + 1,
+			sql: `ALTER TABLE roots ADD COLUMN colour TEXT NOT NULL DEFAULT ''; PRAGMA user_version = ${N + 1};`,
 		},
 	];
 
@@ -353,23 +356,23 @@ describe("upgrading", () => {
 	it("applies each step in order and records where the copy was saved", () => {
 		const db = sample();
 		const applied = upgradeCatalog(db, {
-			backup: "catalog.before-v2.sqlite",
+			backup: "catalog.before-next.sqlite",
 			tool: TEST_TOOL,
-			steps: toV2,
-			target: 2,
+			steps: toNext,
+			target: N + 1,
 			now: AT,
 		});
-		expect(applied).toEqual([{ from: 1, to: 2 }]);
-		expect(one(db, "PRAGMA user_version").user_version).toBe(2);
+		expect(applied).toEqual([{ from: N, to: N + 1 }]);
+		expect(one(db, "PRAGMA user_version").user_version).toBe(N + 1);
 		const run = one(
 			db,
 			"SELECT kind, summary FROM runs ORDER BY id DESC LIMIT 1",
 		);
 		expect(run.kind).toBe("upgrade");
 		expect(JSON.parse(String(run.summary))).toEqual({
-			from: 1,
-			to: 2,
-			backup: "catalog.before-v2.sqlite",
+			from: N,
+			to: N + 1,
+			backup: "catalog.before-next.sqlite",
 		});
 	});
 
@@ -379,11 +382,11 @@ describe("upgrading", () => {
 			upgradeCatalog(db, {
 				backup: " ",
 				tool: TEST_TOOL,
-				steps: toV2,
-				target: 2,
+				steps: toNext,
+				target: N + 1,
 			}),
 		).toThrow(/Save a copy/);
-		expect(one(db, "PRAGMA user_version").user_version).toBe(1);
+		expect(one(db, "PRAGMA user_version").user_version).toBe(N);
 	});
 
 	it("rolls a failed step back, leaving the catalog as it was", () => {
@@ -391,9 +394,9 @@ describe("upgrading", () => {
 		const runsBefore = one(db, "SELECT count(*) AS n FROM runs").n;
 		const broken = [
 			{
-				from: 1,
-				to: 2,
-				sql: "ALTER TABLE roots ADD COLUMN colour TEXT; PRAGMA user_version = 2; SELECT * FROM no_such_table;",
+				from: N,
+				to: N + 1,
+				sql: `ALTER TABLE roots ADD COLUMN colour TEXT; PRAGMA user_version = ${N + 1}; SELECT * FROM no_such_table;`,
 			},
 		];
 		expect(() =>
@@ -401,10 +404,10 @@ describe("upgrading", () => {
 				backup: "copy",
 				tool: TEST_TOOL,
 				steps: broken,
-				target: 2,
+				target: N + 1,
 			}),
 		).toThrow(/no such table/);
-		expect(one(db, "PRAGMA user_version").user_version).toBe(1);
+		expect(one(db, "PRAGMA user_version").user_version).toBe(N);
 		expect(
 			one(
 				db,
@@ -416,23 +419,23 @@ describe("upgrading", () => {
 
 	it("refuses a step that does not reach the format it promises, and a missing step", () => {
 		const db = sample();
-		const liar = [{ from: 1, to: 2, sql: "SELECT 1;" }];
+		const liar = [{ from: N, to: N + 1, sql: "SELECT 1;" }];
 		expect(() =>
 			upgradeCatalog(db, {
 				backup: "copy",
 				tool: TEST_TOOL,
 				steps: liar,
-				target: 2,
+				target: N + 1,
 			}),
-		).toThrow(/left the catalog at format 1/);
+		).toThrow(`left the catalog at format ${N}`);
 		expect(() =>
 			upgradeCatalog(db, {
 				backup: "copy",
 				tool: TEST_TOOL,
 				steps: [],
-				target: 2,
+				target: N + 1,
 			}),
-		).toThrow(/No upgrade step from catalog format 1 to 2/);
+		).toThrow(`No upgrade step from catalog format ${N} to ${N + 1}`);
 	});
 });
 
@@ -451,6 +454,7 @@ describe("the sample catalog of every format", () => {
 			prepareConnection(db);
 			const state = inspectCatalog(db);
 			expect(["current", "older"]).toContain(state.state);
+			const before = dataTables(db);
 			upgradeCatalog(db, { backup: "test copy", tool: TEST_TOOL });
 			expect(inspectCatalog(db)).toEqual({
 				state: "current",
@@ -465,10 +469,113 @@ describe("the sample catalog of every format", () => {
 				schemaOf(db),
 				`${file} schema (format ${CATALOG_FORMAT} is ${CATALOG_FORMAT_STATUS})`,
 			).toEqual(schemaOf(track(memoryCatalog())));
-			for (const table of dataTables(db))
+			// Every table the sample held rows in still does. A table a later
+			// format added starts empty in an upgraded catalog.
+			for (const table of before)
 				expect(
 					Number(one(db, `SELECT count(*) AS n FROM "${table}"`).n),
 					table,
 				).toBeGreaterThan(0);
 		});
+
+	it("keeps every published format's SQL as it was released", () => {
+		const v1 = path.join(ROOT, "spec", "catalog", "catalog.v1.sql");
+		expect(readFileSync(v1, "utf8").replaceAll("\r\n", "\n")).toBe(
+			CATALOG_V1_SQL,
+		);
+	});
+});
+
+describe("format 1 to format 2 (D56)", () => {
+	function upgradedV1() {
+		const copy = path.join(tempDir(), "v1.sqlite");
+		copyFileSync(path.join(SAMPLES, "v1.sqlite"), copy);
+		const db = track(new DatabaseSync(copy));
+		prepareConnection(db);
+		const counts = new Map(
+			dataTables(db).map((t) => [
+				t,
+				Number(one(db, `SELECT count(*) AS n FROM "${t}"`).n),
+			]),
+		);
+		const applied = upgradeCatalog(db, {
+			backup: "backups/catalog.format-1.sqlite",
+			tool: TEST_TOOL,
+			now: AT,
+		});
+		return { db, counts, applied };
+	}
+
+	it("adds an empty publications table, records the upgrade, and changes nothing else", () => {
+		const { db, counts, applied } = upgradedV1();
+		expect(applied).toEqual([{ from: 1, to: 2 }]);
+		expect(one(db, "SELECT count(*) AS n FROM publications").n).toBe(0);
+		for (const [table, n] of counts)
+			expect(
+				Number(one(db, `SELECT count(*) AS n FROM "${table}"`).n),
+				table,
+			).toBe(table === "runs" ? n + 1 : n);
+		const run = one(
+			db,
+			"SELECT kind, summary FROM runs ORDER BY id DESC LIMIT 1",
+		);
+		expect(run.kind).toBe("upgrade");
+		expect(JSON.parse(String(run.summary))).toEqual({
+			from: 1,
+			to: 2,
+			backup: "backups/catalog.format-1.sqlite",
+		});
+	});
+
+	it("is format 1's SQL with the publications table added", () => {
+		expect(CURRENT_SCHEMA_SQL).toContain(PUBLICATIONS_SQL);
+		expect(CURRENT_SCHEMA_SQL.replace(PUBLICATIONS_SQL, "")).toBe(
+			CATALOG_V1_SQL.replace("format 1.\n", "format 2.\n")
+				.replace("timelines) are", "timelines, publications) are")
+				.replace("user_version = 1;", "user_version = 2;"),
+		);
+	});
+});
+
+describe("publications (format 2)", () => {
+	it("takes https addresses or nothing, and a JSON array of what is withheld", () => {
+		// Writes around edit.ts on purpose: this is about what SQLite allows.
+		const db = sample({ verify: false });
+		const set = (col: string, value: string) =>
+			db.prepare(`UPDATE publications SET "${col}" = ?`).run(value);
+		for (const [col, bad] of [
+			["file_url", "http://example.org/film.mp4"],
+			["file_url", "javascript:alert(1)"],
+			["file_url", "HTTPS://example.org/film.mp4"],
+			["file_url", "https://"],
+			["page_url", "ftp://example.org/"],
+			["withheld", "{}"],
+			["withheld", "[unclosed"],
+		])
+			expect(() => set(col, bad), `${col} = ${bad}`).toThrow(/CHECK/);
+		expect(() => {
+			set("file_url", "");
+			set("page_url", "https://example.org/films/film");
+			set("withheld", '["ingredient.note"]');
+		}).not.toThrow();
+	});
+
+	it("holds one per signing, is never deleted, and never moves to another signing", () => {
+		const db = sample();
+		const signing = Number(one(db, "SELECT id FROM signatures LIMIT 1").id);
+		expect(() =>
+			db
+				.prepare(
+					"INSERT INTO publications (signature_id, created_at, updated_at) VALUES (?, ?, ?)",
+				)
+				.run(signing, AT, AT),
+		).toThrow(/UNIQUE/);
+		expect(() => db.exec("DELETE FROM publications")).toThrow(
+			/never deleted; empty its addresses/,
+		);
+		expect(() =>
+			db.exec("UPDATE publications SET signature_id = signature_id + 1"),
+		).toThrow(/always belongs to the signing/);
+		expect(one(db, "SELECT count(*) AS n FROM publications").n).toBe(1);
+	});
 });

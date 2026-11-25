@@ -29,6 +29,7 @@ import {
 } from "./timelines.ts";
 
 import { EditError, NotFoundError } from "./errors.ts";
+import { publicationOf, type Publication } from "./publications.ts";
 
 export { EditError, NotFoundError };
 
@@ -679,6 +680,63 @@ export function editSettings(
 			.filter(([k, v]) => setMeta(db, k, (v as string).trim(), change(opts)))
 			.map(([k]) => k),
 	);
+}
+
+/** The fields of a publication a person sets here; `withheld` is the export review's (Phase 8 step 5). */
+export const PUBLICATION_FIELDS: readonly string[] = ["file_url", "page_url"];
+
+/**
+ * Say where a signed copy of a finished edit is published: the web address of
+ * the signed file and of the page that shows it. Both are https addresses, or
+ * empty to say it is no longer there; history keeps where it was. The first
+ * address given makes the publication; it is never deleted.
+ * @returns the publication as it now is, or null if there is none and nothing was set
+ */
+export function setPublication(
+	db: DatabaseSync,
+	signatureId: number,
+	input: Record<string, unknown>,
+	opts: PersonEdit,
+): Publication | null {
+	const fields = only(input, PUBLICATION_FIELDS, "Where a copy is published");
+	if (Object.keys(fields).length === 0)
+		throw new EditError("Say where the signed file or its page is published");
+	const signing = db
+		.prepare("SELECT kind FROM signatures WHERE id = ?")
+		.get(signatureId) as { kind: string } | undefined;
+	if (!signing) throw new NotFoundError("There is no such signing");
+	if (signing.kind !== "output")
+		throw new EditError(
+			"Only a signed copy of a finished edit is published with a public record",
+		);
+	const values: Record<string, string> = {};
+	for (const [k, v] of Object.entries(fields)) {
+		if (typeof v !== "string")
+			throw new EditError(`${k} takes a web address, or "" for none`);
+		const url = v.trim();
+		const what = k === "file_url" ? "The signed file's" : "The page's";
+		if (url && !isHttpsAddress(url))
+			throw new EditError(
+				`${what} address must be a full web address starting https://`,
+			);
+		// As a browser writes it, so the catalog's check and the viewer's agree.
+		values[k] = url ? new URL(url).href : "";
+	}
+	return inTransaction(db, () => {
+		const current = publicationOf(db, signatureId);
+		if (current) {
+			editRow(db, "publications", current.id, values, change(opts));
+		} else {
+			if (Object.values(values).every((v) => v === "")) return null;
+			createRow(
+				db,
+				"publications",
+				{ signature_id: signatureId, ...values },
+				change(opts),
+			);
+		}
+		return publicationOf(db, signatureId);
+	});
 }
 
 /** A whole https:// address with a host, as a browser would open it. */

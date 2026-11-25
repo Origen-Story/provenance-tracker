@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { verifyCatalog } from "@provenancetracker/core/catalog/verify.ts";
+import { fillSample } from "../../core/test/helpers/catalog.ts";
 import { run, type Io } from "../src/cli/run.ts";
 import type { Machine } from "../src/machine.ts";
 import { catalogPathOf } from "../src/project.ts";
@@ -285,3 +287,87 @@ describe("classify", () => {
 		expect((await inside.run("classify", "extra")).code).toBe(2);
 	});
 });
+
+describe("publish (D56)", () => {
+	it("lists where a finished edit's signed copies are published, and sets the newest's", async () => {
+		const m = t.machine();
+		const work = t.tempDir();
+		const c = cli(m, work);
+		await c.run("init", "Demo");
+		await c.run("settings", "person", "A. Maker");
+		const folder = path.join(work, "Demo");
+		// The sample's rows: a film with one signed copy, already published.
+		const film = peekWrite(catalogPathOf(folder), (db) => {
+			fillSample(db);
+			return Number(
+				(
+					db.prepare("SELECT asset_id FROM signatures LIMIT 1").get() as {
+						asset_id: number;
+					}
+				).asset_id,
+			);
+		});
+		const p = cli(m, folder);
+		const listed = await p.run("publish", String(film));
+		expect(listed).toMatchObject({ code: 0 });
+		expect(listed.out).toContain("Signed copy v1:");
+		expect(listed.out).toContain(
+			"signed file: https://media.example.org/film.signed.v1.mp4",
+		);
+
+		const set = await p.run(
+			"publish",
+			String(film),
+			"--file",
+			"",
+			"--page",
+			"https://example.org/films/demo",
+			"--note",
+			"Moved off the old host",
+		);
+		expect(set).toMatchObject({ code: 0 });
+		expect(set.out).toContain("signed file: (not published)");
+		expect(set.out).toContain("page:        https://example.org/films/demo");
+
+		expect(
+			await p.run("publish", String(film), "--file", "http://example.org/a"),
+		).toMatchObject({ code: 1, err: expect.stringContaining("https://") });
+		expect(
+			await p.run("publish", String(film), "--version", "2", "--page", ""),
+		).toMatchObject({
+			code: 1,
+			err: "Asset " + film + " has no signed copy v2",
+		});
+		expect(await p.run("publish", "1")).toMatchObject({
+			code: 1,
+			err: expect.stringContaining("has no signed copy"),
+		});
+		expect(await p.run("publish")).toMatchObject({ code: 2 });
+
+		peek(catalogPathOf(folder), (db) => {
+			expect(verifyCatalog(db)).toEqual([]);
+			const last = db
+				.prepare(
+					"SELECT actor, field, new_value, note FROM history WHERE table_name = 'publications' ORDER BY id DESC LIMIT 1",
+				)
+				.get();
+			expect(last).toEqual({
+				actor: "A. Maker",
+				field: "page_url",
+				new_value: '"https://example.org/films/demo"',
+				note: "Moved off the old host",
+			});
+		});
+	});
+});
+
+/** Write to a project's catalog directly, as a test's setup. */
+function peekWrite<T>(file: string, fn: (db: DatabaseSync) => T): T {
+	const db = new DatabaseSync(file);
+	try {
+		db.exec("PRAGMA foreign_keys = ON");
+		return fn(db);
+	} finally {
+		db.close();
+	}
+}

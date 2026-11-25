@@ -252,7 +252,7 @@ export function fillSample(db: DatabaseSync): void {
 		).lastInsertRowid,
 	);
 	const sign = newRun("sign");
-	sql(
+	const signing = sql(
 		`INSERT INTO signatures (asset_id, kind, version, source_sha256, signed_sha256, run_id, engine, engine_version, certificate_sha256, signer_name, definition, statement_id, statement, status, signed_at)
 		 VALUES (?, 'output', 1, ?, ?, ?, 'c2pa-node', '0.12.1', ?, 'A. Maker', '{}', ?, '{"version":3}', 'Valid', ?)`,
 		film,
@@ -264,6 +264,17 @@ export function fillSample(db: DatabaseSync): void {
 		AT,
 	);
 	finishRun(db, sign, { outcome: "ok", now: AT });
+	// Format 2 (D56): where that signed copy is published.
+	createRow(
+		db,
+		"publications",
+		{
+			signature_id: Number(signing.lastInsertRowid),
+			file_url: "https://media.example.org/film.signed.v1.mp4",
+			page_url: "https://example.org/films/film",
+		},
+		PERSON,
+	);
 }
 
 /** Every table, index, trigger and view, with its SQL, in a stable order. */

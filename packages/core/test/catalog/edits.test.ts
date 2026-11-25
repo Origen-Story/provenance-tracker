@@ -11,17 +11,19 @@ import {
 	NotFoundError,
 	removeCredit,
 	setGeneration,
+	setPublication,
 	setRemoved,
 	setThumbnail,
 	thumbnailOf,
 	unlink,
 	type PersonEdit,
 } from "../../src/catalog/edits.ts";
+import { publicationOf } from "../../src/catalog/publications.ts";
 import { finishRun, startRun } from "../../src/catalog/runs.ts";
 import { PERSON, TEST_TOOL, sha } from "../helpers/catalog.ts";
 import { catalogsForTests } from "../helpers/catalog-tests.ts";
 
-const { catalog } = catalogsForTests();
+const { catalog, sample } = catalogsForTests();
 const AT = "2026-11-23T12:00:00.000Z";
 const ME: PersonEdit = {
 	actor: PERSON.actor as Actor,
@@ -437,5 +439,132 @@ describe("editSettings", () => {
 		expect(editSettings(db, { cawg_identity_url: "" }, ME)).toEqual([
 			"cawg_identity_url",
 		]);
+	});
+});
+
+describe("where a signed copy is published (D56)", () => {
+	/** A second signing of the sample's film, never published; `kind` "asset" for a source's own signing. */
+	function newSigning(db: DatabaseSync, kind = "output") {
+		return Number(
+			db
+				.prepare(
+					`INSERT INTO signatures (asset_id, kind, version, source_sha256, signed_sha256, run_id, engine, engine_version,
+					   certificate_sha256, signer_name, definition, statement_id, statement, status, signed_at)
+					 SELECT asset_id, ?, 2, source_sha256, signed_sha256, run_id, engine, engine_version,
+					   certificate_sha256, signer_name, definition, statement_id, statement, status, signed_at
+					 FROM signatures ORDER BY id LIMIT 1`,
+				)
+				.run(kind).lastInsertRowid,
+		);
+	}
+
+	it("makes the publication with the first address, under the person's name, with history", () => {
+		const db = sample();
+		const id = newSigning(db);
+		expect(publicationOf(db, id)).toBeNull();
+		const p = setPublication(
+			db,
+			id,
+			{ file_url: " https://media.example.org/film v2.mp4 " },
+			ME,
+		);
+		expect(p).toMatchObject({
+			signatureId: id,
+			// As a browser writes it.
+			fileUrl: "https://media.example.org/film%20v2.mp4",
+			pageUrl: "",
+			withheld: [],
+		});
+		expect(historyOf(db, "publications", p!.id)).toEqual([
+			{
+				actor_kind: "person",
+				actor: "A. Maker",
+				field: "file_url",
+				new_value: '"https://media.example.org/film%20v2.mp4"',
+				note: "",
+			},
+		]);
+	});
+
+	it("changes and empties an address, keeping where it was in history", () => {
+		const db = sample();
+		const id = Number(
+			(
+				db.prepare("SELECT signature_id FROM publications").get() as {
+					signature_id: number;
+				}
+			).signature_id,
+		);
+		const before = publicationOf(db, id)!;
+		setPublication(
+			db,
+			id,
+			{ page_url: "https://example.org/films/film-v1" },
+			ME,
+		);
+		const p = setPublication(db, id, { file_url: "" }, ME);
+		expect(p).toMatchObject({
+			fileUrl: "",
+			pageUrl: "https://example.org/films/film-v1",
+		});
+		const history = historyOf(db, "publications", before.id);
+		expect(history.at(-1)).toMatchObject({
+			field: "file_url",
+			new_value: '""',
+		});
+		expect(history.map((h) => h.new_value)).toContain(
+			JSON.stringify(before.fileUrl),
+		);
+		// Setting what is already there changes nothing.
+		const count = history.length;
+		setPublication(db, id, { file_url: "" }, ME);
+		expect(historyOf(db, "publications", before.id)).toHaveLength(count);
+	});
+
+	it("makes nothing when only empty addresses are given to a copy never published", () => {
+		const db = sample();
+		const id = newSigning(db);
+		expect(
+			setPublication(db, id, { file_url: "", page_url: " " }, ME),
+		).toBeNull();
+		expect(publicationOf(db, id)).toBeNull();
+	});
+
+	it("takes only https addresses, and only these two fields", () => {
+		const db = sample();
+		const id = newSigning(db);
+		for (const bad of [
+			"http://media.example.org/film.mp4",
+			"javascript:alert(1)",
+			"//media.example.org/film.mp4",
+			"media.example.org/film.mp4",
+			"https://user:pass@media.example.org/film.mp4",
+			"file:///C:/films/film.mp4",
+		])
+			expect(() => setPublication(db, id, { file_url: bad }, ME), bad).toThrow(
+				/must be a full web address starting https:\/\//,
+			);
+		expect(() => setPublication(db, id, { page_url: 5 }, ME)).toThrow(
+			/takes a web address/,
+		);
+		expect(() =>
+			setPublication(db, id, { withheld: ["ingredient.note"] }, ME),
+		).toThrow(/has no field withheld/);
+		expect(() =>
+			setPublication(db, id, { signature_id: 1, file_url: "" }, ME),
+		).toThrow(/has no field signature_id/);
+		expect(() => setPublication(db, id, {}, ME)).toThrow(/Say where/);
+		expect(publicationOf(db, id)).toBeNull();
+	});
+
+	it("is only for a signed copy of a finished edit", () => {
+		const db = sample();
+		expect(() =>
+			setPublication(db, 999, { file_url: "https://example.org/a.mp4" }, ME),
+		).toThrow(NotFoundError);
+		const own = newSigning(db, "asset");
+		expect(() =>
+			setPublication(db, own, { file_url: "https://example.org/a.mp4" }, ME),
+		).toThrow(/finished edit/);
 	});
 });

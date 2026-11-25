@@ -670,6 +670,28 @@ export function identityVerdict(identity) {
 	}
 }
 
+/**
+ * The result of checking a copy the visitor has against this record (D58):
+ * { tone, headline, detail }. A match says the copy is the file this record
+ * describes, not that the record is true.
+ */
+export function copyVerdict(hex, exp) {
+	const want = String(exp?.signedFile?.sha256 || "").toLowerCase();
+	if (want && String(hex).toLowerCase() === want)
+		return {
+			tone: "good",
+			headline: "This is the file this record describes",
+			detail:
+				"Its SHA-256 fingerprint is the one recorded when the film was signed, byte for byte. That shows you have the signed film itself; what the record says about it is the creator's statement and the signature above.",
+		};
+	return {
+		tone: "bad",
+		headline: "This is not the file this record describes",
+		detail:
+			"Its fingerprint differs from the one recorded when the film was signed. A copy downloaded from a video platform never matches, because platforms re-encode what they show; only the signed file itself does.",
+	};
+}
+
 /** What the creator left out, in a sentence, or null when nothing was. */
 export function withheldSentence(withheld) {
 	const fromRecord = withheld?.fromRecord || 0;

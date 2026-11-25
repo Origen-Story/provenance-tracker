@@ -1116,3 +1116,37 @@ details[open] > .ptv-toggle .ptv-when-closed:has(+ .ptv-when-open) {
 		min-width: 0;
 	}
 }
+
+/* Check a copy you have (D58): a file picker, its progress, and the result. */
+.ptv-copy-check {
+	display: grid;
+	gap: 0.5rem;
+	margin-top: 0.75rem;
+}
+.ptv-file-input {
+	font: inherit;
+	font-size: 0.9rem;
+	color: var(--ptv-text);
+}
+.ptv-file-input::file-selector-button {
+	font: inherit;
+	margin-right: 0.75rem;
+	padding: 0.35rem 0.95rem;
+	border: 1px solid var(--ptv-text);
+	border-radius: 999px;
+	background: transparent;
+	color: var(--ptv-text);
+	cursor: pointer;
+}
+.ptv-file-input:focus-visible {
+	outline: 2px solid currentColor;
+	outline-offset: 2px;
+}
+.ptv-progress {
+	width: 100%;
+	height: 0.5rem;
+	accent-color: var(--ptv-text);
+}
+.ptv-copy-status .ptv-verdict-card {
+	margin: 0.25rem 0 0;
+}

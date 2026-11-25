@@ -10,6 +10,7 @@ import CompositionTab from "./output/CompositionTab.tsx";
 import ExportTab from "./output/ExportTab.tsx";
 import SigningTab from "./output/SigningTab.tsx";
 import StartFrom, { startedFromLink } from "./output/StartFrom.tsx";
+import Revisions from "./output/Revisions.tsx";
 import StatementTab from "./output/StatementTab.tsx";
 import { Loading, PageTitle, Problem } from "./ui.tsx";
 
@@ -74,7 +75,8 @@ export default function OutputPage() {
 							</Link>
 							{started && (
 								<span>
-									· started from{" "}
+									·{" "}
+									{started.type === "made_from" ? "made from" : "started from"}{" "}
 									<Link
 										to={`/catalog/${p}/outputs/${started.otherAssetId}`}
 										className="text-accent hover:underline"
@@ -96,6 +98,7 @@ export default function OutputPage() {
 			{!started && asset.statements.length === 0 && (
 				<StartFrom projectId={p} asset={asset} />
 			)}
+			<Revisions projectId={p} asset={asset} />
 			<nav className="flex gap-1 border-b border-border">
 				{TABS.map((t) => (
 					<button

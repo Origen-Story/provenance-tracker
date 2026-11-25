@@ -161,3 +161,22 @@ Short numbered log of decisions that shape the code. Add a line when one is made
     - both engines' real signed copies meet the format 2 schema;
     - the demo page renders format 2 and format 1 in a headless browser (Edge, reduced motion so the fade-ins don't hide it): three cards for format 2, two for format 1.
   - _Watch list:_ CAWG #286 is unchanged (open, no activity since 22 Oct).
+- **D60 (2026-11-25) Versions and deliverables, built on links.** Phase 8, step 6, second part; Matt's decision 1 (the whole item, without a public line, editors' feedback after). No catalog format and no new dependency: every link is a row in `relationships`, whose `type` has no fixed list.
+  - _Next revision or made from._ Starting a new export from an earlier edit (D50) now says which it is:
+    - its next revision, a `started_from` link, as before;
+    - or made from it (a vertical cut, a trailer, a transcode), a new `made_from` link, which a person can also make by hand (`LINK_TYPES`).
+
+    Either way the copy of details is the same, and the earlier edit's clip classes carry to the first timeline (`startedFrom` reads both). `setEditRelation` switches the link's kind with history, and existing `started_from` links read as "next revision" until a person says otherwise.
+
+  - _The revisions view_ (`catalog/revisions.ts`, `GET …/assets/<id>/revisions`, the "Versions of this film" card on the edit's page). It shows:
+    - the line of revisions, earliest first, branches after their parent (going back to an earlier revision and branching is a second link from it), each with its signed copies and how many are published (D56);
+    - what the edit was made from, and what was made from it;
+    - its own re-renders at the same path (new contents of the same asset, D29), each with the signed copies made from it.
+
+    A loop of links stops the walk. `PUT …/assets/<id>/relation` takes `as` and nothing else.
+
+  - _A suggested earlier edit._ The start-from card preselects the newest earlier edit whose file name matches once a trailing version, the extension and the signed-copy suffix are set aside (`files/edit-names.ts`): "tracker-demo-RoughCutV1_1" and "…RoughCutV2" agree. The person confirms before anything is copied.
+  - _Not in the public record._ Nothing about revisions goes into the export or the viewer: a "replaces the version signed on …" line waits for editors' feedback and would be a later export format.
+  - _Checked:_
+    - in tests, a family of edits on the sample catalog (two revisions, a branch, a trailer made from the newest), the API, and the name matching;
+    - on a copy of the demo project, never the project itself, the app showed the film's two revisions with their signed and published copies.

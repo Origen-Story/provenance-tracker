@@ -371,3 +371,43 @@ describe("timelines through the API", () => {
 		).toBe(false);
 	});
 });
+
+describe("versions of a film through the API (D60)", () => {
+	it("starts an edit as made from another, reads its revisions, and changes how it relates", async () => {
+		const w = await world();
+		await w.call("PATCH", `/assets/${w.film}`, { fields: { is_output: true } });
+		const made = await w.call("POST", `/assets/${w.filmV2}/start-from`, {
+			fields: { from_id: w.film, as: "made_from" },
+		});
+		expect(made.status).toBe(200);
+		expect(
+			made.body.asset.relationships.find(
+				(r: { type: string }) => r.type === "made_from",
+			),
+		).toMatchObject({ direction: "parent", otherAssetId: w.film });
+
+		const of = async (id: number) =>
+			(await w.call("GET", `/assets/${id}/revisions`)).body;
+		expect((await of(w.film)).deliverables).toEqual([
+			expect.objectContaining({ assetId: w.filmV2, fileName: "film-v2.mp4" }),
+		]);
+		expect((await of(w.filmV2)).madeFrom).toMatchObject({ assetId: w.film });
+
+		const turned = await w.call("PUT", `/assets/${w.filmV2}/relation`, {
+			fields: { as: "revision" },
+		});
+		expect(turned.status).toBe(200);
+		expect(
+			turned.body.revisions.line.map((e: { assetId: number }) => e.assetId),
+		).toEqual([w.film, w.filmV2]);
+		expect(turned.body.revisions.madeFrom).toBeNull();
+
+		for (const [url, fields, status] of [
+			[`/assets/${w.filmV2}/relation`, { as: "sibling" }, 400],
+			[`/assets/${w.filmV2}/relation`, { as: "revision", note2: 1 }, 400],
+			[`/assets/${w.film}/relation`, { as: "revision" }, 400],
+		] as const)
+			expect((await w.call("PUT", url, { fields })).status, url).toBe(status);
+		expect((await w.call("GET", "/assets/999/revisions")).status).toBe(404);
+	});
+});

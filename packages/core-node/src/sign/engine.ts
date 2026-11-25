@@ -45,6 +45,15 @@ export interface SignArgs {
 		covers: string[];
 		roles: string[];
 	};
+	/**
+	 * What the person chose to keep out of the signed file (Phase 8 step 4):
+	 * assertions inside ingredients' own credentials, redacted by their JUMBF
+	 * URI (the file records that something was removed, and why); and
+	 * ingredients, by label, whose credentials are left out entirely, for
+	 * what a redaction cannot reach (an ingredient's signer, its claim).
+	 * Only the C2PA library engine can do either.
+	 */
+	withhold?: { redact: string[]; leaveOut: string[] };
 	/** RFC 3161 time-stamp authority; left out in tests (no network). */
 	timestampUrl?: string;
 	/** Write the manifest to outputPath as a .c2pa sidecar; the input is untouched. */

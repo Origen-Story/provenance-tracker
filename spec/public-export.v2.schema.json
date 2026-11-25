@@ -319,7 +319,7 @@
 			"type": "object",
 			"required": ["fromRecord", "fromSignedFile"],
 			"additionalProperties": false,
-			"description": "How many details the creator chose to leave out, without saying what: from this record, and redacted from ingredients' credentials in the signed file.",
+			"description": "How many details the creator chose to keep out, without saying what: from this record (fromRecord), and from sources' own credentials in the signed file (fromSignedFile: assertions redacted, plus sources whose credentials were left out entirely; D62).",
 			"properties": {
 				"fromRecord": {
 					"type": "integer",

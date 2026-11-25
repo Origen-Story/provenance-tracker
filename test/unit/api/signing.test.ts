@@ -222,6 +222,20 @@ describe.skipIf(!haveOpenssl)("signing through the API", () => {
 			404,
 		);
 
+		// What to keep out of the signed file (D62): a fixed shape, checked here.
+		for (const withhold of [
+			"all",
+			{ redact: "x" },
+			{ redact: [], leave_out: ["two"] },
+			{ redact: [], everything: true },
+		]) {
+			const r = await w.call("POST", `/assets/${w.film.id}/sign`, {
+				fields: { withhold },
+			});
+			expect(r.status, JSON.stringify(withhold)).toBe(400);
+			expect((await w.json(r)).error).toMatch(/withhold is/);
+		}
+
 		// Where the signed copy is published (D56): https only, named fields only.
 		const where = `/signatures/${signatureId}/publication`;
 		const published = await w.call("PUT", where, {

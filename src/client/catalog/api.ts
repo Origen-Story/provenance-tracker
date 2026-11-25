@@ -529,6 +529,31 @@ export interface Timeline {
 	clips: TimelineClip[];
 }
 
+/** An assertion in a source's own credentials that says something about a person, a place or a device (D62). */
+export interface RevealItem {
+	uri: string;
+	manifest: string;
+	label: string;
+	kind:
+		"identity" | "metadata" | "author" | "location" | "device" | "generation";
+	what: string;
+	values: string[];
+	redactable: boolean;
+}
+
+/** A source whose own credentials would travel into the signed film, and what they would reveal (D62). */
+export interface SourceReveal {
+	assetId: number;
+	title: string;
+	parent: boolean;
+	reveal: {
+		manifests: number;
+		signers: string[];
+		items: RevealItem[];
+		otherAssertions: number;
+	};
+}
+
 export interface StatementIngredient {
 	ref: string;
 	title: string;
@@ -682,6 +707,10 @@ export const outputs = {
 				role: string;
 				authorDiffers: boolean;
 			} | null;
+			/** What each source's own credentials would reveal inside the signed film (D62). */
+			reveals: SourceReveal[];
+			/** What the newest signing of this edit kept out; null before the first. */
+			lastWithheld: { redact: string[]; leaveOut: number[] } | null;
 		}>("GET", `/projects/${projectId}/assets/${assetId}/statement-preview`),
 	signing: (projectId: string) =>
 		api<SigningStatus>("GET", `/projects/${projectId}/signing`),

@@ -30,9 +30,17 @@ import { thumbnailOf } from "@provenancetracker/core/catalog/edits.ts";
 import {
 	buildCreatorStatement,
 	buildOutputManifest,
+	ingredientLabel,
 	placedAssetRefs,
 	thumbnailFormatOf,
 } from "@provenancetracker/core/manifest/build.js";
+import {
+	checkWithhold,
+	revealOf,
+	type Reveal,
+	type Withhold,
+} from "@provenancetracker/core/manifest/reveal.ts";
+import { LIBRARY_ENGINE } from "./engines/library.ts";
 import { sha256OfFile } from "../hash.ts";
 import type { Machine } from "../machine.ts";
 import type { OpenProject } from "../project.ts";
@@ -184,6 +192,77 @@ function c2paOf(project: OpenProject, sha256: string) {
 	});
 }
 
+/** The newest library reading of a content: its manifest store, or null. */
+function storeOf(
+	project: OpenProject,
+	sha256: string,
+): Record<string, unknown> | null {
+	const row = project.db
+		.prepare(
+			`SELECT data FROM observations
+			 WHERE content_sha256 = ? AND kind IN ('c2pa', 'c2pa-sidecar') AND status = 'ok' AND data IS NOT NULL
+			 ORDER BY id DESC LIMIT 1`,
+		)
+		.get(sha256) as { data: string } | undefined;
+	return row ? (JSON.parse(row.data) as Record<string, unknown>) : null;
+}
+
+/** A source of the signed film whose own credentials would travel into it (D62). */
+export interface SourceReveal {
+	assetId: number;
+	/** Its file name, as the preview shows it. */
+	title: string;
+	/** The output's own cut (the parent ingredient), or a placed source. */
+	parent: boolean;
+	reveal: Reveal;
+}
+
+/** What each source's own credentials would reveal: the cut first, then the placed sources in the statement's order. */
+function revealsOf(
+	project: OpenProject,
+	outputId: number,
+	cut: string | null,
+	placedIds: number[],
+): SourceReveal[] {
+	const out: SourceReveal[] = [];
+	const add = (assetId: number, sha: string | null, parent: boolean) => {
+		if (!sha) return;
+		const reveal = revealOf(storeOf(project, sha) as never);
+		if (!reveal.manifests) return;
+		const path = lastKnownPath(project, sha);
+		out.push({
+			assetId,
+			title: path ? path.split("/").pop()! : `asset ${assetId}`,
+			parent,
+			reveal,
+		});
+	};
+	add(outputId, cut, true);
+	for (const id of placedIds) add(id, ownContent(project, id), false);
+	return out;
+}
+
+/** What the newest signing of an output kept out of its file (D62), to start the next one from. */
+export function lastWithheld(
+	project: OpenProject,
+	outputId: number,
+): Withhold | null {
+	const row = project.db
+		.prepare(
+			"SELECT definition FROM signatures WHERE asset_id = ? AND kind = 'output' ORDER BY version DESC LIMIT 1",
+		)
+		.get(outputId) as { definition: string } | undefined;
+	if (!row) return null;
+	const d = JSON.parse(row.definition) as {
+		redactions?: string[];
+		credentials_left_out?: Array<{ asset_id: number }>;
+	};
+	return {
+		redact: d.redactions ?? [],
+		leaveOut: (d.credentials_left_out ?? []).map((c) => c.asset_id),
+	};
+}
+
 /** The CAWG identity address the project's statements carry, or "". */
 function identityUrlOf(project: OpenProject): string {
 	return (
@@ -312,6 +391,10 @@ export interface StatementPreview {
 	thumbnailAssetId: number | null;
 	/** The creator's identity signing would add (D55), when one is set up here. Never a path. */
 	identity: IdentityPreview | null;
+	/** What each source's own credentials would reveal inside the signed film (D62). */
+	reveals: SourceReveal[];
+	/** What the newest signing of this edit kept out, so the next starts from it; null before the first. */
+	lastWithheld: Withhold | null;
 }
 
 export interface IdentityPreview {
@@ -331,9 +414,9 @@ const IDENTITY_NEEDS_LIBRARY =
 	"Your identity is set up for this project, and c2patool cannot add it. Sign with the C2PA library: npm run cli -- settings signing-engine library";
 
 /** The same name, ignoring case and spacing. */
-const sameName = (a: string, b: string) =>
-	a.trim().replace(/s+/g, " ").toLowerCase() ===
-	b.trim().replace(/s+/g, " ").toLowerCase();
+export const sameName = (a: string, b: string) =>
+	a.trim().replace(/\s+/g, " ").toLowerCase() ===
+	b.trim().replace(/\s+/g, " ").toLowerCase();
 
 /**
  * The identity this project signs with here, for the preview, or why it
@@ -420,6 +503,8 @@ export function previewOutputStatement(
 			ingredientAssetIds: [],
 			thumbnailAssetId: null,
 			identity: null,
+			reveals: [],
+			lastWithheld: lastWithheld(project, opts.assetId),
 		};
 	}
 	const saved = db
@@ -490,6 +575,8 @@ export function previewOutputStatement(
 		ingredientAssetIds,
 		thumbnailAssetId: thumb.thumbnail?.assetId ?? null,
 		identity: identity.preview,
+		reveals: revealsOf(project, opts.assetId, cut, ingredientAssetIds),
+		lastWithheld: lastWithheld(project, opts.assetId),
 	};
 }
 
@@ -508,6 +595,8 @@ function signedName(
 }
 
 export interface SignedOutput {
+	/** What was kept out of the signed file (D62): how many assertions redacted, how many sources' credentials left out. */
+	withheld: { redacted: number; leftOut: number };
 	signatureId: number;
 	runId: number;
 	version: number;
@@ -533,6 +622,8 @@ export async function signOutput(
 		/** What holds the creator's identity key; this machine's setup for the project, if any, when not given. */
 		identityHolder?: CredentialHolder;
 		timestampUrl?: string;
+		/** What to keep out of the signed file (D62): checked against what the sources carry. */
+		withhold?: Withhold;
 		now?: () => string;
 	},
 ): Promise<SignedOutput> {
@@ -645,6 +736,43 @@ export async function signOutput(
 		nextSignatureVersion(db, opts.assetId, "output"),
 	);
 	const engine = opts.engine ?? (await signingEngineFor(machine));
+	// What to keep out (D62), checked against what these sources really carry.
+	// Not said: as the last signing of this edit, so a new signing never
+	// quietly reveals what the last one kept out (what is no longer in the
+	// sources drops away). Said: exactly that, and anything unknown is refused.
+	const placedIds = (placedAssetRefs(segments, outputRef) as string[]).map(
+		Number,
+	);
+	const sources = revealsOf(project, opts.assetId, cut, placedIds);
+	const carried = opts.withhold === undefined;
+	const asked = opts.withhold ?? lastWithheld(project, opts.assetId);
+	let withhold: Withhold = {
+		redact: [...new Set(asked?.redact ?? [])],
+		leaveOut: [...new Set(asked?.leaveOut ?? [])],
+	};
+	if (carried) {
+		const ok = (w: Withhold) => checkWithhold(w, sources).length === 0;
+		withhold = {
+			redact: withhold.redact.filter((uri) =>
+				ok({ redact: [uri], leaveOut: [] }),
+			),
+			leaveOut: withhold.leaveOut.filter((id) =>
+				ok({ redact: [], leaveOut: [id] }),
+			),
+		};
+	}
+	const problems = checkWithhold(withhold, sources);
+	if (problems.length) throw new NotReadyError(problems.join(". "));
+	const withholding = withhold.redact.length + withhold.leaveOut.length > 0;
+	if (withholding && engine.name !== LIBRARY_ENGINE)
+		throw new NotReadyError(
+			"Keeping details out of the signed file needs the C2PA library; this machine signs with c2patool. Switch with: npm run cli -- settings signing-engine library",
+		);
+	// The label each source has in the definition: the cut is the parent.
+	const labelOf = (assetId: number) =>
+		assetId === opts.assetId
+			? (ingredients as SignIngredient[])[0].label
+			: ingredientLabel(placedIds.indexOf(assetId));
 	// The keys are opened for this signing only, and let go with the holders.
 	const identity = await identityFor(
 		machine,
@@ -664,6 +792,14 @@ export async function signOutput(
 		holder,
 		identity,
 		timestampUrl: opts.timestampUrl,
+		...(withholding
+			? {
+					withhold: {
+						redact: withhold.redact,
+						leaveOut: withhold.leaveOut.map(labelOf),
+					},
+				}
+			: {}),
 	});
 	const rel = toCatalogPath(cutPlace.rootFolder, outputPath, machine.platform);
 	if (!rel) throw new Error(`${outputPath} is not inside its root`);
@@ -685,7 +821,19 @@ export async function signOutput(
 			engine: engine.name,
 			engineVersion: engine.version,
 			certificateSha256: certificateInfoOf(holder.chain).fingerprint,
-			definition: storableDefinition(definition as Record<string, unknown>),
+			// What was kept out is part of the record of this signing (D62).
+			definition: {
+				...storableDefinition(definition as Record<string, unknown>),
+				...(withholding
+					? {
+							redactions: withhold.redact,
+							credentials_left_out: withhold.leaveOut.map((id) => ({
+								asset_id: id,
+								label: labelOf(id),
+							})),
+						}
+					: {}),
+			},
 			statementId: statement.id as number,
 			statement: signedStatement,
 			report,
@@ -699,5 +847,16 @@ export async function signOutput(
 	const { status } = db
 		.prepare("SELECT status FROM signatures WHERE id = ?")
 		.get(signatureId) as { status: string };
-	return { signatureId, runId, version, root, path: rel, status };
+	return {
+		signatureId,
+		runId,
+		version,
+		root,
+		path: rel,
+		status,
+		withheld: {
+			redacted: withhold.redact.length,
+			leftOut: withhold.leaveOut.length,
+		},
+	};
 }

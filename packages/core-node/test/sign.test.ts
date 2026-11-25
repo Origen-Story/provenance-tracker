@@ -35,9 +35,12 @@ import {
 import { interpretReport } from "@provenancetracker/core/manifest/verify.js";
 import { readIdentity } from "@provenancetracker/core/manifest/identity.ts";
 import { signAsset } from "../src/sign/sign-asset.ts";
+import { signWithLibrary } from "../src/sign/engines/library.ts";
+import { keyFilesHolder } from "../src/sign/holders/key-files.ts";
 import {
 	NotReadyError,
 	previewOutputStatement,
+	sameName,
 	signOutput,
 	type SigningEngine,
 } from "../src/sign/sign-output.ts";
@@ -983,4 +986,193 @@ describe.each(ENGINES)("signAsset with $name", ({ name, recorded, ready }) => {
 		},
 		120000,
 	);
+});
+
+describe("keeping a source's details out of the signed film (D62)", () => {
+	it.skipIf(!haveOpenssl || !haveLibrary)(
+		"lists what a source's credentials reveal, redacts it or leaves them out, records the choice, and carries it to the next signing",
+		async () => {
+			const w = await world();
+			const loaded = await loadLibrary({}, { remoteManifests: false });
+			if ("unavailable" in loaded) throw new Error(loaded.unavailable);
+			// still.png gains credentials of its own, naming its author, as a
+			// camera app or a generator would sign it; a rescan sees a re-render.
+			const still = path.join(w.media, "still.png");
+			const signedStill = path.join(w.dir, "still-signed.png");
+			const holder = await keyFilesHolder({
+				certificatePath: w.cert!.certificate,
+				privateKeyPath: w.cert!.privateKey,
+			});
+			await signWithLibrary(loaded, {
+				inputPath: still,
+				outputPath: signedStill,
+				definition: {
+					claim_generator_info: [{ name: "example-camera-app", version: "1" }],
+					title: "still.png",
+					assertions: [
+						{
+							label: "c2pa.actions.v2",
+							data: {
+								actions: [
+									{
+										action: "c2pa.created",
+										digitalSourceType:
+											"http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation",
+									},
+								],
+							},
+						},
+						{
+							label: "stds.schema-org.CreativeWork",
+							data: {
+								"@context": "https://schema.org",
+								"@type": "CreativeWork",
+								author: [{ "@type": "Person", name: "A. Person" }],
+							},
+						},
+					],
+				},
+				ingredients: [],
+				holder,
+			});
+			copyFileSync(signedStill, still);
+			await scanProject(w.p, w.m);
+			// The re-render's content: the one live at that path now.
+			const stillAsset = w.p.db
+				.prepare(
+					`SELECT c.asset_id AS id, c.sha256 FROM contents c JOIN locations l ON l.content_sha256 = c.sha256
+					 WHERE l.path = 'still.png' AND l.gone_run_id IS NULL`,
+				)
+				.get() as { id: number; sha256: string };
+			w.p.db
+				.prepare(
+					`INSERT INTO observations (content_sha256, run_id, kind, extractor, extractor_version, status, data, observed_at)
+					 VALUES (?, 1, 'c2pa', 'c2pa-node', ?, 'ok', ?, ?)`,
+				)
+				.run(
+					stillAsset.sha256,
+					loaded.version,
+					JSON.stringify(await readStore(loaded, still)),
+					new Date().toISOString(),
+				);
+
+			// The preview says what it would reveal.
+			const preview = previewOutputStatement(w.p, w.m, { assetId: w.film.id });
+			const source = preview.reveals.find((r) => r.assetId === stillAsset.id)!;
+			const author = source.reveal.items.find((i) => i.kind === "author")!;
+			expect(author).toMatchObject({ redactable: true, values: ["A. Person"] });
+			expect(source.reveal.signers).toContain("Origen Story Dev Signing Cert");
+			expect(preview.lastWithheld).toBeNull();
+
+			const engine = await signingEngineFor(w.m, "library");
+			const read = async (rel: string) =>
+				(await readStore(loaded, path.join(w.media, rel))) as {
+					active_manifest: string;
+					manifests: Record<
+						string,
+						{ assertions: Array<{ label: string; data: unknown }> }
+					>;
+				};
+			const actionsOf = (store: Awaited<ReturnType<typeof read>>) =>
+				(
+					store.manifests[store.active_manifest].assertions.find((a) =>
+						a.label.startsWith("c2pa.actions"),
+					)!.data as {
+						actions: Array<{
+							action: string;
+							parameters?: { redacted?: string };
+						}>;
+					}
+				).actions;
+
+			// Redacted: the author is gone, and the film says something was removed.
+			const r1 = await signOutput(w.p, w.m, {
+				assetId: w.film.id,
+				engine,
+				withhold: { redact: [author.uri], leaveOut: [] },
+			});
+			expect(r1).toMatchObject({
+				status: "unrecognised_issuer",
+				withheld: { redacted: 1, leftOut: 0 },
+			});
+			const one = await read(r1.path);
+			expect(JSON.stringify(one)).not.toContain("A. Person");
+			expect(actionsOf(one)).toContainEqual(
+				expect.objectContaining({
+					action: "c2pa.redacted",
+					parameters: expect.objectContaining({ redacted: author.uri }),
+				}),
+			);
+			expect(
+				previewOutputStatement(w.p, w.m, { assetId: w.film.id }).lastWithheld,
+			).toEqual({ redact: [author.uri], leaveOut: [] });
+
+			// Not said: as the last signing, never quietly revealed again.
+			const r2 = await signOutput(w.p, w.m, { assetId: w.film.id, engine });
+			expect(r2.withheld).toEqual({ redacted: 1, leftOut: 0 });
+			expect(JSON.stringify(await read(r2.path))).not.toContain("A. Person");
+
+			// Left out: none of the source's own credentials travel.
+			const r3 = await signOutput(w.p, w.m, {
+				assetId: w.film.id,
+				engine,
+				withhold: { redact: [], leaveOut: [stillAsset.id] },
+			});
+			expect(r3).toMatchObject({
+				status: "unrecognised_issuer",
+				withheld: { redacted: 0, leftOut: 1 },
+			});
+			const three = await read(r3.path);
+			expect(Object.keys(three.manifests)).toEqual([three.active_manifest]);
+			expect(JSON.stringify(three)).not.toContain("example-camera-app");
+			const stored = JSON.parse(
+				(
+					w.p.db
+						.prepare("SELECT definition FROM signatures WHERE id = ?")
+						.get(r3.signatureId) as { definition: string }
+				).definition,
+			);
+			expect(stored.credentials_left_out).toEqual([
+				{ asset_id: stillAsset.id, label: "ing-1" },
+			]);
+			expect(
+				(
+					publicExport(w.p.db, r3.signatureId, {
+						generatedAt: "2026-11-25T00:00:00.000Z",
+						generator: { name: "provenance-tracker", version: "0" },
+					}).data as { withheld: { fromSignedFile: number } }
+				).withheld.fromSignedFile,
+			).toBe(1);
+
+			// Said and wrong: refused before anything is written.
+			for (const withhold of [
+				{
+					redact: ["self#jumbf=/c2pa/urn:x/c2pa.assertions/c2pa.hash.data"],
+					leaveOut: [],
+				},
+				{ redact: [], leaveOut: [w.id("tone.wav").id] },
+			])
+				await expect(
+					signOutput(w.p, w.m, { assetId: w.film.id, engine, withhold }),
+				).rejects.toThrow(NotReadyError);
+			if (haveC2patool)
+				await expect(
+					signOutput(w.p, w.m, {
+						assetId: w.film.id,
+						engine: await signingEngineFor(w.m, "c2patool"),
+						withhold: { redact: [author.uri], leaveOut: [] },
+					}),
+				).rejects.toThrow(/needs the C2PA library/);
+		},
+		180000,
+	);
+});
+
+describe("sameName", () => {
+	it("ignores case and spacing, and nothing else", () => {
+		expect(sameName(" A.  Maker ", "a. maker")).toBe(true);
+		// Found 25 Nov 2026: the pattern matched the letter s, not spaces.
+		expect(sameName("Ross", "Ros")).toBe(false);
+		expect(sameName("Jess Lane", "Je Lane")).toBe(false);
+	});
 });

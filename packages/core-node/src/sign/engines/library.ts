@@ -90,6 +90,7 @@ async function addIngredients(
 	builder: InstanceType<LoadedLibrary["lib"]["Builder"]>,
 	args: SignArgs,
 ): Promise<void> {
+	const leaveOut = new Set(args.withhold?.leaveOut ?? []);
 	for (const ing of args.ingredients) {
 		const file = ing.useInput ? args.inputPath : ing.filePath!;
 		const asset = { path: file, mimeType: mediaTypeForSigning(file) };
@@ -98,6 +99,14 @@ async function addIngredients(
 			relationship: ing.relationship,
 			label: ing.label,
 		};
+		if (leaveOut.has(ing.label)) {
+			// Named, with its format, but none of its own credentials carried:
+			// the library reads nothing from the file (Phase 8 step 4).
+			await builder.addIngredient(
+				JSON.stringify({ ...record, format: asset.mimeType }),
+			);
+			continue;
+		}
 		const sidecar = sidecarPathFor(file);
 		if (!ing.useInput && existsSync(sidecar)) {
 			const own = await readStore(loaded, file).catch(() => null);
@@ -168,6 +177,10 @@ export async function signWithLibrary(
 				mimeType: mediaTypeForSigning(res.filePath),
 			});
 		await addIngredients(loaded, builder, args);
+		// Each withheld assertion is removed, and the file says so with a
+		// c2pa.redacted action giving the reason.
+		for (const uri of args.withhold?.redact ?? [])
+			builder.addRedaction(uri, "c2pa.PII.present");
 		if (scratch) {
 			// The library still writes a copy of the asset; it goes in the temp
 			// folder, and only the manifest it returns is kept.

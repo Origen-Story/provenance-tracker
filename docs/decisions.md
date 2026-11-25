@@ -221,3 +221,28 @@ Short numbered log of decisions that shape the code. Add a line when one is made
   - _Checked:_
     - in tests, with made-up reports in the shape the spike read;
     - end to end, in a headless browser: the spike page read the demo film with c2pa-web and passed the report to these functions with the film's real format 2 record. They gave "Signed by … and unchanged; signer not on the trust list … That is the signer this record names."
+- **D62 (2026-11-25) Review before signing: what the signed film will reveal, and keeping some of it out.** Phase 8, step 4, with step 5 (review before export) folded in, as Matt decided on 25 Nov: the public record shows what is in the signed file, so one review covers both. Built on `@contentauth/c2pa-node` 0.12.1. No catalog change and no new dependency.
+  - _What a source brings._ A source that carries Content Credentials brings its whole manifest store into the signed film. On the demo project, 16 of 17 credentialed files reveal something personal:
+    - Adobe's verified identities (a name and linked accounts) on the Premiere export the film is signed from;
+    - author names on ElevenLabs audio;
+    - generation details on Firefly media.
+  - _The review_ (`packages/core/src/manifest/reveal.ts`, pure; `revealOf`). It reads each source's stored library reading and lists, assertion by assertion and across every manifest the source brings, what says something about a person, a place or a device:
+    - identities;
+    - descriptive metadata;
+    - authors;
+    - locations and device serials in EXIF or IPTC;
+    - generation details in actions.
+
+    Each has its JUMBF address and whether it may be redacted. C2PA allows no redaction of an action assertion or of the hashes that bind a file, and a signer is in its signature. The statement preview carries the list (`reveals`) for the cut and each placed source. The Signing tab shows it under "What the signed film will reveal", beside what the tracker writes itself (author and organisation, file names, notes, identity, certificate name), which is changed at its source.
+
+  - _Keeping it out._
+    - _Redaction:_ the library engine's `addRedaction` with reason `c2pa.PII.present` removes the assertion and records a `c2pa.redacted` action naming it.
+    - _Leaving a source's credentials out:_ the ingredient is added by its JSON alone, so none of its own credentials are read in. This is the only way to remove what may not be redacted.
+    - The sign route takes `withhold: { redact: [addresses], leave_out: [asset ids] }` as a named field. `checkWithhold` refuses any address that isn't a redactable one in these sources, and any source that carries no credentials.
+    - A machine signing with c2patool is refused when anything is kept out.
+  - _Recorded and carried._ The signature's stored definition keeps `redactions` and `credentials_left_out` (asset id and ingredient label). The public record counts them in `withheld.fromSignedFile`, never saying what. A signing that doesn't state its choices (the command line, or any caller that omits them) takes the last signing's, minus what the sources no longer carry, so a new signed copy never quietly reveals what the last one kept out. The Signing tab starts from them, and says so when a choice would reveal again what the last copy kept out.
+  - _Also fixed:_ the check that the statement's author matches the identity's name collapsed runs of the letter "s", not spaces (`/s+/` for `/\s+/`).
+  - _Checked:_
+    - the spike, on a copy of the demo film with throwaway certificates: redacting the Premiere export's `cawg.identity` leaves the claim valid, records `c2pa.redacted` and leaves no trace of it; leaving the parent's credentials out leaves only the tracker's own manifest;
+    - in tests, with real signing: a source given credentials naming an author is listed, redacted, carried to the next signing, left out, recorded and counted, and wrong choices and the c2patool engine are refused;
+    - in the app, on the copy: the Signing tab listed the film's three credentialed sources with the identity's name and links, and a signing through the route redacted the identity. Read back by the library and by c2patool, the copy is valid apart from the throwaway certificate's trust, with no trace of the identity.

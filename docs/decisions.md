@@ -161,6 +161,22 @@ Short numbered log of decisions that shape the code. Add a line when one is made
     - both engines' real signed copies meet the format 2 schema;
     - the demo page renders format 2 and format 1 in a headless browser (Edge, reduced motion so the fade-ins don't hide it): three cards for format 2, two for format 1.
   - _Watch list:_ CAWG #286 is unchanged (open, no activity since 22 Oct).
+- **D58 (2026-11-25) The public viewer checks a copy a visitor has.** Phase 8, step 3; no new dependency. The roadmap's first rung of stripping survival ends with "the viewer verifies the signed file in the browser".
+  - _What it does._ Under "Check it yourself", a visitor picks a copy of the film from their own device.
+    - The viewer works out its SHA-256 a slice at a time and compares it with `signedFile.sha256` in the record.
+    - It says "This is the file this record describes", or "This is not", with why a copy from a video platform never matches.
+    - A copy of another size is answered at once, without reading it.
+    - The file is read on the visitor's device and never sent anywhere, so it works for any copy and needs nothing from the host (no CORS).
+  - _Why its own SHA-256._ The browser's `crypto.subtle.digest` wants the whole file in memory at once, which a phone may not have room for, and can't report progress. So `public-viewer/src/sha256.js` is plain JavaScript, about 200 lines, checked against Node's hash at every length around a block's edges, whole and in pieces.
+    - It reads 4 MB slices and yields between them, with a progress bar and a status that screen readers announce.
+    - On the signed 354 MB demo film it took 3.8 s in Node and 2.7 s in a desktop browser (headless Edge), with no slice longer than 90 ms. The result matched the record.
+    - A phone is untested; it is expected to take several times longer.
+  - _What a match proves._ The copy is the file this record describes, byte for byte, and no more: a forged record could carry the fingerprint of any file. The viewer's wording says so, and so do its README and the threat model.
+  - _The full credential check (the spike, decision 2)._ `@contentauth/c2pa-web` 0.16.1 read the same film in a desktop browser:
+    - 0.1 s to load its 9 MB WebAssembly module and 2.3 s to read and validate, with the pinned C2PA trust list;
+    - the same verdict as the tracker's reader: content matches, claim signature valid, signer not on the trust list, time stamp valid from an authority not on the C2PA list.
+
+    It needs a bundler (it imports other packages by name and runs in a worker), and the viewer has no build step. So it comes, if taken, as a reading function the page passes to the viewer, built by the page's own bundler; the viewer keeps no dependency and the repo no 9 MB file. That is the next pull request.
 - **D59 (2026-11-25) A timeline file holding several sequences: the one the edit was exported from, never the first by chance.** Phase 8, step 6, first part; no new dependency, no catalog change.
   - _The problem._ A Premiere Pro export of a whole project holds every sequence in it. On 15 Nov 2026 the xmeml reader took the first one without saying so: a 631-second assembly instead of the 146-second film.
   - _Listing._ The xmeml reader lists the sequences a file holds as its own (`sequences()`): at the top level, then in a project, then in the project's bins, bin by bin. A sequence nested inside a clip is part of the sequence that uses it, never a choice. `parse(text, { sequence })` reads the one asked for. The format registry has `listSequences` and passes the choice on; a format with one sequence per file need not say.

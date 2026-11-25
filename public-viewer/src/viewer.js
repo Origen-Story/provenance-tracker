@@ -28,6 +28,7 @@ import {
 	identityVerdict,
 	timeStampSentence,
 	withheldSentence,
+	copyVerdict,
 	TONE_WORDS,
 	groupHash,
 	formatBytes,
@@ -37,6 +38,9 @@ import {
 	filterIngredients,
 } from "./model.js";
 import { videoPlayer, youtubePlayer, clockPlayer } from "./players.js";
+import { hashBlob } from "./sha256.js";
+
+let checks = 0;
 
 const VERIFY_URL = "https://contentcredentials.org/verify";
 const LANES = [
@@ -1267,6 +1271,90 @@ class Viewer {
 		);
 	}
 
+	// Check a copy the visitor has, here in the browser (D58): its SHA-256, a
+	// slice at a time, compared with the record's. Nothing is uploaded; a copy
+	// of another size is answered at once, without reading it.
+	copyCheck() {
+		const f = this.exp.signedFile;
+		const id = `ptv-copy-file-${++checks}`;
+		const input = h("input", { type: "file", id, class: "ptv-file-input" });
+		const progress = h("progress", {
+			class: "ptv-progress",
+			max: "100",
+			value: "0",
+			hidden: true,
+			"aria-label": "Checking the file",
+		});
+		const status = h("div", {
+			class: "ptv-copy-status",
+			role: "status",
+			"aria-live": "polite",
+		});
+		const show = (verdict, hex) =>
+			status.replaceChildren(
+				h(
+					"div",
+					{ class: `ptv-verdict-card ptv-tone-${verdict.tone}` },
+					h(
+						"p",
+						{ class: "ptv-result-h" },
+						h("span", { class: "ptv-result-label" }, "Your copy"),
+						h("span", { class: "ptv-tone-word" }, TONE_WORDS[verdict.tone]),
+					),
+					h("strong", {}, verdict.headline),
+					h("p", {}, verdict.detail),
+					hex ? h("p", { class: "ptv-mono ptv-small" }, groupHash(hex)) : null,
+				),
+			);
+		let running = null;
+		input.addEventListener("change", async () => {
+			running?.abort();
+			const file = input.files?.[0];
+			if (!file) return;
+			if (f.bytes && file.size !== f.bytes) {
+				progress.hidden = true;
+				show(copyVerdict("", this.exp), "");
+				return;
+			}
+			const ctrl = new AbortController();
+			running = ctrl;
+			progress.value = 0;
+			progress.hidden = false;
+			status.replaceChildren(`Checking ${file.name}…`);
+			try {
+				const hex = await hashBlob(file, {
+					signal: ctrl.signal,
+					onProgress: (done, total) => {
+						progress.value = Math.round((done / total) * 100);
+					},
+				});
+				show(copyVerdict(hex, this.exp), hex);
+			} catch (err) {
+				if (err?.name !== "AbortError")
+					status.replaceChildren(
+						`The file could not be read: ${err?.message || err}`,
+					);
+			} finally {
+				if (running === ctrl) {
+					running = null;
+					progress.hidden = true;
+				}
+			}
+		});
+		return h(
+			"div",
+			{ class: "ptv-copy-check" },
+			h(
+				"label",
+				{ for: id, class: "ptv-small" },
+				"Or check a copy you have, here in your browser. The file is read on your device and not uploaded:",
+			),
+			input,
+			progress,
+			status,
+		);
+	}
+
 	// Folded at the very bottom: for the few who want to check the file itself.
 	renderVerify() {
 		const { exp, opts } = this;
@@ -1369,6 +1457,7 @@ class Viewer {
 							h("code", {}, `shasum -a 256 "${f.fileName}"`),
 							".",
 						),
+						this.copyCheck(),
 					),
 					h(
 						"li",

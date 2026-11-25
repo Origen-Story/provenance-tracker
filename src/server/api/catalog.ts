@@ -86,7 +86,9 @@ import {
 	linkAssets,
 	NotFoundError,
 	removeCredit,
+	PUBLICATION_FIELDS,
 	setGeneration,
+	setPublication,
 	setRemoved,
 	setThumbnail,
 	startFromEdit,
@@ -1445,6 +1447,41 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 					`attachment; filename="${fileName.replace(/["\\]/g, "_")}"`,
 				);
 				res.json(data);
+			});
+		},
+	);
+
+	// Where a signed copy is published (D56): the web address of the signed
+	// file and of the page that shows it, https only. Recorded, never fetched.
+	api.put(
+		"/projects/:projectId/signatures/:signatureId/publication",
+		(req: Request, res: Response) => {
+			const id = idParam(req.params.signatureId, "signing");
+			withEdit(machine, req, (project, opts, fields) => {
+				const unknown = Object.keys(fields).filter(
+					(k) => !PUBLICATION_FIELDS.includes(k),
+				);
+				if (unknown.length)
+					throw new HttpError(
+						400,
+						`Give { "file_url": <https address or "">, "page_url": <https address or ""> }; there is no ${unknown.join(", ")}`,
+					);
+				const named = Object.fromEntries(
+					PUBLICATION_FIELDS.filter((k) => Object.hasOwn(fields, k)).map(
+						(k) => [k, fields[k]],
+					),
+				);
+				const publication = setPublication(project.db, id, named, opts);
+				const signing = project.db
+					.prepare("SELECT asset_id FROM signatures WHERE id = ?")
+					.get(id) as { asset_id: number };
+				res.json({
+					publication: publication && {
+						fileUrl: publication.fileUrl,
+						pageUrl: publication.pageUrl,
+					},
+					asset: assetRecord(project.db, signing.asset_id),
+				});
 			});
 		},
 	);

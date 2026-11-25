@@ -317,6 +317,9 @@ export function openProject(
 		);
 	const refusal = refusalMessage(state);
 	if (refusal) throw new Error(`${catalogPath}: ${refusal}`);
+	// This machine's settings are read before anything is written, so a
+	// damaged settings file stops the open before an upgrade changes the catalog.
+	const settings = readSettings(machine.settingsPath);
 
 	const db = new DatabaseSync(catalogPath);
 	try {
@@ -351,9 +354,7 @@ export function openProject(
 			throw new Error(
 				`${catalogPath} has no project id or name; run verify on it`,
 			);
-		if (
-			readSettings(machine.settingsPath).projects[projectId]?.folder !== folder
-		)
+		if (settings.projects[projectId]?.folder !== folder)
 			updateSettings(machine.settingsPath, (s) => {
 				projectEntry(s, projectId).folder = folder;
 			});

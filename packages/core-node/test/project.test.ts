@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import {
+	copyFileSync,
 	cpSync,
 	existsSync,
 	mkdirSync,
@@ -9,8 +10,12 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { APPLICATION_ID } from "@provenancetracker/core/catalog/format.ts";
+import {
+	APPLICATION_ID,
+	CATALOG_FORMAT,
+} from "@provenancetracker/core/catalog/format.ts";
 import { verifyCatalog } from "@provenancetracker/core/catalog/verify.ts";
 import {
 	catalogPathOf,
@@ -28,6 +33,11 @@ import { machinesForTests, peek } from "./helpers/machine.ts";
 
 const t = machinesForTests();
 const NOW = "2026-11-21T12:00:00.000Z";
+// The format a new project gets, and a made-up next one.
+const N = CATALOG_FORMAT;
+const V1_SAMPLE = fileURLToPath(
+	new URL("../../core/test/fixtures/catalog/v1.sqlite", import.meta.url),
+);
 
 describe("createProject", () => {
 	it("makes a checked catalog, registers it on this machine, and leaves nothing else behind", () => {
@@ -201,7 +211,7 @@ describe("openProject", () => {
 					);
 					db.close();
 				},
-				"format 99, and this version of Provenance Tracker reads formats up to 1",
+				`format 99, and this version of Provenance Tracker reads formats up to ${CATALOG_FORMAT}`,
 			],
 		];
 		for (const [label, make, message] of cases) {
@@ -237,19 +247,19 @@ describe("openProject", () => {
 		const m = t.machine();
 		const made = createProject(t.folder("film"), { name: "Film", machine: m });
 		const step = {
-			from: 1,
-			to: 2,
-			sql: "CREATE TABLE added_in_2 (x TEXT) STRICT; PRAGMA user_version = 2;",
+			from: N,
+			to: N + 1,
+			sql: `CREATE TABLE added_in_2 (x TEXT) STRICT; PRAGMA user_version = ${N + 1};`,
 		};
 		const p = t.track(
 			openProject(made.folder, {
 				machine: m,
 				now: NOW,
-				upgrade: { steps: [step], target: 2 },
+				upgrade: { steps: [step], target: N + 1 },
 			}),
 		);
-		const backup = "backups/catalog.format-1.2026-11-21T12-00-00-000Z.sqlite";
-		expect(p.upgraded).toEqual({ from: 1, to: 2, backup });
+		const backup = `backups/catalog.format-${N}.2026-11-21T12-00-00-000Z.sqlite`;
+		expect(p.upgraded).toEqual({ from: N, to: N + 1, backup });
 		const run = p.db
 			.prepare("SELECT tool, summary FROM runs WHERE kind = 'upgrade'")
 			.get() as {
@@ -257,11 +267,11 @@ describe("openProject", () => {
 			summary: string;
 		};
 		expect(run.tool).toBe(TOOL.name);
-		expect(JSON.parse(run.summary)).toEqual({ from: 1, to: 2, backup });
-		// The copy is the catalog as it was: format 1, without the new table.
+		expect(JSON.parse(run.summary)).toEqual({ from: N, to: N + 1, backup });
+		// The copy is the catalog as it was: format N, without the new table.
 		peek(path.join(path.dirname(made.catalogPath), backup), (copy) => {
 			expect(copy.prepare("PRAGMA user_version").get()).toEqual({
-				user_version: 1,
+				user_version: N,
 			});
 			expect(
 				copy
@@ -272,26 +282,78 @@ describe("openProject", () => {
 		});
 	});
 
+	it("upgrades a format 1 catalog to format 2 as it opens it, after checking the copy (D56)", () => {
+		const m = t.machine();
+		const made = createProject(t.folder("film"), { name: "Film", machine: m });
+		// Format 1's committed sample stands in for a real project from before.
+		copyFileSync(V1_SAMPLE, made.catalogPath);
+		const p = t.track(openProject(made.folder, { machine: m, now: NOW }));
+		const backup = "backups/catalog.format-1.2026-11-21T12-00-00-000Z.sqlite";
+		expect(p.upgraded).toEqual({ from: 1, to: 2, backup });
+		expect(p.db.prepare("PRAGMA user_version").get()).toEqual({
+			user_version: 2,
+		});
+		expect(
+			p.db.prepare("SELECT count(*) AS n FROM publications").get(),
+		).toEqual({ n: 0 });
+		expect(verifyCatalog(p.db)).toEqual([]);
+		peek(path.join(path.dirname(made.catalogPath), backup), (copy) => {
+			expect(copy.prepare("PRAGMA user_version").get()).toEqual({
+				user_version: 1,
+			});
+			// verifyCatalog checks a current catalog; the copy is format 1.
+			expect(copy.prepare("PRAGMA integrity_check").get()).toEqual({
+				integrity_check: "ok",
+			});
+			expect(
+				copy
+					.prepare("SELECT name FROM sqlite_schema WHERE name = 'publications'")
+					.get(),
+			).toBeUndefined();
+		});
+		p.db.close();
+		// Opened again, it is current: nothing more is copied or changed.
+		const again = t.track(openProject(made.folder, { machine: m }));
+		expect(again.upgraded).toBeNull();
+		expect(
+			readdirSync(path.join(path.dirname(made.catalogPath), "backups")),
+		).toEqual(["catalog.format-1.2026-11-21T12-00-00-000Z.sqlite"]);
+	});
+
+	it("leaves an older catalog as it was when this machine's settings are damaged", () => {
+		const m = t.machine();
+		const made = createProject(t.folder("film"), { name: "Film", machine: m });
+		copyFileSync(V1_SAMPLE, made.catalogPath);
+		writeFileSync(m.settingsPath, "{}");
+		const before = readFileSync(made.catalogPath);
+		expect(() => openProject(made.folder, { machine: m })).toThrow(/damaged/);
+		expect(readFileSync(made.catalogPath).equals(before)).toBe(true);
+		expect(readdirSync(path.dirname(made.catalogPath))).toEqual([
+			".gitignore",
+			"catalog.sqlite",
+		]);
+	});
+
 	it("keeps the copy, and the catalog as it was, when an upgrade step fails", () => {
 		const m = t.machine();
 		const made = createProject(t.folder("film"), { name: "Film", machine: m });
 		const bad = {
-			from: 1,
-			to: 2,
+			from: N,
+			to: N + 1,
 			sql: "CREATE TABLE half (x TEXT); SELECT no_such_function();",
 		};
 		expect(() =>
 			openProject(made.folder, {
 				machine: m,
 				now: NOW,
-				upgrade: { steps: [bad], target: 2 },
+				upgrade: { steps: [bad], target: N + 1 },
 			}),
 		).toThrow("no_such_function");
 		const backups = readdirSync(
 			path.join(path.dirname(made.catalogPath), "backups"),
 		);
 		expect(backups).toEqual([
-			"catalog.format-1.2026-11-21T12-00-00-000Z.sqlite",
+			`catalog.format-${N}.2026-11-21T12-00-00-000Z.sqlite`,
 		]);
 		const p = t.track(openProject(made.folder, { machine: m }));
 		expect(

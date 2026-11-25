@@ -1,8 +1,8 @@
 // Bring an older catalog up to the current format, one step at a time.
 //
-// There are no steps yet: format 1 is the first. When format 2 exists, its
-// step goes in UPGRADES, format 1's sample catalog stays in the tests, and the
-// tests upgrade every sample on every change.
+// Each format after the first has one step from the format before it. Every
+// format's sample catalog stays in the tests, and the tests upgrade every
+// sample on every change.
 
 import type { DatabaseSync } from "node:sqlite";
 import {
@@ -14,6 +14,7 @@ import {
 } from "./format.ts";
 import type { Tool } from "./create.ts";
 import { forgetColumns } from "./columns.ts";
+import { UPGRADE_1_TO_2_SQL } from "./schema-v2.ts";
 
 export interface UpgradeStep {
 	from: number;
@@ -22,7 +23,10 @@ export interface UpgradeStep {
 	sql: string;
 }
 
-export const UPGRADES: readonly UpgradeStep[] = [];
+export const UPGRADES: readonly UpgradeStep[] = [
+	// Where a signed copy is published (D56).
+	{ from: 1, to: 2, sql: UPGRADE_1_TO_2_SQL },
+];
 
 export interface UpgradeOptions {
 	/**

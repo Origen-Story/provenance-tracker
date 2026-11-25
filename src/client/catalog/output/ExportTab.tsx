@@ -3,11 +3,11 @@
 // not the timeline as it is now.
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { outputs, type AssetRecord } from "../api.ts";
 import { assetKey } from "../asset/shared.ts";
 import { bytes, SIGNED_STATUS } from "../labels.ts";
-import { Card, Loading, Problem, when } from "../ui.tsx";
+import { Button, Card, Loading, Problem, TextField, when } from "../ui.tsx";
 import { fmtClock } from "./strip.tsx";
 
 export default function ExportTab({
@@ -75,6 +75,14 @@ export default function ExportTab({
 						</span>
 					</label>
 				))}
+				{selected != null && (
+					<Published
+						key={selected}
+						projectId={projectId}
+						asset={asset}
+						signatureId={selected}
+					/>
+				)}
 			</div>
 			<div>
 				{e.isLoading && <Loading />}
@@ -160,5 +168,78 @@ export default function ExportTab({
 				)}
 			</div>
 		</div>
+	);
+}
+
+/**
+ * Where the selected signed copy is published (D56): the web address of the
+ * signed file and of the page that shows it. The tracker records them and
+ * never fetches them.
+ */
+function Published({
+	projectId,
+	asset,
+	signatureId,
+}: {
+	projectId: string;
+	asset: AssetRecord;
+	signatureId: number;
+}) {
+	const qc = useQueryClient();
+	const signing = asset.signatures.find((s) => s.id === signatureId);
+	const saved = signing?.publication ?? { fileUrl: "", pageUrl: "" };
+	const [fileUrl, setFileUrl] = useState(saved.fileUrl);
+	const [pageUrl, setPageUrl] = useState(saved.pageUrl);
+	const save = useMutation({
+		mutationFn: () =>
+			outputs.setPublication(projectId, signatureId, {
+				file_url: fileUrl,
+				page_url: pageUrl,
+			}),
+		onSuccess: (answer) => {
+			qc.setQueryData(assetKey(projectId, asset.id), answer.asset);
+			setFileUrl(answer.publication?.fileUrl ?? "");
+			setPageUrl(answer.publication?.pageUrl ?? "");
+		},
+	});
+	const changed =
+		fileUrl.trim() !== saved.fileUrl || pageUrl.trim() !== saved.pageUrl;
+	return (
+		<Card className="space-y-3">
+			<h4 className="text-sm font-medium text-text-primary">
+				Where v{signing?.version} is published
+			</h4>
+			<TextField
+				label="Where is the signed file hosted?"
+				value={fileUrl}
+				onChange={setFileUrl}
+				placeholder="https://"
+				hint="The address people download the signed copy from."
+			/>
+			<TextField
+				label="The page that shows it"
+				value={pageUrl}
+				onChange={setPageUrl}
+				placeholder="https://"
+				hint="The page with the public viewer: the link to put in a video's description."
+			/>
+			<p className="text-xs text-text-secondary">
+				https addresses only. Leave one empty when it is not published there.
+				The tracker records these and never opens them; earlier addresses stay
+				in the history.
+			</p>
+			<div className="flex items-center gap-3">
+				<Button
+					onClick={() => save.mutate()}
+					disabled={!changed || save.isPending}
+				>
+					{save.isPending ? "Saving…" : "Save"}
+				</Button>
+				{save.isSuccess && !changed && (
+					<span className="text-xs text-text-secondary">Saved</span>
+				)}
+			</div>
+			<Problem error={save.error} />
+		</Card>
 	);
 }

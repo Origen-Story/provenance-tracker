@@ -141,6 +141,11 @@ export const EDITABLE: Readonly<Record<string, TableSpec>> = {
 		},
 	},
 	timeline_clips: { key: "id", fields: { origin_class: textOrNull } },
+	// Format 2 (D56): where a signed copy is published.
+	publications: {
+		key: "id",
+		fields: { file_url: text, page_url: text, withheld: json },
+	},
 };
 
 /** Project settings in meta that may be changed; the rest are written once. */

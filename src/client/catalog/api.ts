@@ -241,6 +241,8 @@ export interface AssetRecord {
 		status: string;
 		timestamped: boolean;
 		signedAt: string;
+		/** Where this signed copy is published (D56); null if never. */
+		publication: Publication | null;
 	}>;
 	history: Array<{
 		at: string;
@@ -685,6 +687,17 @@ export const outputs = {
 		api<{ job: Job }>("POST", `/projects/${projectId}/assets/${assetId}/sign`, {
 			fields,
 		}),
+	/** Where a signed copy is published (D56): https addresses, or "" for none. */
+	setPublication: (
+		projectId: string,
+		signatureId: number,
+		fields: { file_url?: string; page_url?: string },
+	) =>
+		api<{ publication: Publication | null; asset: AssetRecord }>(
+			"PUT",
+			`/projects/${projectId}/signatures/${signatureId}/publication`,
+			{ fields },
+		),
 	publicExportUrl: (projectId: string, signatureId: number) =>
 		`${BASE}/projects/${projectId}/signatures/${signatureId}/public-export`,
 	publicExport: (projectId: string, signatureId: number) =>
@@ -693,6 +706,12 @@ export const outputs = {
 			`/projects/${projectId}/signatures/${signatureId}/public-export`,
 		),
 };
+
+/** Where a signed copy is published (D56). */
+export interface Publication {
+	fileUrl: string;
+	pageUrl: string;
+}
 
 /** The public export of one signing (manifest/public-export.js): what a public page shows. */
 export interface PublicExport {

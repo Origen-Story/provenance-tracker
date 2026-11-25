@@ -99,6 +99,15 @@ Note: Origen Story's projects currently use only the high-priority set. Deferred
 - **Choosing the identity's role per edit** (D55, 2026-11-25). The identity signs as `cawg.creator` always. Someone who edits or publishes another person's work would sign as `cawg.editor` or `cawg.publisher`. It ties into the credits table, which already keeps "made by" apart from "on behalf of".
 - **Trusting an identity's issuer** (D55). No CAWG trust list is pinned, so every identity reads "valid, unrecognised issuer". Pin CAWG's interim trust list (extended to 31 Dec 2027) the way the C2PA lists are (`npm run tools:fetch`, by commit and checksum), and add a per-machine setting for extra identity anchors, beside the one planned for claim anchors. Re-check CAWG's new certificate profile first.
 - **The identity in the public export and the viewer** (Phase 8). The Signing tab shows it; the public export (`spec/public-export.v1.schema.json`) and the viewer don't yet. That needs a new export version showing identity, signer and file integrity as separate results.
+
+### The public record, left for after Phase 8 (2026-11-25)
+
+Phase 8 makes the public record findable and checkable: where each signed copy is published (D56), an export that shows the file, the signer and the identity as separate results, a check of a downloaded copy in the viewer, review before signing and before export, and revisions and deliverables inside the tool. These were put off:
+
+- **A published fingerprint (rung 2 of stripping survival).** The public record would carry a code computed from the picture and sound that stays similar after a platform re-encodes the film. ISCC is an open ISO standard for this, and anyone could compute it from their own copy and compare, with no service to run. It needs a short investigation first: how mature the video tooling is, and whether it runs from Node. An export format after Phase 8's would carry it.
+- **Revisions in the public record.** A line such as "replaces the version signed on 15 Nov" in the export and the viewer. It waits for editors' feedback on the revisions view (Phase 8, step 6), since it would be a public format, and would be a later export format.
+- **Hosting a signed file from the tracker.** Uploading the signed copy to object storage or a release from the app. Today the tracker records where you put the file and doesn't put it there ([publishing.md](publishing.md)).
+
 - **A certificate request for a real identity certificate.** Make the key and a CSR in the tool, to take to a CA that issues CAWG identity certificates, rather than only a self-issued test one. It waits for the experts conversation.
 
 ---

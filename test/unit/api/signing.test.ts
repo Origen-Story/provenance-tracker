@@ -222,6 +222,41 @@ describe.skipIf(!haveOpenssl)("signing through the API", () => {
 			404,
 		);
 
+		// Where the signed copy is published (D56): https only, named fields only.
+		const where = `/signatures/${signatureId}/publication`;
+		const published = await w.call("PUT", where, {
+			fields: {
+				file_url: "https://media.example.org/film.signed.v1.mp4",
+				page_url: "https://example.org/films/demo",
+			},
+		});
+		expect(published.status).toBe(200);
+		const body = await w.json(published);
+		expect(body.publication).toEqual({
+			fileUrl: "https://media.example.org/film.signed.v1.mp4",
+			pageUrl: "https://example.org/films/demo",
+		});
+		expect(
+			body.asset.signatures.find((s: { id: number }) => s.id === signatureId)
+				.publication,
+		).toEqual(body.publication);
+		for (const [fields, status, message] of [
+			[{ file_url: "http://media.example.org/film.mp4" }, 400, /https:\/\//],
+			[{ withheld: [] }, 400, /there is no withheld/],
+			[{ file_url: "", signature_id: 2 }, 400, /there is no signature_id/],
+		] as const) {
+			const r = await w.call("PUT", where, { fields });
+			expect(r.status, JSON.stringify(fields)).toBe(status);
+			expect((await w.json(r)).error).toMatch(message);
+		}
+		expect(
+			(
+				await w.call("PUT", "/signatures/99/publication", {
+					fields: { file_url: "https://example.org/a.mp4" },
+				})
+			).status,
+		).toBe(404);
+
 		expect((await w.json(await w.call("DELETE", "/signing"))).configured).toBe(
 			false,
 		);

@@ -209,13 +209,38 @@ describe("signerOf", () => {
 			signedBy: "creator",
 			signerName: "A Studio Signing Cert",
 		});
-		expect(
-			signerOf(c2paSignals(elevenlabs), ["eleven labs inc."]).signedBy,
-		).toBe("creator");
 		expect(signerOf(c2paSignals(null))).toEqual({
 			signedBy: "",
 			signerName: "",
 		});
+	});
+
+	it("recognises the project's own certificate by its name and issuer together", () => {
+		const byOwnCert = created("digitalCapture", {
+			claimGenerator: "Some Editor 3.1",
+			signatureInfo: { issuer: "Studio Dev Root CA", commonName: "A. Creator" },
+		});
+		const own = [{ commonName: "a. creator", issuer: "STUDIO DEV ROOT CA" }];
+		expect(signerOf(c2paSignals(byOwnCert), own)).toEqual({
+			signedBy: "creator",
+			signerName: "A. Creator",
+		});
+		// The same name from another issuer is someone else's certificate.
+		const lookalike = created("digitalCapture", {
+			claimGenerator: "Some Editor 3.1",
+			signatureInfo: { issuer: "Anyone's CA", commonName: "A. Creator" },
+		});
+		expect(signerOf(c2paSignals(lookalike), own).signedBy).toBe("tool");
+		// Another certificate the same authority issued is not the creator's.
+		const sibling = created("digitalCapture", {
+			claimGenerator: "Some Editor 3.1",
+			signatureInfo: { issuer: "Studio Dev Root CA", commonName: "B. Other" },
+		});
+		expect(signerOf(c2paSignals(sibling), own).signedBy).toBe("tool");
+		expect(
+			signerOf(c2paSignals(elevenlabs), [{ commonName: "", issuer: "" }])
+				.signedBy,
+		).toBe("tool");
 	});
 });
 

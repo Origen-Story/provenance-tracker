@@ -310,11 +310,17 @@ export const assets = {
 					fields: string[];
 					credits: number;
 					statement: boolean;
+					thumbnail: boolean;
 					clipClasses: number;
 				};
 			}
 		>("POST", `/projects/${projectId}/assets/${id}/start-from`, {
 			fields: { from_id: fromId },
+		}),
+	/** Pick the image the edit is shown by in its credentials, or none (D52). */
+	setThumbnail: (projectId: string, id: number, imageId: number | null) =>
+		api<Answer>("PUT", `/projects/${projectId}/assets/${id}/thumbnail`, {
+			fields: { image_id: imageId },
 		}),
 	addCredit: (projectId: string, id: number, fields: Fields) =>
 		api<Answer>("POST", `/projects/${projectId}/assets/${id}/credits`, {
@@ -641,6 +647,7 @@ export const outputs = {
 			blockers: string[];
 			/** The asset each ingredient is, in the statement's order. */
 			ingredientAssetIds: number[];
+			thumbnailAssetId: number | null;
 		}>("GET", `/projects/${projectId}/assets/${assetId}/statement-preview`),
 	signing: (projectId: string) =>
 		api<SigningStatus>("GET", `/projects/${projectId}/signing`),

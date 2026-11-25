@@ -208,6 +208,19 @@ export interface SignIngredient {
 }
 
 /**
+ * A file the definition names by identifier, such as the claim thumbnail
+ * (build.js names it by its hash). c2patool resolves identifiers against the
+ * definition's folder, so each is copied there under that name.
+ */
+export interface SignResource {
+	identifier: string;
+	filePath: string;
+}
+
+// An identifier is a plain file name: it must not reach outside the folder.
+const RESOURCE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+/**
  * Sign `inputPath` into `outputPath` with a definition from build.js.
  * With `sidecar`, the manifest goes to `outputPath` as a .c2pa sidecar and
  * the input is left untouched (D13); c2patool still writes a copy of the
@@ -221,6 +234,7 @@ export async function signWithC2patool(opts: {
 	outputPath: string;
 	definition: Record<string, unknown>;
 	ingredients?: SignIngredient[];
+	resources?: SignResource[];
 	certificatePath: string;
 	privateKeyPath: string;
 	/** RFC 3161 time-stamp authority; left out in tests (no network). */
@@ -254,6 +268,15 @@ export async function signWithC2patool(opts: {
 					ing,
 				),
 			);
+		for (const res of opts.resources ?? []) {
+			if (!RESOURCE_NAME.test(res.identifier) || res.identifier.includes(".."))
+				throw new Error(`Not a plain file name: ${res.identifier}`);
+			if (!existsSync(res.filePath))
+				throw new Error(
+					`A file the credentials take is missing: ${path.basename(res.filePath)}`,
+				);
+			await copyFile(res.filePath, path.join(dir, res.identifier));
+		}
 		const full = {
 			...opts.definition,
 			alg: await algorithmFor(opts.certificatePath),

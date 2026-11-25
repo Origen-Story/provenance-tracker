@@ -213,10 +213,31 @@ function compositionClass(db: DatabaseSync, sha256: string): string | null {
 	return positions.length ? compositeClassFor(positions) : null;
 }
 
+/**
+ * The certificates this project has signed with, as a reader reports them
+ * (the signer's name and its issuer's), from the catalog's own signing
+ * record: a file signed by one of them was signed by the creator. Read from
+ * the catalog rather than this machine's settings, so every classify run,
+ * on any machine, agrees.
+ */
+export function ownSigners(
+	db: DatabaseSync,
+): Array<{ commonName: string; issuer: string }> {
+	return (
+		db
+			.prepare(
+				`SELECT DISTINCT signer_name AS commonName, signer_issuer AS issuer
+				 FROM signatures WHERE signer_name <> '' ORDER BY signer_name, signer_issuer`,
+			)
+			.all() as Array<{ commonName: string; issuer: string }>
+	).map((r) => ({ commonName: r.commonName, issuer: r.issuer }));
+}
+
 /** What classify would do to one asset. Reads only. */
 export function classifyAsset(
 	db: DatabaseSync,
 	assetId: number,
+	own: ReadonlyArray<{ commonName: string; issuer: string }> = ownSigners(db),
 ): AssetClassification | null {
 	const asset = db.prepare("SELECT * FROM assets WHERE id = ?").get(assetId) as
 		Row | undefined;
@@ -251,6 +272,7 @@ export function classifyAsset(
 		platform: detected.platform,
 		platformData: detected.platform === "unknown" ? null : detected.data,
 		parentClass: parentClass(db, assetId),
+		ownSigners: [...own],
 	};
 
 	// Kind first, for an unsorted asset: the class rules depend on it.
@@ -388,8 +410,9 @@ export function classifyCatalog(
 	const ids = opts.assetIds
 		? all.filter((id) => opts.assetIds!.includes(id))
 		: all;
+	const own = ownSigners(db);
 	const plans = ids
-		.map((id) => classifyAsset(db, id))
+		.map((id) => classifyAsset(db, id, own))
 		.filter((p): p is AssetClassification => p !== null);
 	const report: ClassifyReport = {
 		runId: null,

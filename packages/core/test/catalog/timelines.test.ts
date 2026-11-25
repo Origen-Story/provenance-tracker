@@ -6,6 +6,7 @@ import {
 	editAsset,
 	setRemoved,
 	startFromEdit,
+	thumbnailOf,
 } from "../../src/catalog/edits.ts";
 import { EditError, NotFoundError } from "../../src/catalog/errors.ts";
 import { finishRun, startRun } from "../../src/catalog/runs.ts";
@@ -579,6 +580,7 @@ describe("startFromEdit (D50)", () => {
 			from: w.film,
 			credits: 1,
 			statement: true,
+			thumbnail: false,
 			clipClasses: 0,
 		});
 		expect(copied.fields.sort()).toEqual(
@@ -631,6 +633,36 @@ describe("startFromEdit (D50)", () => {
 			/already started/,
 		);
 		expect(asset(w.db, w.film).description).toBe("About the film");
+	});
+
+	it("takes the earlier edit's thumbnail, unless it has one of its own (D52)", () => {
+		const thumb = (db: DatabaseSync, film: number, image: number) =>
+			createRow(
+				db,
+				"relationships",
+				{ parent_id: film, child_id: image, type: "thumbnail_of" },
+				PERSON,
+			);
+		const w = world();
+		firstEdit(w);
+		const poster = Number(
+			createRow(w.db, "assets", { kind: "produced" }, PERSON),
+		);
+		thumb(w.db, w.film, poster);
+		const v2 = secondExport(w);
+		expect(startFromEdit(w.db, v2, w.film, ME).thumbnail).toBe(true);
+		expect(thumbnailOf(w.db, v2)).toBe(poster);
+		expect(thumbnailOf(w.db, w.film)).toBe(poster);
+
+		const w2 = world();
+		firstEdit(w2);
+		const a = Number(createRow(w2.db, "assets", { kind: "produced" }, PERSON));
+		const b = Number(createRow(w2.db, "assets", { kind: "produced" }, PERSON));
+		thumb(w2.db, w2.film, a);
+		const v3 = secondExport(w2);
+		thumb(w2.db, v3, b);
+		expect(startFromEdit(w2.db, v3, w2.film, ME).thumbnail).toBe(false);
+		expect(thumbnailOf(w2.db, v3)).toBe(b);
 	});
 
 	it("carries the earlier edit's clip classes to the new edit's first timeline import", () => {

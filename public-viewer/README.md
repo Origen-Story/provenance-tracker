@@ -48,6 +48,8 @@ Copy `src/` and `viewer.css` into the site (pin a commit), then:
 
 Everything shown comes from the export file. The viewer sets text only as text (never `innerHTML`), so an export cannot inject markup or scripts. The only links it makes are the ones the page passes in, the IPTC source-type URIs in the export, Content Credentials Verify, and the signed file's and page's addresses an export records, used only when they are whole https addresses (`safeLink` in `model.js`). The export records how the signature read back when the tracker signed the file; the viewer does not check the signature itself. Visitors check it with the download, the hash and an independent reader.
 
+**Checking a copy (D58).** Under "Check it yourself", a visitor can pick a copy of the film from their own device. The viewer reads it a slice at a time, works out its SHA-256 with its own code (`src/sha256.js`; the browser's built-in hash wants the whole file in memory at once), and compares it with the record's. The file is read on the visitor's device and never uploaded, and a copy of another size is answered at once. A match says the copy is the file this record describes, byte for byte. It does not make the record true: a record someone else made could carry the fingerprint of any file. So it is worth as much as the place the record came from, normally the creator's own page. The signed 354 MB demo film took about 3 seconds in a desktop browser.
+
 **Formats.** The viewer reads export formats 1 and 2. Format 2 (D57) shows what the signature says as separate results, never one badge: the film (did its content match what was signed), the signer (whether a reader recognises the certificate, and who issued the time stamp), and the creator's identity when the file carries one, marked self-declared when no recognised issuer vouches for it. Each result says its tone in words as well as colour. A format 1 record has one signature block and no identity, so the viewer shows the film and the signer and says nothing about an identity. A viewer older than format 2 refuses a format 2 export with "This viewer reads export format 1, not 2": update a site's copy of `src/` before publishing a format 2 export ([docs/publishing.md](../docs/publishing.md)).
 
 ## Files
@@ -55,6 +57,7 @@ Everything shown comes from the export file. The viewer sets text only as text (
 | File             |                                                                                                                 |
 | ---------------- | --------------------------------------------------------------------------------------------------------------- |
 | `src/model.js`   | pure: sections, shares, the plain-language sentences, the verdict wording. Tested in `test/unit/public-viewer/` |
+| `src/sha256.js`  | pure: SHA-256 a piece at a time, for checking a copy a visitor picks (D58). Tested against Node's own hash      |
 | `src/players.js` | adapters for a `<video>`, a YouTube embed, and a clock with no video                                            |
 | `src/viewer.js`  | builds the page section                                                                                         |
 | `viewer.css`     | all styles, scoped under `.ptv`                                                                                 |

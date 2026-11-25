@@ -4,9 +4,12 @@
 
 export class ApiError extends Error {
 	status: number;
-	constructor(status: number, message: string) {
+	/** The answer's body, for a refusal that says more than its message (a timeline's sequences to choose from). */
+	data: unknown;
+	constructor(status: number, message: string, data: unknown = null) {
 		super(message);
 		this.status = status;
+		this.data = data;
 	}
 }
 
@@ -36,7 +39,7 @@ export async function api<T>(
 		const words =
 			(json as { error?: string } | null)?.error ??
 			`${res.status} ${res.statusText}`;
-		throw new ApiError(res.status, words);
+		throw new ApiError(res.status, words, json);
 	}
 	return json as T;
 }
@@ -582,9 +585,20 @@ export interface SigningStatus {
 }
 
 export const outputs = {
-	importTimeline: (projectId: string, assetId: number, file: File) => {
+	/**
+	 * Import a timeline file for an output. A file holding several sequences
+	 * may need `sequence` (its index): without one the answer is 409 with the
+	 * sequences to choose from (timelineSequences reads them off the error).
+	 */
+	importTimeline: (
+		projectId: string,
+		assetId: number,
+		file: File,
+		sequence: number | null = null,
+	) => {
 		const form = new FormData();
 		form.append("timeline", file, file.name);
+		if (sequence !== null) form.append("sequence", String(sequence));
 		return api<{
 			import: {
 				timelineId: number;
@@ -592,6 +606,7 @@ export const outputs = {
 				matched: number;
 				clips: number;
 				carriedClasses: number;
+				sequence: { index: number; name: string; of: number; by: string };
 			};
 			timeline: Timeline;
 		}>("POST", `/projects/${projectId}/assets/${assetId}/timelines`, form);
@@ -712,6 +727,21 @@ export const outputs = {
 			`/projects/${projectId}/signatures/${signatureId}/public-export`,
 		),
 };
+
+/** A sequence of a timeline file, as the server offers them when it cannot choose. */
+export interface SequenceChoice {
+	index: number;
+	name: string;
+	seconds: number | null;
+}
+
+/** The sequences a refused timeline import offers, or null when it was refused for another reason. */
+export function timelineSequences(error: unknown): SequenceChoice[] | null {
+	if (!(error instanceof ApiError) || error.status !== 409) return null;
+	const list = (error.data as { sequences?: SequenceChoice[] } | null)
+		?.sequences;
+	return Array.isArray(list) ? list : null;
+}
 
 /** A finished edit as the revisions view shows it (D60). */
 export interface EditSummary {

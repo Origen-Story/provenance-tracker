@@ -33,6 +33,7 @@ import {
 	media,
 	outputs,
 	projects,
+	timelineSequences,
 	type Job,
 } from "../../../src/client/catalog/api.ts";
 
@@ -385,6 +386,45 @@ describe("the finished edit pages' API client", () => {
 		await expect(outputs.publicExport(w.projectId, 999)).rejects.toBeInstanceOf(
 			ApiError,
 		);
+	});
+});
+
+describe("a timeline file holding several sequences (Phase 8 step 6)", () => {
+	it("reads the sequences off the refusal, and imports the one chosen", async () => {
+		const w = await world();
+		mkdirSync(path.join(w.mediaDir, "exports"));
+		writeFileSync(path.join(w.mediaDir, "exports", "film.mp4"), "the cut");
+		await settle(w.projectId, (await media.start(w.projectId, "scan")).job);
+		const film = (await assets.list(w.projectId, { q: "film" })).assets[0].id;
+		await assets.edit(w.projectId, film, { is_output: true });
+		const project = new File(
+			[
+				readFileSync(
+					path.resolve(
+						"packages/core/test/fixtures/timeline/project-export.xmeml.xml",
+					),
+				),
+			],
+			"project.xml",
+		);
+		// The film's length is unknown here, so the tracker will not guess.
+		const refused = await outputs
+			.importTimeline(w.projectId, film, project)
+			.catch((e: unknown) => e);
+		expect(refused).toBeInstanceOf(ApiError);
+		expect(timelineSequences(refused)?.map((s) => s.name)).toEqual([
+			"Film v12",
+			"Assembly v1",
+			"Film v11",
+		]);
+		expect(timelineSequences(new Error("other"))).toBeNull();
+		const chosen = await outputs.importTimeline(w.projectId, film, project, 2);
+		expect(chosen.import.sequence).toEqual({
+			index: 2,
+			name: "Film v11",
+			of: 3,
+			by: "chosen",
+		});
 	});
 });
 

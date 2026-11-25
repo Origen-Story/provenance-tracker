@@ -17,6 +17,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import type { Machine } from "@provenancetracker/core-node/machine.ts";
 import {
 	createProject,
@@ -30,6 +31,30 @@ import { createApp } from "../../../src/server/app.ts";
 const SAMPLE = readFileSync(
 	path.resolve("packages/core/test/fixtures/timeline/sample.xmeml.xml"),
 );
+// A whole-project export: three sequences of 146 s, 631 s and 144 s (Phase 8 step 6).
+const PROJECT_EXPORT = readFileSync(
+	path.resolve("packages/core/test/fixtures/timeline/project-export.xmeml.xml"),
+);
+
+/** Give a file a length, as an ExifTool reading would (readings are only ever added). */
+function giveLength(folder: string, filePath: string, seconds: number) {
+	const db = new DatabaseSync(
+		path.join(folder, ".provenancetracker", "catalog.sqlite"),
+	);
+	try {
+		const { sha } = db
+			.prepare(
+				"SELECT content_sha256 AS sha FROM locations WHERE path = ? AND gone_run_id IS NULL",
+			)
+			.get(filePath) as { sha: string };
+		db.prepare(
+			`INSERT INTO observations (content_sha256, run_id, kind, extractor, extractor_version, status, data, observed_at)
+			 VALUES (?, 1, 'exif', 'test', '0', 'ok', ?, '2026-11-25T00:00:00.000Z')`,
+		).run(sha, JSON.stringify({ Duration: seconds }));
+	} finally {
+		db.close();
+	}
+}
 const temps: string[] = [];
 const servers: Server[] = [];
 afterEach(async () => {
@@ -369,6 +394,76 @@ describe("timelines through the API", () => {
 				(l: { type: string }) => l.type === "thumbnail_of",
 			),
 		).toBe(false);
+	});
+});
+
+describe("a timeline file holding several sequences (Phase 8 step 6)", () => {
+	const withSequence = (n: number) => {
+		const form = upload(PROJECT_EXPORT, "project.xml");
+		form.append("sequence", String(n));
+		return form;
+	};
+
+	it("refuses to guess while the edit's length is unknown, listing the sequences, and keeps nothing", async () => {
+		const w = await world();
+		const r = await w.call(
+			"POST",
+			`/assets/${w.film}/timelines`,
+			upload(PROJECT_EXPORT, "project.xml"),
+		);
+		expect(r.status).toBe(409);
+		expect(r.body.error).toMatch(/holds 3 sequences.*no known length/);
+		expect(r.body.sequences).toEqual([
+			{ index: 0, name: "Film v12", seconds: 146 },
+			{ index: 1, name: "Assembly v1", seconds: 631 },
+			{ index: 2, name: "Film v11", seconds: 144 },
+		]);
+		expect(
+			existsSync(path.join(w.folder, ".provenancetracker", "timelines")),
+		).toBe(false);
+	});
+
+	it("takes the sequence as long as the edit's file, and says how it chose", async () => {
+		const w = await world();
+		giveLength(w.folder, "exports/film.mp4", 146.03);
+		const r = await w.call(
+			"POST",
+			`/assets/${w.film}/timelines`,
+			upload(PROJECT_EXPORT, "project.xml"),
+		);
+		expect(r.status).toBe(200);
+		expect(r.body.import.sequence).toEqual({
+			index: 0,
+			name: "Film v12",
+			of: 3,
+			by: "length",
+		});
+		expect(r.body.timeline.sequenceName).toBe("Film v12");
+	});
+
+	it("takes the sequence a person chose, and only a sequence's number", async () => {
+		const w = await world();
+		giveLength(w.folder, "exports/film.mp4", 146);
+		const r = await w.call(
+			"POST",
+			`/assets/${w.film}/timelines`,
+			withSequence(1),
+		);
+		expect(r.status).toBe(200);
+		expect(r.body.import.sequence).toMatchObject({
+			name: "Assembly v1",
+			by: "chosen",
+		});
+		const bad = upload(PROJECT_EXPORT, "project.xml");
+		bad.append("sequence", "first");
+		expect(
+			(await w.call("POST", `/assets/${w.film}/timelines`, bad)).status,
+		).toBe(400);
+		const extra = upload(PROJECT_EXPORT, "project.xml");
+		extra.append("primary_track", "2");
+		const answer = await w.call("POST", `/assets/${w.film}/timelines`, extra);
+		expect(answer.status).toBe(400);
+		expect(answer.body.error).toMatch(/no field primary_track/);
 	});
 });
 

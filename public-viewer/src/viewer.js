@@ -7,7 +7,9 @@
 //     download: { url: 'https://.../film.signed.v1.mp4' },
 //     theme: 'dark',                                    // or 'light'
 //     appName: 'Provenance Tracker',                    // the small line above the title
-//     themeToggle: true                                 // light/dark switch, top right
+//     themeToggle: true,                                // light/dark switch, top right
+//     readCredentials: async (file) => report           // optional (D61): a C2PA reader the
+//                                                       // page builds, e.g. with c2pa-web
 //   });
 //
 // Everything shown comes from the public export, which may come from anyone:
@@ -29,6 +31,8 @@ import {
 	timeStampSentence,
 	withheldSentence,
 	copyVerdict,
+	readCopyCredentials,
+	credentialVerdict,
 	TONE_WORDS,
 	groupHash,
 	formatBytes,
@@ -1290,27 +1294,56 @@ class Viewer {
 			role: "status",
 			"aria-live": "polite",
 		});
-		const show = (verdict, hex) =>
-			status.replaceChildren(
+		// The credentials inside the copy, when the page can read them (D61).
+		const read = this.opts.readCredentials;
+		const inside = h("div", {
+			class: "ptv-copy-status",
+			role: "status",
+			"aria-live": "polite",
+		});
+		const card = (label, verdict, hex) =>
+			h(
+				"div",
+				{ class: `ptv-verdict-card ptv-tone-${verdict.tone}` },
 				h(
-					"div",
-					{ class: `ptv-verdict-card ptv-tone-${verdict.tone}` },
-					h(
-						"p",
-						{ class: "ptv-result-h" },
-						h("span", { class: "ptv-result-label" }, "Your copy"),
-						h("span", { class: "ptv-tone-word" }, TONE_WORDS[verdict.tone]),
-					),
-					h("strong", {}, verdict.headline),
-					h("p", {}, verdict.detail),
-					hex ? h("p", { class: "ptv-mono ptv-small" }, groupHash(hex)) : null,
+					"p",
+					{ class: "ptv-result-h" },
+					h("span", { class: "ptv-result-label" }, label),
+					h("span", { class: "ptv-tone-word" }, TONE_WORDS[verdict.tone]),
 				),
+				h("strong", {}, verdict.headline),
+				h("p", {}, verdict.detail),
+				hex ? h("p", { class: "ptv-mono ptv-small" }, groupHash(hex)) : null,
 			);
+		const show = (verdict, hex) =>
+			status.replaceChildren(card("Your copy", verdict, hex));
+		let reading = 0;
+		const readInside = async (file) => {
+			if (typeof read !== "function") return;
+			const mine = ++reading;
+			inside.replaceChildren("Reading its Content Credentials…");
+			try {
+				const report = await read(file);
+				if (mine !== reading) return;
+				inside.replaceChildren(
+					card(
+						"Its Content Credentials",
+						credentialVerdict(readCopyCredentials(report), this.exp),
+					),
+				);
+			} catch (err) {
+				if (mine === reading)
+					inside.replaceChildren(
+						`Its Content Credentials could not be read here (${err?.message || err}). Content Credentials Verify, below, reads them too.`,
+					);
+			}
+		};
 		let running = null;
 		input.addEventListener("change", async () => {
 			running?.abort();
 			const file = input.files?.[0];
 			if (!file) return;
+			readInside(file);
 			if (f.bytes && file.size !== f.bytes) {
 				progress.hidden = true;
 				show(copyVerdict("", this.exp), "");
@@ -1352,6 +1385,7 @@ class Viewer {
 			input,
 			progress,
 			status,
+			inside,
 		);
 	}
 

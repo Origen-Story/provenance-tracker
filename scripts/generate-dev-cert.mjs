@@ -22,12 +22,13 @@
 // contentcredentials.org. Creator trust comes from the CAWG identity
 // assertion, not the cert chain. For production use a CA-issued cert.
 //
-// Requires `openssl` on PATH. On Windows, Git for Windows installs it to
-// C:\Program Files\Git\usr\bin\openssl.exe (Git Bash picks it up).
+// Requires openssl: on PATH, or on Windows the copy Git for Windows installs
+// (C:\Program Files\Git\usr\bin\openssl.exe), found from any shell.
 
 import { execFileSync } from "child_process";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, rmSync } from "fs";
 import path from "path";
+import { findOpenssl, OPENSSL_MISSING } from "./lib/openssl.mjs";
 
 const KEY_TYPES = {
 	// SEC1 EC keys ("BEGIN EC PRIVATE KEY"), as openssl's ecparam writes them.
@@ -69,6 +70,15 @@ for (const o of ["--name", "--org"])
 const subjectName = opts["--name"] || "Origen Story Dev Signing Cert";
 const organisation = opts["--org"] || "Origen Story";
 const outDir = path.resolve(positional[0] || "certs");
+const OPENSSL = findOpenssl();
+if (!OPENSSL) {
+	console.error(OPENSSL_MISSING);
+	process.exit(1);
+}
+// Said before anything is made, so a name split by the shell shows at once.
+console.log(
+	`Making a certificate (${keyType}) for "${subjectName}" (${organisation}) in ${outDir}`,
+);
 if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
 
 const caKeyPath = path.join(outDir, "_ca-key.pem");
@@ -137,16 +147,19 @@ function run(cmd, args) {
 		execFileSync(cmd, args, { stdio: ["ignore", "ignore", "pipe"] });
 	} catch (err) {
 		const stderr = err.stderr?.toString() ?? "";
-		throw new Error(
-			`${cmd} ${args.join(" ")} failed: ${stderr.trim() || `exit ${err.status}`}`,
-			{ cause: err },
-		);
+		const why =
+			err.code === "ENOENT"
+				? OPENSSL_MISSING
+				: stderr.trim() || `exit ${err.status ?? err.code}`;
+		throw new Error(`${path.basename(cmd)} ${args.join(" ")} failed: ${why}`, {
+			cause: err,
+		});
 	}
 }
 
 try {
 	// 1. CA key + self-signed CA cert
-	run("openssl", [
+	run(OPENSSL, [
 		"ecparam",
 		"-genkey",
 		"-name",
@@ -155,7 +168,7 @@ try {
 		"-out",
 		caKeyPath,
 	]);
-	run("openssl", [
+	run(OPENSSL, [
 		"req",
 		"-new",
 		"-x509",
@@ -170,8 +183,8 @@ try {
 	]);
 
 	// 2. Signing key + CSR
-	run("openssl", [...KEY_TYPES[keyType], "-out", signingKeyPath]);
-	run("openssl", [
+	run(OPENSSL, [...KEY_TYPES[keyType], "-out", signingKeyPath]);
+	run(OPENSSL, [
 		"req",
 		"-new",
 		"-key",
@@ -183,7 +196,7 @@ try {
 	]);
 
 	// 3. CA signs the CSR to produce the end-entity signing cert
-	run("openssl", [
+	run(OPENSSL, [
 		"x509",
 		"-req",
 		"-in",
@@ -209,10 +222,6 @@ try {
 	writeFileSync(chainPath, signingPem.trimEnd() + "\n" + caPem);
 } catch (err) {
 	console.error(`\n${err.message}`);
-	console.error(`\nMake sure 'openssl' is on your PATH.`);
-	console.error(
-		`On Windows, Git for Windows includes it at C:\\Program Files\\Git\\usr\\bin\\openssl.exe`,
-	);
 	for (const tmp of [
 		caCnfPath,
 		signingCnfPath,

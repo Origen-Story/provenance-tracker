@@ -48,7 +48,7 @@ import {
 	signingStatus,
 } from "../src/sign/signing-settings.ts";
 import { TOOL } from "../src/tool.ts";
-import { devCertificate, haveOpenssl } from "./helpers/cert.ts";
+import { devCertificate, haveOpenssl, OPENSSL } from "./helpers/cert.ts";
 import { memoryHolder } from "./helpers/holder.ts";
 import { machinesForTests } from "./helpers/machine.ts";
 
@@ -264,7 +264,7 @@ describe.skipIf(!haveOpenssl)("the development certificate script", () => {
 		try {
 			const cert = devCertificate(dir)!;
 			const text = spawnSync(
-				"openssl",
+				OPENSSL!,
 				["x509", "-in", cert.certificate, "-noout", "-text"],
 				{ encoding: "utf8" },
 			).stdout;

@@ -165,9 +165,7 @@ function lane(rows) {
 			endSeconds: end,
 			positions,
 			layers: layers.map((l) =>
-				l === TITLE
-					? {}
-					: { matchedAssetType: "produced", matchedAssetId: ids[l] },
+				l === TITLE ? {} : { matchedAssetRef: `produced:${ids[l]}` },
 			),
 		};
 	});
@@ -224,8 +222,7 @@ for (const [kind, rows] of [
 							sourceKind: "file",
 							startFrame: start * FPS,
 							endFrame: end * FPS,
-							matchedAssetType: "produced",
-							matchedAssetId: ids[l],
+							matchedAssetRef: `produced:${ids[l]}`,
 						},
 			),
 		);
@@ -234,8 +231,7 @@ for (const [kind, rows] of [
 
 const statement = buildCreatorStatement({
 	output: {
-		type: "produced",
-		id: 99,
+		ref: "produced:99",
 		filePath: "morning-market.mp4",
 		publicTitle: "A Morning at the Market",
 		originClass: "compositeSynthetic",
@@ -286,6 +282,24 @@ const report = {
 				alg: "Es256",
 				time: "2026-11-14T09:30:04Z",
 			},
+			// The creator's identity, signed apart from the claim (CAWG, D55).
+			assertions: [
+				{
+					label: "cawg.identity",
+					data: {
+						signer_payload: {
+							referenced_assertions: [
+								{ url: "self#jumbf=c2pa.assertions/c2pa.hash.bmff.v3" },
+							],
+							role: ["cawg.creator"],
+						},
+						signature_info: {
+							common_name: "A. Example",
+							issuer: "Example Identity Issuer",
+						},
+					},
+				},
+			],
 		},
 		...Object.fromEntries(
 			placed
@@ -298,6 +312,15 @@ const report = {
 			success: [
 				{ code: "claimSignature.validated" },
 				{ code: "assertion.bmffHash.match" },
+				{
+					code: "timeStamp.validated",
+					explanation:
+						"timestamp message digest matched: Example Time Stamp Authority",
+				},
+				{
+					code: "timeStamp.trusted",
+					explanation: "timestamp cert trusted: Example Time Stamp Authority",
+				},
 			],
 			failure: [],
 		},
@@ -305,6 +328,11 @@ const report = {
 };
 
 const exported = buildPublicExport({
+	publication: {
+		fileUrl: "https://media.example.org/films/morning-market.signed.v1.mp4",
+		pageUrl: "https://example.org/films/morning-market",
+		withheld: [],
+	},
 	signature: {
 		kind: "output",
 		version: 1,

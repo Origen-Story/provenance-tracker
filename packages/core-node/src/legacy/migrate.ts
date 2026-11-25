@@ -51,7 +51,7 @@ import {
 	verifyCatalog,
 	type Problem,
 } from "@provenancetracker/core/catalog/verify.ts";
-import { buildPublicExport } from "@provenancetracker/core/manifest/public-export.js";
+import { buildPublicExportV1 } from "@provenancetracker/core/manifest/public-export.js";
 import {
 	cachedBreakdown,
 	differences,
@@ -841,7 +841,7 @@ function compareExport(
 			return {
 				ok: true,
 				json: JSON.stringify(
-					buildPublicExport({ signature: s, ...EXPORT_STAMP }),
+					buildPublicExportV1({ signature: s, ...EXPORT_STAMP }),
 				),
 			};
 		} catch (err) {

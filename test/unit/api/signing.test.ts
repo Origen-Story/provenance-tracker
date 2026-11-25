@@ -240,6 +240,19 @@ describe.skipIf(!haveOpenssl)("signing through the API", () => {
 			body.asset.signatures.find((s: { id: number }) => s.id === signatureId)
 				.publication,
 		).toEqual(body.publication);
+		// The public export now says where the signed copy is (export format 2, D57).
+		expect(
+			await w.json(
+				await w.call("GET", `/signatures/${signatureId}/public-export`),
+			),
+		).toMatchObject({
+			formatVersion: 2,
+			signedFile: { url: "https://media.example.org/film.signed.v1.mp4" },
+			page: { url: "https://example.org/films/demo" },
+			// The stand-in engine reads nothing back, so nothing was checked.
+			file: { status: "unchecked" },
+			identity: null,
+		});
 		for (const [fields, status, message] of [
 			[{ file_url: "http://media.example.org/film.mp4" }, 400, /https:\/\//],
 			[{ withheld: [] }, 400, /there is no withheld/],

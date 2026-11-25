@@ -51,6 +51,7 @@ export function interpretReport(report) {
 			timestamped: false,
 			manifests: 0,
 			ingredients: [],
+			claim: "absent",
 		};
 	}
 	const active = report.manifests[report.active_manifest] || {};
@@ -71,6 +72,13 @@ export function interpretReport(report) {
 		status = "hash_mismatch";
 	else if (blocking.length) status = "invalid";
 	else status = untrusted ? "unrecognised_issuer" : "valid";
+	// The claim signature on its own, apart from whether the content still
+	// matches it (export format 2 shows the two as separate results, D57).
+	const claim = blocking.some((f) => !HASH_MISMATCH.test(f.code))
+		? "invalid"
+		: untrusted
+			? "unrecognised_issuer"
+			: "trusted";
 
 	const deltas = new Map();
 	for (const d of report.validation_results?.ingredientDeltas || []) {
@@ -123,5 +131,39 @@ export function interpretReport(report) {
 		timestamped: !!si?.time,
 		manifests: Object.keys(report.manifests).length,
 		ingredients,
+		claim,
+	};
+}
+
+const TIME_STAMP = /^timeStamp\./;
+
+/**
+ * The time stamp on the active manifest's signature, or null without one:
+ * when, who issued it (as the reader names the authority in its message,
+ * "timestamp cert untrusted: <name>"), and whether that authority is on the
+ * C2PA time-stamp list (true, false, or null when the reader does not say).
+ * An untrusted time stamp says the authority is not on the list, not that
+ * the time is wrong.
+ */
+export function readTimeStamp(report) {
+	if (!report?.active_manifest || !report.manifests) return null;
+	const time = report.manifests[report.active_manifest]?.signature_info?.time;
+	const r = report.validation_results?.activeManifest || {};
+	const all = ["success", "informational", "failure"].flatMap((k) =>
+		codes(r[k]).filter((c) => TIME_STAMP.test(c.code)),
+	);
+	if (!time && all.length === 0) return null;
+	const has = (code) => all.some((c) => c.code === code);
+	const named = all
+		.map((c) => /:\s*(.+)$/.exec(c.explanation)?.[1]?.trim())
+		.find(Boolean);
+	return {
+		time: time || null,
+		authority: named || "",
+		trusted: has("timeStamp.trusted")
+			? true
+			: has("timeStamp.untrusted")
+				? false
+				: null,
 	};
 }

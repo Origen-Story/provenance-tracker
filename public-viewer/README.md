@@ -33,7 +33,7 @@ Copy `src/` and `viewer.css` into the site (pin a commit), then:
 	mountViewer(document.getElementById("film"), {
 		exportUrl: "/credentials/my-film.provenance.json",
 		video: { youtubeId: "xxxxxxxxxxx" }, // or { src: 'film.mp4', poster: 'still.jpg' }, or leave out
-		download: { url: "https://example.com/my-film.signed.v1.mp4" },
+		download: { url: "https://example.com/my-film.signed.v1.mp4" }, // or leave out to use the address the export records
 		theme: "dark", // or 'light'
 	});
 </script>
@@ -46,7 +46,9 @@ Copy `src/` and `viewer.css` into the site (pin a commit), then:
 
 ## What it trusts
 
-Everything shown comes from the export file. The viewer sets text only as text (never `innerHTML`), so an export cannot inject markup or scripts; the only links it makes are the ones the page passes in, the IPTC source-type URIs in the export, and Content Credentials Verify. The export records how the signature read back when the tracker signed the file; the viewer does not check the signature itself. Visitors check it with the download, the hash and an independent reader.
+Everything shown comes from the export file. The viewer sets text only as text (never `innerHTML`), so an export cannot inject markup or scripts. The only links it makes are the ones the page passes in, the IPTC source-type URIs in the export, Content Credentials Verify, and the signed file's and page's addresses an export records, used only when they are whole https addresses (`safeLink` in `model.js`). The export records how the signature read back when the tracker signed the file; the viewer does not check the signature itself. Visitors check it with the download, the hash and an independent reader.
+
+**Formats.** The viewer reads export formats 1 and 2. Format 2 (D57) shows what the signature says as separate results, never one badge: the film (did its content match what was signed), the signer (whether a reader recognises the certificate, and who issued the time stamp), and the creator's identity when the file carries one, marked self-declared when no recognised issuer vouches for it. Each result says its tone in words as well as colour. A format 1 record has one signature block and no identity, so the viewer shows the film and the signer and says nothing about an identity. A viewer older than format 2 refuses a format 2 export with "This viewer reads export format 1, not 2": update a site's copy of `src/` before publishing a format 2 export ([docs/publishing.md](../docs/publishing.md)).
 
 ## Files
 

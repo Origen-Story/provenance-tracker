@@ -139,3 +139,25 @@ Short numbered log of decisions that shape the code. Add a line when one is made
     - on a copy of the demo project, never the project itself: its catalog copied with `VACUUM INTO` from a read-only connection, its media folders linked in, and its own settings file. `verify --hash` opened it, upgraded it from format 1 to 2, and read all 95 files in full, all as recorded. Afterwards, the only differences were the empty `publications` table and the upgrade run. The backup was format 1 and passed its integrity check. `publish` set and listed the film's addresses, refused an `http:` one, and `verify` stayed sound.
     - The first open of each real project after this merges is the real upgrade, done with Matt.
   - _Found by the check, and fixed:_ `openProject` read this machine's settings only after upgrading, so a damaged settings file stopped the open after the catalog had already changed. Nothing was lost (the backup comes first), but "nothing was changed" should hold for every refusal. The settings are now read before anything is written.
+- **D57 (2026-11-25) Export format 2: the file, the signer and the identity as separate results.** Phase 8, step 2; no new dependency. Format 1 held one `signature` block that mixed three questions: whether the file still matches what was signed, who signed it and whether a reader recognises them, and (since D55) who the creator is, which it didn't show at all. The roadmap's rule for the viewer is "never one badge".
+  - _The format (`spec/public-export.v2.schema.json`)._ Format 2 is format 1 with the `signature` block replaced, and nothing else changed (a test holds them equal):
+    - `file`: `matches`, `changed` or `unchecked`, from the content hash the reader checked when the tracker read the signed file back.
+    - `signer`: the claim signature on its own (`trusted`, `unrecognised_issuer`, `invalid` or `absent`), apart from the content hash, so a changed file with a sound signature reads as such. It also gives the name, issuer, algorithm, manifest count and failure codes, and the time stamp: when, who issued it (the authority the reader names in its own message) and whether that authority is on the C2PA time-stamp list. "Not on the list" says who issued it, never that the time is wrong.
+    - `identity`: the CAWG identity read by `readIdentity` (D55), or null when the file has none. A null means there is nothing to say, not that something is missing.
+    - `signedFile.url` and `page.url`: where the copy is published (D56), https only or null.
+    - `withheld`: how many details the creator left out of this record (Phase 8 step 5) and redacted from ingredients' credentials in the signed file (step 4). Counts only, never what.
+  - _Building it._ `buildPublicExport` builds format 2 from the signature row, its stored definition and its publication. `verify.js` gains the claim's own status and `readTimeStamp`.
+    - `buildPublicExportV1` keeps format 1 exactly as it was, because the Postgres migration's check rebuilds earlier exports byte for byte (D34).
+    - The test schema checker gains `pattern`, so the https rule is tested.
+    - The Export tab shows the three results and the links.
+  - _The viewer._ It reads formats 1 and 2 through `resultsOf` in `model.js`, and shows the film, the signer and the creator as three cards in a labelled list.
+    - Each card says its tone in words ("Checks out", "Note", "Problem") as well as colour.
+    - A format 1 record shows no creator card.
+    - An address becomes a link only if `safeLink` finds a whole https address, since a page may load an export it didn't make.
+    - The download link is the page's own if it passes one, else the export's.
+  - _The example._ `public-viewer/example/` is format 2, regenerated through the real builders. Its maker had stopped running when assets became refs (D23) and was brought up to date. The format 1 example is kept as a test fixture, since the live site's records are format 1.
+  - _Checked:_
+    - 812 tests pass;
+    - both engines' real signed copies meet the format 2 schema;
+    - the demo page renders format 2 and format 1 in a headless browser (Edge, reduced motion so the fade-ins don't hide it): three cards for format 2, two for format 1.
+  - _Watch list:_ CAWG #286 is unchanged (open, no activity since 22 Oct).

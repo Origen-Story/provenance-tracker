@@ -4,6 +4,7 @@ import path from "node:path";
 import { buildOutputManifest } from "../../src/manifest/build.js";
 import {
 	buildPublicExport,
+	buildPublicExportV1,
 	publicExportFileName,
 	matchReadBack,
 	EXPORT_FORMAT,
@@ -13,9 +14,15 @@ import { validate } from "../helpers/json-schema-lite.js";
 
 // The repository root, from packages/core/test/manifest/.
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
-const SCHEMA = JSON.parse(
-	readFileSync(path.join(ROOT, "spec", "public-export.v1.schema.json"), "utf8"),
-);
+const schemaOf = (v) =>
+	JSON.parse(
+		readFileSync(
+			path.join(ROOT, "spec", `public-export.v${v}.schema.json`),
+			"utf8",
+		),
+	);
+const SCHEMA = schemaOf(2);
+const SCHEMA_V1 = schemaOf(1);
 const GENERATOR = { name: "provenance-tracker", version: "0.0.0-test" };
 const dir = path.join(path.sep, "media", "project");
 
@@ -296,22 +303,35 @@ describe("buildPublicExport", () => {
 		});
 	});
 
-	it("describes the signed file and how its signature read back", () => {
+	it("describes the signed file, and the file, the signer and the identity as separate results (D57)", () => {
 		expect(e.signedFile).toEqual({
 			fileName: "film.signed.v2.mp4",
 			sha256: "ab".repeat(32),
 			bytes: 123456789,
 			version: 2,
 			signedAt: "2026-11-14T09:00:02.000Z",
+			url: null,
 		});
-		expect(e.signature).toMatchObject({
+		expect(e.page).toEqual({ url: null });
+		expect(e.file).toEqual({ status: "matches", hashVerified: true });
+		expect(e.signer).toEqual({
 			status: "unrecognised_issuer",
-			hashVerified: true,
-			issuerRecognised: false,
-			signer: { commonName: "Dev Signer", issuer: "Dev CA" },
+			statusLabel: "Valid, unrecognised issuer",
+			commonName: "Dev Signer",
+			issuer: "Dev CA",
+			algorithm: "Es256",
+			timeStamp: {
+				time: "2026-11-14T09:00:01Z",
+				authority: "",
+				trusted: null,
+			},
 			manifestCount: 2,
 			failures: ["signingCredential.untrusted"],
 		});
+		// No identity in the file: nothing, rather than "missing".
+		expect(e.identity).toBeNull();
+		expect(e.withheld).toEqual({ fromRecord: 0, fromSignedFile: 0 });
+		expect(e).not.toHaveProperty("signature");
 	});
 
 	it("holds no paths, no database ids and no names of untracked clips", () => {
@@ -431,5 +451,181 @@ describe("matchReadBack", () => {
 			null,
 			"x__1",
 		]);
+	});
+});
+
+describe("export format 2's additions (D57)", () => {
+	const at = { generatedAt: "2026-11-14T10:00:00Z", generator: GENERATOR };
+	const withReport = (changes) =>
+		buildPublicExport({
+			signature: {
+				...signature,
+				reportJson: JSON.stringify(changes(structuredClone(report))),
+			},
+			...at,
+		});
+
+	it("carries where the signed copy is published, https only", () => {
+		const published = buildPublicExport({
+			signature,
+			publication: {
+				fileUrl: "https://media.example.org/film.signed.v2.mp4",
+				pageUrl: "https://example.org/films/film",
+				withheld: ["ingredient.note", "ingredient.fileName:ing-3"],
+			},
+			...at,
+		});
+		expect(validate(SCHEMA, published)).toEqual([]);
+		expect(published.signedFile.url).toBe(
+			"https://media.example.org/film.signed.v2.mp4",
+		);
+		expect(published.page.url).toBe("https://example.org/films/film");
+		// How many details were left out, never which.
+		expect(published.withheld).toEqual({ fromRecord: 2, fromSignedFile: 0 });
+		expect(JSON.stringify(published)).not.toContain("ingredient.note");
+		for (const bad of [
+			"http://media.example.org/film.mp4",
+			"javascript:alert(1)",
+			"https://user:pass@media.example.org/film.mp4",
+			"not an address",
+		]) {
+			const x = buildPublicExport({
+				signature,
+				publication: { fileUrl: bad, pageUrl: bad, withheld: [] },
+				...at,
+			});
+			expect([x.signedFile.url, x.page.url], bad).toEqual([null, null]);
+		}
+		expect(
+			validate(SCHEMA, {
+				...published,
+				page: { url: "http://example.org/films/film" },
+			}),
+		).toEqual([
+			'$.page.url: "http://example.org/films/film" does not match ^https://\\S+$',
+		]);
+	});
+
+	it("names who issued the time stamp, and says when that authority is not on the C2PA list", () => {
+		const x = withReport((r) => {
+			r.validation_results.activeManifest.success.push({
+				code: "timeStamp.validated",
+				explanation:
+					"timestamp message digest matched: Example Timestamp Responder 2026",
+			});
+			r.validation_results.activeManifest.informational = [
+				{
+					code: "timeStamp.untrusted",
+					explanation:
+						"timestamp cert untrusted: Example Timestamp Responder 2026",
+				},
+			];
+			return r;
+		});
+		expect(x.signer.timeStamp).toEqual({
+			time: "2026-11-14T09:00:01Z",
+			authority: "Example Timestamp Responder 2026",
+			trusted: false,
+		});
+		expect(validate(SCHEMA, x)).toEqual([]);
+	});
+
+	it("reads the creator's identity apart from the claim", () => {
+		const x = withReport((r) => {
+			const ours = r.manifests[r.active_manifest];
+			ours.assertions = [
+				...(ours.assertions || []),
+				{
+					label: "cawg.identity",
+					data: {
+						signer_payload: {
+							referenced_assertions: [{ url: "self#jumbf=c2pa.hash.bmff.v3" }],
+							role: ["cawg.creator"],
+						},
+						signature_info: {
+							common_name: "A. Maker",
+							issuer: "Example ID CA",
+						},
+					},
+				},
+			];
+			r.validation_results.activeManifest.failure.push({
+				code: "cawg.x509.credential.untrusted",
+			});
+			return r;
+		});
+		expect(x.identity).toEqual({
+			status: "unrecognised_issuer",
+			name: "A. Maker",
+			issuer: "Example ID CA",
+			roles: ["cawg.creator"],
+		});
+		// The identity's codes never change the claim's result.
+		expect(x.signer.status).toBe("unrecognised_issuer");
+		expect(x.signer.failures).toEqual(["signingCredential.untrusted"]);
+		expect(validate(SCHEMA, x)).toEqual([]);
+	});
+
+	it("keeps a changed file apart from a signature that otherwise checks out", () => {
+		const changed = withReport((r) => {
+			r.validation_results.activeManifest.success = [];
+			r.validation_results.activeManifest.failure.push({
+				code: "assertion.bmffHash.mismatch",
+			});
+			return r;
+		});
+		expect(changed.file).toEqual({ status: "changed", hashVerified: false });
+		expect(changed.signer.status).toBe("unrecognised_issuer");
+		const broken = withReport((r) => {
+			r.validation_results.activeManifest.failure.push({
+				code: "claimSignature.mismatch",
+			});
+			return r;
+		});
+		expect(broken.signer.status).toBe("invalid");
+		expect(broken.file.status).toBe("matches");
+	});
+
+	it("counts what was redacted from ingredients' credentials in the signed file, never what", () => {
+		const x = buildPublicExport({
+			signature: {
+				...signature,
+				definitionJson: JSON.stringify({
+					redactions: [
+						"self#jumbf=/c2pa/urn:example/c2pa.assertions/cawg.identity",
+					],
+				}),
+			},
+			...at,
+		});
+		expect(x.withheld).toEqual({ fromRecord: 0, fromSignedFile: 1 });
+		expect(JSON.stringify(x)).not.toContain("urn:example");
+	});
+});
+
+describe("export format 1, still built for the Postgres migration's check", () => {
+	it("is as it was: one signature block, and its own schema", () => {
+		const v1 = buildPublicExportV1({
+			signature,
+			generatedAt: "2026-11-14T10:00:00Z",
+			generator: GENERATOR,
+		});
+		expect(validate(SCHEMA_V1, v1)).toEqual([]);
+		expect(v1.formatVersion).toBe(1);
+		expect(v1.signature).toMatchObject({
+			status: "unrecognised_issuer",
+			hashVerified: true,
+			issuerRecognised: false,
+			signer: { commonName: "Dev Signer", issuer: "Dev CA" },
+		});
+		// Format 2 is format 1 with that block replaced, and nothing else changed.
+		const only1 = { ...v1 };
+		delete only1.signature;
+		const only2 = { ...e, formatVersion: 1 };
+		for (const k of ["page", "file", "signer", "identity", "withheld"])
+			delete only2[k];
+		only2.signedFile = { ...e.signedFile };
+		delete only2.signedFile.url;
+		expect(only2).toEqual(only1);
 	});
 });

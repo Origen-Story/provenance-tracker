@@ -139,15 +139,43 @@ export default function ExportTab({
 									{d.signedFile.sha256.slice(0, 12)}…
 								</span>
 							</dd>
-							<dt className="text-text-secondary">Signature</dt>
+							<dt className="text-text-secondary">The film</dt>
 							<dd className="text-text-primary">
-								{d.signature.statusLabel}
-								{d.signature.signer?.commonName
-									? `, ${d.signature.signer.commonName}`
-									: ""}
-								{d.signature.timestamped
-									? ", time-stamped"
-									: ", no trusted time stamp"}
+								{FILE_WORDS[d.file.status] ?? d.file.status}
+							</dd>
+							<dt className="text-text-secondary">The signer</dt>
+							<dd className="text-text-primary">
+								{d.signer.statusLabel}
+								{d.signer.commonName ? `, ${d.signer.commonName}` : ""}
+								{d.signer.timeStamp
+									? `; time-stamped${d.signer.timeStamp.authority ? ` by ${d.signer.timeStamp.authority}` : ""}${d.signer.timeStamp.trusted === false ? " (not on the C2PA time-stamp list)" : ""}`
+									: "; no time stamp"}
+							</dd>
+							<dt className="text-text-secondary">The creator</dt>
+							<dd className="text-text-primary">
+								{d.identity ? (
+									`${d.identity.name || "unnamed"}, ${IDENTITY_WORDS[d.identity.status] ?? d.identity.status}`
+								) : (
+									<span className="text-text-secondary">
+										no identity in the file (the page says nothing about one)
+									</span>
+								)}
+							</dd>
+							<dt className="text-text-secondary">Links</dt>
+							<dd className="text-text-primary truncate">
+								{d.signedFile.url || d.page.url ? (
+									[
+										d.signedFile.url && `signed file ${d.signedFile.url}`,
+										d.page.url && `page ${d.page.url}`,
+									]
+										.filter(Boolean)
+										.join(" · ")
+								) : (
+									<span className="text-text-secondary">
+										none: say where v{d.signedFile.version ?? ""} is published
+										on the left, and download the export again
+									</span>
+								)}
 							</dd>
 						</dl>
 						{d.untracked.length > 0 && (
@@ -170,6 +198,18 @@ export default function ExportTab({
 		</div>
 	);
 }
+
+const FILE_WORDS: Record<string, string> = {
+	matches: "matched its signature when signed",
+	changed: "does not match its signature",
+	unchecked: "content not checked",
+};
+
+const IDENTITY_WORDS: Record<string, string> = {
+	trusted: "verified",
+	unrecognised_issuer: "self-declared (no recognised issuer)",
+	invalid: "did not validate",
+};
 
 /**
  * Where the selected signed copy is published (D56): the web address of the
@@ -198,6 +238,10 @@ function Published({
 			}),
 		onSuccess: (answer) => {
 			qc.setQueryData(assetKey(projectId, asset.id), answer.asset);
+			// The export carries these addresses (format 2), so show it again.
+			qc.invalidateQueries({
+				queryKey: [...assetKey(projectId, asset.id), "export", signatureId],
+			});
 			setFileUrl(answer.publication?.fileUrl ?? "");
 			setPageUrl(answer.publication?.pageUrl ?? "");
 		},

@@ -12,7 +12,14 @@ import {
 	sectionDetail,
 	ingredientsBySpectrum,
 	ingredientProvenance,
-	signatureVerdict,
+	resultsOf,
+	fileVerdict,
+	signerVerdict,
+	identityVerdict,
+	timeStampSentence,
+	withheldSentence,
+	safeLink,
+	TONE_WORDS,
 	groupHash,
 	formatBytes,
 	assertViewable,
@@ -29,12 +36,19 @@ import { validate } from "../../../packages/core/test/helpers/json-schema-lite.j
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
 const read = (p) => JSON.parse(readFileSync(path.join(ROOT, p), "utf8"));
 const example = read("public-viewer/example/example.provenance.json");
+// The example as format 1 made it, before D57: the format the live site's records are in.
+const exampleV1 = read("test/unit/public-viewer/fixtures/export.v1.json");
 
 describe("the committed example export", () => {
 	it("matches the public export schema", () => {
 		expect(
-			validate(read("spec/public-export.v1.schema.json"), example),
+			validate(read("spec/public-export.v2.schema.json"), example),
 		).toEqual([]);
+		expect(example.formatVersion).toBe(2);
+		expect(
+			validate(read("spec/public-export.v1.schema.json"), exampleV1),
+		).toEqual([]);
+		expect(exampleV1.formatVersion).toBe(1);
 	});
 	it("is made up: no drive paths or real-looking folders", () => {
 		const json = JSON.stringify(example);
@@ -227,21 +241,144 @@ describe("ingredientProvenance", () => {
 	});
 });
 
-describe("signatureVerdict", () => {
-	it("is honest about an issuer that is not on the trust list", () => {
-		const v = signatureVerdict({
-			status: "unrecognised_issuer",
-			signer: { commonName: "Dev" },
+describe("the file, the signer and the identity, read apart (D57)", () => {
+	it("reads format 2's three results as they are", () => {
+		const r = resultsOf(example);
+		expect(r.file).toEqual(example.file);
+		expect(r.signer).toEqual(example.signer);
+		expect(r.identity).toEqual(example.identity);
+		expect(r.fileUrl).toBe(
+			"https://media.example.org/films/morning-market.signed.v1.mp4",
+		);
+		expect(r.pageUrl).toBe("https://example.org/films/morning-market");
+	});
+
+	it("reads format 1's single signature block into the same results, and says nothing of an identity", () => {
+		const r = resultsOf(exampleV1);
+		expect(r.file).toEqual({ status: "matches", hashVerified: true });
+		expect(r.signer).toMatchObject({
+			status: "trusted",
+			commonName: "Example Studio",
+			issuer: "Example Trust Services CA",
+			timeStamp: { time: "2026-11-14T09:30:04Z", authority: "", trusted: null },
 		});
-		expect(v.tone).toBe("caution");
-		expect(v.detail).toMatch(/has not changed/);
-		expect(v.detail).toMatch(
+		// Format 1 recorded no identity: not "none", just nothing to say.
+		expect(r.identity).toBeUndefined();
+		expect(identityVerdict(r.identity)).toBeNull();
+		expect([r.fileUrl, r.pageUrl]).toEqual([null, null]);
+		const untrusted = resultsOf({
+			...exampleV1,
+			signature: {
+				...exampleV1.signature,
+				status: "hash_mismatch",
+				hashVerified: false,
+				failures: [
+					"signingCredential.untrusted",
+					"assertion.bmffHash.mismatch",
+				],
+			},
+		});
+		expect(untrusted.file.status).toBe("changed");
+		expect(untrusted.signer.status).toBe("unrecognised_issuer");
+	});
+
+	it("puts each result in plain words, its tone also in words", () => {
+		expect(fileVerdict({ status: "matches" })).toMatchObject({
+			tone: "good",
+			headline: "The film is as it was signed",
+		});
+		expect(fileVerdict({ status: "changed" }).tone).toBe("bad");
+		expect(fileVerdict({ status: "unchecked" }).tone).toBe("caution");
+		const s = signerVerdict({
+			status: "unrecognised_issuer",
+			commonName: "Dev",
+		});
+		expect(s.tone).toBe("caution");
+		expect(s.headline).toBe("Signed by Dev; signer not yet on the trust list");
+		expect(s.detail).toMatch(
 			/not on the public Content Credentials trust list/,
 		);
+		// The signer's result says nothing about whether the content changed.
+		expect(s.detail).not.toMatch(/changed/);
+		expect(signerVerdict({ status: "invalid", failures: ["x.y"] }).detail).toBe(
+			"Failures: x.y.",
+		);
+		expect(signerVerdict(undefined).headline).toBe("No Content Credentials");
+		expect(Object.keys(TONE_WORDS)).toEqual(["good", "caution", "bad"]);
 	});
-	it("flags a mismatch and an absent signature", () => {
-		expect(signatureVerdict({ status: "hash_mismatch" }).tone).toBe("bad");
-		expect(signatureVerdict(undefined).headline).toBe("No Content Credentials");
+
+	it("says who the creator is, and whether anyone vouches for it", () => {
+		expect(identityVerdict(example.identity)).toEqual({
+			tone: "caution",
+			headline: "Creator: A. Example, self-declared",
+			detail:
+				"Their identity is signed into the file, apart from the signature, and checks out, but no issuer that verification tools recognise vouches for it. Read the name as the creator's own statement.",
+		});
+		expect(
+			identityVerdict({
+				status: "trusted",
+				name: "A. Example",
+				issuer: "Example ID",
+				roles: ["cawg.editor"],
+			}).headline,
+		).toBe("Editor: A. Example, verified");
+		expect(
+			identityVerdict({ status: "invalid", name: "X", roles: [] }).tone,
+		).toBe("bad");
+		expect(identityVerdict(null)).toBeNull();
+	});
+
+	it("says who issued the time stamp, and that an unlisted authority does not mean a wrong time", () => {
+		expect(timeStampSentence(example.signer.timeStamp)).toBe(
+			"Time-stamped on 14 November 2026 by Example Time Stamp Authority. That time-stamp authority is on the C2PA list.",
+		);
+		expect(
+			timeStampSentence({
+				time: "2026-11-24T12:00:00Z",
+				authority: "DigiCert SHA256 RSA4096 Timestamp Responder 2026 1",
+				trusted: false,
+			}),
+		).toBe(
+			"Time-stamped on 24 November 2026 by DigiCert SHA256 RSA4096 Timestamp Responder 2026 1. That authority is not on the C2PA list of time-stamp authorities: this says who issued the time stamp, not that the time is wrong.",
+		);
+		expect(
+			timeStampSentence({
+				time: "2026-11-24T12:00:00Z",
+				authority: "",
+				trusted: null,
+			}),
+		).toBe("Time-stamped on 24 November 2026.");
+		expect(timeStampSentence(null)).toBeNull();
+	});
+
+	it("counts what was left out without saying what", () => {
+		expect(withheldSentence({ fromRecord: 0, fromSignedFile: 0 })).toBeNull();
+		expect(withheldSentence({ fromRecord: 2, fromSignedFile: 1 })).toBe(
+			"The creator chose to leave out 2 details from this record and 1 detail from its sources' credentials in the signed film. What was left out is not shown; the signed film says where something was removed.",
+		);
+	});
+
+	it("makes a link only of a whole https address", () => {
+		expect(safeLink("https://example.org/a b")).toBe(
+			"https://example.org/a%20b",
+		);
+		for (const bad of [
+			"http://example.org/film.mp4",
+			"javascript:alert(1)",
+			"data:text/html,<b>x</b>",
+			"//example.org/film.mp4",
+			"https://user:pass@example.org/film.mp4",
+			"",
+			null,
+			42,
+		])
+			expect(safeLink(bad), String(bad)).toBeNull();
+		const hostile = resultsOf({
+			...example,
+			signedFile: { ...example.signedFile, url: "javascript:alert(1)" },
+			page: { url: "http://example.org/films/morning-market" },
+		});
+		expect([hostile.fileUrl, hostile.pageUrl]).toEqual([null, null]);
 	});
 });
 
@@ -255,10 +392,11 @@ describe("small formatters", () => {
 		expect(() => assertViewable({ format: "x" })).toThrow(
 			/not a provenance tracker/,
 		);
-		expect(() => assertViewable({ ...example, formatVersion: 2 })).toThrow(
-			/format 1/,
+		expect(() => assertViewable({ ...example, formatVersion: 3 })).toThrow(
+			/reads export formats 1 and 2, not 3/,
 		);
 		expect(assertViewable(example)).toBe(example);
+		expect(assertViewable(exampleV1)).toBe(exampleV1);
 	});
 });
 

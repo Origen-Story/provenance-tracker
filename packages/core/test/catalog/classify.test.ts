@@ -20,6 +20,8 @@ const CAPTURE = "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture";
 function store(opts: {
 	generator: string;
 	signer: string;
+	/** The signer certificate's issuer; the signer's own name if not given. */
+	issuer?: string;
 	action: string;
 	sourceType?: string;
 	ingredients?: unknown[];
@@ -45,7 +47,10 @@ function store(opts: {
 					},
 				],
 				ingredients: opts.ingredients ?? [],
-				signature_info: { issuer: opts.signer, common_name: opts.signer },
+				signature_info: {
+					issuer: opts.issuer ?? opts.signer,
+					common_name: opts.signer,
+				},
 			},
 		},
 	};
@@ -418,6 +423,49 @@ describe("classify", () => {
 			origin_class: "digitalCapture",
 			signer_name: "Example Editor Co",
 		});
+	});
+
+	it("knows a file signed with a certificate the project has signed with as the creator's, by name and issuer", () => {
+		const { db, file, read } = world();
+		const cam = file("takes/take-01.mp4");
+		const other = file("takes/take-02.mp4");
+		const byMe = {
+			generator: "Some Field Recorder 2.0",
+			signer: "A. Creator",
+			issuer: "Studio Dev Root CA",
+			action: "c2pa.created",
+			sourceType: CAPTURE,
+		};
+		read(cam.content, "c2pa", "ok", store(byMe));
+		// The same name under another authority is someone else.
+		read(other.content, "c2pa", "ok", store({ ...byMe, issuer: "Anyone CA" }));
+		classifyCatalog(db, { tool: TEST_TOOL, now: () => AT });
+		expect(asset(db, cam.id).signed_by).toBe("tool");
+
+		// The project signs something with that certificate.
+		const film = file("exports/film.mp4");
+		const signRun = startRun(db, { kind: "sign", tool: TEST_TOOL, now: AT });
+		const signed = sha("e");
+		createRow(
+			db,
+			"contents",
+			{ sha256: signed, size: 11, asset_id: film.id, first_run_id: signRun },
+			{ actor: { kind: "tool", name: "t", runId: signRun }, now: AT },
+		);
+		db.prepare(
+			"INSERT INTO signatures (asset_id, kind, version, source_sha256, signed_sha256, run_id, engine, signer_name, signer_issuer, definition, signed_at) VALUES (?, 'output', 1, ?, ?, ?, 'c2patool', 'A. Creator', 'Studio Dev Root CA', '{}', ?)",
+		).run(film.id, film.content, signed, signRun, AT);
+		finishRun(db, signRun, { outcome: "ok", now: AT });
+
+		const report = classifyCatalog(db, { tool: TEST_TOOL, now: () => AT });
+		expect(asset(db, cam.id)).toMatchObject({
+			signed_by: "creator",
+			signer_name: "A. Creator",
+		});
+		expect(asset(db, other.id).signed_by).toBe("tool");
+		expect(
+			report.assets.find((a) => a.assetId === cam.id)?.changes,
+		).toContainEqual({ field: "signed_by", from: "tool", to: "creator" });
 	});
 
 	it("changes nothing when run again, follows a newer reading, and writes nothing on a dry run", () => {

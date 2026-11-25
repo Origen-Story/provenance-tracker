@@ -383,6 +383,96 @@ export function unlink(db: DatabaseSync, id: number, opts: PersonEdit): void {
 	removeRow(db, "relationships", id, change(opts));
 }
 
+// What a claim thumbnail can be, by file name. Signing checks the bytes.
+const THUMBNAIL_FILE = /\.(jpe?g|png)$/i;
+
+/** The image a finished edit is shown by in its credentials (thumbnail_of; D52), or null. */
+export function thumbnailOf(db: DatabaseSync, outputId: number): number | null {
+	const row = db
+		.prepare(
+			"SELECT child_id FROM relationships WHERE parent_id = ? AND type = 'thumbnail_of' ORDER BY id DESC LIMIT 1",
+		)
+		.get(outputId) as { child_id: number } | undefined;
+	return row?.child_id ?? null;
+}
+
+/** An asset's own newest file name the catalog still sees (never a signed copy), or null. */
+function ownFileName(db: DatabaseSync, assetId: number): string | null {
+	const row = db
+		.prepare(
+			`SELECT l.path FROM contents c
+			 JOIN locations l ON l.content_sha256 = c.sha256 AND l.gone_run_id IS NULL
+			 WHERE c.asset_id = ?
+			   AND NOT EXISTS (SELECT 1 FROM signatures s WHERE s.signed_sha256 = c.sha256)
+			 ORDER BY c.created_at DESC, c.rowid DESC, l.path LIMIT 1`,
+		)
+		.get(assetId) as { path: string } | undefined;
+	return row ? row.path.split("/").pop()! : null;
+}
+
+/**
+ * Pick the image a finished edit is shown by in its credentials, its claim
+ * thumbnail (D17, D52), or none (imageId null). The image is an asset in the
+ * catalog, a JPEG or PNG, so signing knows its exact bytes. One per edit:
+ * picking another replaces the link, in one transaction, under the person's
+ * name. The edit's signed copies are not changed; the next one carries it.
+ * @returns the link's id, or null when there is none now
+ */
+export function setThumbnail(
+	db: DatabaseSync,
+	outputId: number,
+	imageId: number | null,
+	opts: PersonEdit,
+): number | null {
+	const output = assetRow(db, outputId);
+	if (output.is_output !== 1)
+		throw new EditError("A thumbnail is for a finished edit (an output)");
+	if (output.removed_at !== null)
+		throw new EditError("This asset is removed; restore it first");
+	if (imageId !== null) {
+		if (!Number.isSafeInteger(imageId))
+			throw new EditError("Say which image is the thumbnail");
+		if (imageId === outputId)
+			throw new EditError("An edit cannot be its own thumbnail");
+		const image = assetRow(db, imageId);
+		if (image.removed_at !== null)
+			throw new EditError("That image is removed; restore it first");
+		const name = ownFileName(db, imageId);
+		if (!name || !THUMBNAIL_FILE.test(name))
+			throw new EditError(
+				"A thumbnail is a JPEG or PNG image the catalog has found",
+			);
+	}
+	const current = db
+		.prepare(
+			"SELECT id, child_id FROM relationships WHERE parent_id = ? AND type = 'thumbnail_of' ORDER BY id",
+		)
+		.all(outputId) as Array<{ id: number; child_id: number }>;
+	if (current.length === 1 && current[0].child_id === imageId)
+		return current[0].id;
+	if (current.length === 0 && imageId === null) return null;
+	return inTransaction(db, () => {
+		for (const link of current)
+			removeRow(db, "relationships", link.id, change(opts));
+		if (imageId === null) return null;
+		return Number(
+			createRow(
+				db,
+				"relationships",
+				{
+					parent_id: outputId,
+					child_id: imageId,
+					type: "thumbnail_of",
+					match_method: "manual",
+					confidence: 1,
+					note: "",
+				},
+				change(opts),
+			),
+		);
+	});
+}
+
 /** The finished edit's details a new export of it starts with (D50). */
 export const STARTED_FROM_FIELDS: readonly string[] = [
 	"public_title",
@@ -398,6 +488,8 @@ export interface StartedFrom {
 	fields: string[];
 	credits: number;
 	statement: boolean;
+	/** The earlier edit's thumbnail was taken (D52). */
+	thumbnail: boolean;
 	clipClasses: number;
 }
 
@@ -405,8 +497,8 @@ export interface StartedFrom {
  * Start a new export as a finished edit from an earlier one (D50), once: it is
  * marked a finished edit, made "produced" unless a person chose its kind, and takes the earlier edit's public details (only
  * where its own are empty), its credits (if it has none), its newest statement
- * (if it has none) and, in its timeline, the classes a person gave the same
- * clips. A copy, not a link: changing either edit afterwards leaves the other
+ * (if it has none), its thumbnail (if it has none) and, in its timeline, the
+ * classes a person gave the same clips. A copy, not a link: changing either edit afterwards leaves the other
  * as it was. The started_from link records where the copy came from.
  */
 export function startFromEdit(
@@ -503,6 +595,29 @@ export function startFromEdit(
 			}
 		}
 
+		let thumbnail = false;
+		const fromThumbnail = thumbnailOf(db, fromId);
+		if (
+			fromThumbnail !== null &&
+			thumbnailOf(db, assetId) === null &&
+			assetRow(db, fromThumbnail).removed_at === null
+		) {
+			createRow(
+				db,
+				"relationships",
+				{
+					parent_id: assetId,
+					child_id: fromThumbnail,
+					type: "thumbnail_of",
+					match_method: "manual",
+					confidence: 1,
+					note: "",
+				},
+				ch,
+			);
+			thumbnail = true;
+		}
+
 		createRow(
 			db,
 			"relationships",
@@ -517,7 +632,14 @@ export function startFromEdit(
 			ch,
 		);
 		const clipClasses = carryClassesInto(db, assetId, fromId, ch, opts.tool);
-		return { from: fromId, fields, credits, statement, clipClasses };
+		return {
+			from: fromId,
+			fields,
+			credits,
+			statement,
+			thumbnail,
+			clipClasses,
+		};
 	});
 }
 

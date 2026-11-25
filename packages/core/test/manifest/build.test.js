@@ -27,7 +27,21 @@ import {
 	cleanPublicTitle,
 	PUBLIC_TITLE_MAX,
 	compactIntervals,
+	thumbnailFormatOf,
 } from "../../src/manifest/build.js";
+import { parse as parseXmeml } from "../../src/timeline/formats/xmeml.js";
+import { segmentsFromTimeline } from "../../src/timeline/breakdown.js";
+
+const SAMPLE_XMEML = readFileSync(
+	path.join(
+		import.meta.dirname,
+		"..",
+		"fixtures",
+		"timeline",
+		"sample.xmeml.xml",
+	),
+	"utf8",
+);
 
 const IPTC = "http://cv.iptc.org/newscodes/digitalsourcetype/";
 const GENERATOR = { name: "provenance-tracker", version: "0.0.0-test" };
@@ -529,6 +543,25 @@ describe("buildOutputManifest", () => {
 		]);
 	});
 
+	it("gives each placement the stretch of the edit it plays in, as a C2PA temporal range (D17)", () => {
+		const ranges = actions
+			.slice(1)
+			.map((a) => [
+				a.parameters.ingredientIds[0],
+				a.changes.map((c) => c.region.map((r) => [r.type, r.time])),
+			]);
+		expect(ranges).toEqual([
+			["ing-1", [[["temporal", { type: "npt", start: "0", end: "6" }]]]],
+			["ing-2", [[["temporal", { type: "npt", start: "0", end: "10" }]]]],
+			["ing-3", [[["temporal", { type: "npt", start: "6", end: "10" }]]]],
+		]);
+	});
+
+	it("writes no thumbnail unless one is given, and no resources", () => {
+		expect(m.definition.thumbnail).toBeUndefined();
+		expect(m.resources).toEqual([]);
+	});
+
 	it("includes the statement, the author with the identity URL, and the training opt-out, and no unsigned CAWG assertion", () => {
 		const labels = m.definition.assertions.map((a) => a.label);
 		expect(labels).toEqual([
@@ -581,6 +614,217 @@ describe("buildOutputManifest", () => {
 				generator: GENERATOR,
 			}),
 		).toThrow(/timeline/);
+	});
+});
+
+describe("placed actions per stretch of the edit (D17)", () => {
+	const build = (segs, tl = timeline) =>
+		buildOutputManifest({
+			output,
+			timeline: tl,
+			composition,
+			segments: segs,
+			assets,
+			statement,
+			statedAt: "t",
+			generator: GENERATOR,
+		}).definition.assertions[0].data.actions.slice(1);
+	const span = (a) => [
+		a.parameters.ingredientIds[0],
+		a.changes?.[0].region[0].time.start,
+		a.changes?.[0].region[0].time.end,
+	];
+
+	it("gives a clip used twice two actions, in time order", () => {
+		const acts = build([
+			seg({ startFrame: 0, endFrame: 30, matchedAssetRef: "produced:11" }),
+			seg({ startFrame: 30, endFrame: 90, matchedAssetRef: "ai:21" }),
+			seg({ startFrame: 90, endFrame: 150, matchedAssetRef: "produced:11" }),
+		]);
+		expect(acts.map(span)).toEqual([
+			["ing-1", "0", "1"],
+			["ing-2", "1", "3"],
+			["ing-1", "3", "5"],
+		]);
+	});
+
+	it("keeps every cut: a take cut into pieces that follow each other is one action per piece", () => {
+		const acts = build([
+			seg({ startFrame: 0, endFrame: 45, matchedAssetRef: "produced:11" }),
+			seg({ startFrame: 45, endFrame: 90, matchedAssetRef: "produced:11" }),
+			seg({ startFrame: 90, endFrame: 96, matchedAssetRef: "produced:11" }),
+		]);
+		expect(acts.map(span)).toEqual([
+			["ing-1", "0", "1.5"],
+			["ing-1", "1.5", "3"],
+			["ing-1", "3", "3.2"],
+		]);
+	});
+
+	it("keeps a picture and its sound apart when they are offset (a J- or L-cut), and overlapping uses apart", () => {
+		const acts = build([
+			seg({ startFrame: 0, endFrame: 60, matchedAssetRef: "produced:11" }),
+			seg({
+				trackKind: "audio",
+				startFrame: 0,
+				endFrame: 90,
+				matchedAssetRef: "produced:11",
+			}),
+			seg({
+				trackIndex: 2,
+				startFrame: 30,
+				endFrame: 120,
+				matchedAssetRef: "produced:11",
+			}),
+		]);
+		expect(acts.map(span)).toEqual([
+			["ing-1", "0", "2"],
+			["ing-1", "0", "3"],
+			["ing-1", "1", "4"],
+		]);
+	});
+
+	it("drops only identical copies: a picture with its linked sound, a stereo pair", () => {
+		const acts = build([
+			seg({ startFrame: 0, endFrame: 60, matchedAssetRef: "produced:11" }),
+			seg({
+				trackKind: "audio",
+				startFrame: 0,
+				endFrame: 60,
+				matchedAssetRef: "produced:11",
+			}),
+			seg({
+				trackKind: "audio",
+				trackIndex: 2,
+				startFrame: 0,
+				endFrame: 60,
+				matchedAssetRef: "produced:11",
+			}),
+			// Another asset over the same range is its own placement.
+			seg({ startFrame: 0, endFrame: 60, matchedAssetRef: "ai:21" }),
+		]);
+		expect(acts.map(span)).toEqual([
+			["ing-1", "0", "2"],
+			["ing-2", "0", "2"],
+		]);
+	});
+
+	it("rounds to the millisecond at a broadcast frame rate", () => {
+		const acts = build(
+			[seg({ startFrame: 100, endFrame: 200, matchedAssetRef: "produced:11" })],
+			{ ...timeline, fps: 30000 / 1001 },
+		);
+		expect(acts.map(span)).toEqual([["ing-1", "3.337", "6.673"]]);
+	});
+
+	it("still places an asset when the times are unknown, without a range", () => {
+		const acts = build(
+			[seg({ startFrame: 0, endFrame: 30, matchedAssetRef: "produced:11" })],
+			{ ...timeline, fps: null },
+		);
+		expect(acts).toHaveLength(1);
+		expect(acts[0].changes).toBeUndefined();
+		expect(acts[0].parameters.ingredientIds).toEqual(["ing-1"]);
+	});
+
+	it("matches the clips of the sample timeline, its disabled clip left out", () => {
+		const t = parseXmeml(SAMPLE_XMEML);
+		const refs = new Map();
+		const matches = new Map();
+		for (const track of t.tracks)
+			for (const c of track.clips)
+				if (c.file?.id) {
+					const ref = `produced:${c.file.id}`;
+					refs.set(ref, {
+						filePath: path.join(dir, c.file.name),
+						originClass: "digitalCapture",
+					});
+					matches.set(c.id, { asset: { ref } });
+				}
+		const segs = segmentsFromTimeline(t, matches);
+		const acts = buildOutputManifest({
+			output,
+			timeline: { sequenceName: t.sequence.name, fps: t.sequence.fps },
+			composition,
+			segments: segs,
+			assets: refs,
+			statement,
+			statedAt: "t",
+			generator: GENERATOR,
+		}).definition.assertions[0].data.actions.slice(1);
+		// Clip 01 is on V1, A1 and A2 over frames 0-100: identical copies, one
+		// placement. The
+		// rest are 100-200, 300-400 and 350-420, at 29.97 frames a second.
+		expect(acts.map(span)).toEqual([
+			["ing-1", "0", "3.337"],
+			["ing-2", "3.337", "6.673"],
+			["ing-3", "10.01", "13.347"],
+			["ing-4", "11.678", "14.014"],
+		]);
+		// The disabled clip is not an ingredient at all.
+		expect(acts).toHaveLength(4);
+	});
+});
+
+describe("the claim thumbnail (D17)", () => {
+	const SHA = "ab".repeat(32);
+	const withThumb = (thumbnail) =>
+		buildOutputManifest({
+			output,
+			timeline,
+			composition,
+			segments,
+			assets,
+			statement,
+			statedAt: "t",
+			generator: GENERATOR,
+			thumbnail,
+		});
+
+	it("names the picked image by its hash in the definition, and tells the signer its file", () => {
+		const file = path.join(dir, "poster.jpg");
+		const m = withThumb({ sha256: SHA, format: "image/jpeg", filePath: file });
+		expect(m.definition.thumbnail).toEqual({
+			format: "image/jpeg",
+			identifier: `${SHA}.jpg`,
+		});
+		expect(m.resources).toEqual([{ identifier: `${SHA}.jpg`, filePath: file }]);
+		expect(JSON.stringify(m.definition)).not.toContain(dir);
+	});
+
+	it("takes a PNG", () => {
+		expect(
+			withThumb({ sha256: SHA, format: "image/png", filePath: "p.png" })
+				.definition.thumbnail.identifier,
+		).toBe(`${SHA}.png`);
+	});
+
+	it("refuses another format, a name that is not a hash, or no file", () => {
+		expect(() =>
+			withThumb({ sha256: SHA, format: "image/gif", filePath: "x.gif" }),
+		).toThrow(/JPEG or PNG/);
+		expect(() =>
+			withThumb({ sha256: "../x", format: "image/png", filePath: "x.png" }),
+		).toThrow(/SHA-256/);
+		expect(() => withThumb({ sha256: SHA, format: "image/png" })).toThrow(
+			/no file/,
+		);
+	});
+});
+
+describe("thumbnailFormatOf", () => {
+	it("knows JPEG and PNG by their first bytes, and nothing else", () => {
+		expect(thumbnailFormatOf(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))).toBe(
+			"image/jpeg",
+		);
+		expect(
+			thumbnailFormatOf(
+				Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]),
+			),
+		).toBe("image/png");
+		expect(thumbnailFormatOf(Buffer.from("GIF89a"))).toBeNull();
+		expect(thumbnailFormatOf(Buffer.alloc(0))).toBeNull();
+		expect(thumbnailFormatOf(null)).toBeNull();
 	});
 });
 

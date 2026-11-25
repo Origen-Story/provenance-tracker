@@ -3,7 +3,7 @@
 // signs a new versioned copy beside the cut, and the copy and the signing are
 // recorded. The same steps as the app's signOutput, read from the catalog.
 
-import { existsSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import path from "node:path";
 import {
 	nextSignatureVersion,
@@ -19,10 +19,12 @@ import {
 	timelineSegments,
 } from "@provenancetracker/core/catalog/timelines.ts";
 import { c2paSummaryOf } from "@provenancetracker/core/extraction/c2pa-summary.ts";
+import { thumbnailOf } from "@provenancetracker/core/catalog/edits.ts";
 import {
 	buildCreatorStatement,
 	buildOutputManifest,
 	placedAssetRefs,
+	thumbnailFormatOf,
 } from "@provenancetracker/core/manifest/build.js";
 import { c2patoolPath, c2patoolVersion } from "../extract/c2patool.ts";
 import { sha256OfFile } from "../hash.ts";
@@ -36,6 +38,7 @@ import {
 	signWithC2patool,
 	storableDefinition,
 	type SignIngredient,
+	type SignResource,
 } from "./c2patool-sign.ts";
 import { signerPaths } from "./signing-settings.ts";
 
@@ -48,6 +51,8 @@ export interface SigningEngine {
 		outputPath: string;
 		definition: Record<string, unknown>;
 		ingredients: SignIngredient[];
+		/** Files the definition names, such as the claim thumbnail. */
+		resources?: SignResource[];
 		certificatePath: string;
 		privateKeyPath: string;
 		timestampUrl?: string;
@@ -221,6 +226,57 @@ function placedAssets(
 	return { assets, missing };
 }
 
+/** A file's first bytes, for telling its format. */
+function headOf(file: string, n = 16): Buffer {
+	const fd = openSync(file, "r");
+	try {
+		const b = Buffer.alloc(n);
+		return b.subarray(0, readSync(fd, b, 0, n, 0));
+	} finally {
+		closeSync(fd);
+	}
+}
+
+/**
+ * The image the edit is shown by (its claim thumbnail; D52) as signing takes
+ * it: its file on this machine, its catalog hash and its format from its
+ * bytes. Null with none picked; a problem when it cannot be used here.
+ */
+function thumbnailHere(
+	project: OpenProject,
+	places: ReturnType<typeof placesHere>,
+	outputId: number,
+): {
+	thumbnail: {
+		assetId: number;
+		sha256: string;
+		format: string;
+		filePath: string;
+	} | null;
+	problem: string | null;
+} {
+	const imageId = thumbnailOf(project.db, outputId);
+	if (imageId === null) return { thumbnail: null, problem: null };
+	const sha = ownContent(project, imageId);
+	const place = sha ? places.get(sha)?.[0] : undefined;
+	if (!sha || !place)
+		return {
+			thumbnail: null,
+			problem:
+				"The thumbnail image is not on this machine. Scan its root, or pick another.",
+		};
+	const format = thumbnailFormatOf(headOf(place.file)) as string | null;
+	if (!format)
+		return {
+			thumbnail: null,
+			problem: "The thumbnail is not a JPEG or PNG image. Pick another.",
+		};
+	return {
+		thumbnail: { assetId: imageId, sha256: sha, format, filePath: place.file },
+		problem: null,
+	};
+}
+
 /** What a preview of an output's statement found: the statement as it would be signed, and what stops signing now. */
 export interface StatementPreview {
 	/** The creator statement as signing would build it now; null with no timeline. */
@@ -229,6 +285,8 @@ export interface StatementPreview {
 	blockers: string[];
 	/** The asset each ingredient is, in the statement's order. */
 	ingredientAssetIds: number[];
+	/** The image that will be the claim thumbnail, when one is picked and usable here. */
+	thumbnailAssetId: number | null;
 }
 
 /**
@@ -269,7 +327,12 @@ export function previewOutputStatement(
 		: undefined;
 	if (!timeline) {
 		blockers.push("Import the timeline first: the statement is built from it.");
-		return { statement: null, blockers, ingredientAssetIds: [] };
+		return {
+			statement: null,
+			blockers,
+			ingredientAssetIds: [],
+			thumbnailAssetId: null,
+		};
 	}
 	const saved = db
 		.prepare(
@@ -297,6 +360,8 @@ export function previewOutputStatement(
 		blockers.push(
 			`These files the timeline places are not on this machine, and c2patool reads each one: ${missing.join(", ")}`,
 		);
+	const thumb = thumbnailHere(project, places, opts.assetId);
+	if (thumb.problem) blockers.push(thumb.problem);
 	const statement = buildCreatorStatement({
 		output: {
 			ref: outputRef,
@@ -325,7 +390,12 @@ export function previewOutputStatement(
 	const ingredientAssetIds = (
 		placedAssetRefs(segments, outputRef) as string[]
 	).map(Number);
-	return { statement, blockers, ingredientAssetIds };
+	return {
+		statement,
+		blockers,
+		ingredientAssetIds,
+		thumbnailAssetId: thumb.thumbnail?.assetId ?? null,
+	};
 }
 
 /** The signed copy's name: the cut's, with ".signed.v<N>" before the extension; the first free N from `version`. */
@@ -425,10 +495,14 @@ export async function signOutput(
 			`These files the timeline places are not on this machine, and c2patool reads each one: ${missing.join(", ")}`,
 		);
 
+	const thumb = thumbnailHere(project, places, opts.assetId);
+	if (thumb.problem) throw new NotReadyError(thumb.problem);
+
 	const identityUrl = identityUrlOf(project);
 	const {
 		definition,
 		ingredients,
+		resources,
 		statement: signedStatement,
 	} = buildOutputManifest({
 		output: {
@@ -455,12 +529,21 @@ export async function signOutput(
 		},
 		statedAt: now(),
 		generator: GENERATOR,
+		thumbnail: thumb.thumbnail,
 	});
 
 	// The file signed must be the bytes the catalog knows as the cut.
 	if ((await sha256OfFile(cutPlace.file)) !== cut)
 		throw new NotReadyError(
 			"The output's file has changed since it was scanned. Scan its root, then sign.",
+		);
+	// So is the thumbnail: the definition names it by the catalog's hash.
+	if (
+		thumb.thumbnail &&
+		(await sha256OfFile(thumb.thumbnail.filePath)) !== thumb.thumbnail.sha256
+	)
+		throw new NotReadyError(
+			"The thumbnail image has changed since it was scanned. Scan its root, then sign.",
 		);
 	const { file: outputPath, version } = signedName(
 		cutPlace.file,
@@ -472,6 +555,7 @@ export async function signOutput(
 		outputPath,
 		definition: definition as Record<string, unknown>,
 		ingredients: ingredients as SignIngredient[],
+		resources: resources as SignResource[],
 		certificatePath: signer.certificatePath,
 		privateKeyPath: signer.privateKeyPath,
 		timestampUrl: opts.timestampUrl,

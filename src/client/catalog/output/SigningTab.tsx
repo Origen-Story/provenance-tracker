@@ -18,6 +18,7 @@ import {
 	when,
 } from "../ui.tsx";
 import { previewKey } from "./shared.tsx";
+import Thumbnail from "./Thumbnail.tsx";
 
 export const signingKey = (projectId: string) => [
 	"catalog",
@@ -43,6 +44,9 @@ export default function SigningTab({
 		<div className="max-w-4xl space-y-8">
 			<Section title="Sign this edit">
 				<SignOutput projectId={projectId} asset={asset} />
+			</Section>
+			<Section title="What verifiers show">
+				<Thumbnail projectId={projectId} asset={asset} />
 			</Section>
 			<Section title="Signed copies">
 				<SignedCopies projectId={projectId} asset={asset} />
@@ -119,9 +123,10 @@ function SignOutput({
 			<p className="text-sm text-text-secondary">
 				Writes a new file beside the cut, <code>…signed.v{next}</code>, with
 				Content Credentials: the cut as parent, each asset the timeline uses
-				placed as an ingredient with its class, and the saved statement. The cut
-				itself is not changed. Ingredients that carry credentials of their own
-				keep them inside the new file.
+				placed as an ingredient with its class and when it plays, the thumbnail
+				picked below, and the saved statement. The cut itself is not changed.
+				Ingredients that carry credentials of their own keep them inside the new
+				file.
 			</p>
 			<Checkbox
 				label="Add a trusted time stamp"

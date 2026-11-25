@@ -317,4 +317,57 @@ describe("timelines through the API", () => {
 			).status,
 		).toBe(400);
 	});
+
+	it("picks the image an edit is shown by, taking only image_id, and a new export starts with it (D52)", async () => {
+		const w = await world();
+		await w.call("POST", `/assets/${w.film}/timelines`, upload(SAMPLE));
+		for (const fields of [
+			{ image_id: w.still, note: "x" },
+			{ image_id: String(w.still) },
+			{},
+		])
+			expect(
+				(await w.call("PUT", `/assets/${w.film}/thumbnail`, { fields })).status,
+			).toBe(400);
+		// A video is not a thumbnail; a missing asset is not found.
+		expect(
+			(
+				await w.call("PUT", `/assets/${w.film}/thumbnail`, {
+					fields: { image_id: w.clip },
+				})
+			).status,
+		).toBe(400);
+		expect(
+			(
+				await w.call("PUT", `/assets/${w.film}/thumbnail`, {
+					fields: { image_id: 9999 },
+				})
+			).status,
+		).toBe(404);
+
+		const r = await w.call("PUT", `/assets/${w.film}/thumbnail`, {
+			fields: { image_id: w.still },
+		});
+		expect(r.status).toBe(200);
+		expect(r.body.asset.relationships).toContainEqual(
+			expect.objectContaining({
+				type: "thumbnail_of",
+				direction: "child",
+				otherAssetId: w.still,
+			}),
+		);
+		const copied = await w.call("POST", `/assets/${w.filmV2}/start-from`, {
+			fields: { from_id: w.film },
+		});
+		expect(copied.body.copied.thumbnail).toBe(true);
+
+		const cleared = await w.call("PUT", `/assets/${w.film}/thumbnail`, {
+			fields: { image_id: null },
+		});
+		expect(
+			cleared.body.asset.relationships.some(
+				(l: { type: string }) => l.type === "thumbnail_of",
+			),
+		).toBe(false);
+	});
 });

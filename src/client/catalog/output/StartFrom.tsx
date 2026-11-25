@@ -50,9 +50,9 @@ export default function StartFrom({
 				</h2>
 				<p className="text-sm text-text-secondary">
 					A new export of the same film? Copy the earlier edit's public title,
-					description, licence, credits, statement and the classes you gave its
-					clips, once. Anything already filled in here is kept. The two edits
-					stay separate afterwards.
+					description, licence, credits, statement, thumbnail and the classes
+					you gave its clips, once. Anything already filled in here is kept. The
+					two edits stay separate afterwards.
 				</p>
 			</div>
 			<div className="flex flex-wrap items-end gap-3">

@@ -1,8 +1,10 @@
 // Pure: the C2PA manifest definitions the tracker signs (phase 4c).
 //
 // Output signing: the finished edit is the parent (`c2pa.opened`), every
-// tracked asset the timeline places is a component (`c2pa.placed`, with its
-// IPTC digitalSourceType), and the creator statement rides along as
+// tracked asset the timeline places is a component (a `c2pa.placed` action
+// per stretch of the edit where it plays, with its time range and IPTC
+// digitalSourceType; D17), the image the creator picked is the claim
+// thumbnail, and the creator statement rides along as
 // `org.provenancetracker.creator_statement`. The statement and its numbers
 // are built in one call from the same composition, so the text the creator
 // wrote and the numbers it sits beside cannot disagree.
@@ -499,8 +501,87 @@ export function outputClassOf(output, composition) {
 }
 
 /**
+ * Where each placed asset plays in the finished edit, in the edit's own
+ * seconds: per asset ref, one entry per placement [start, end), in time
+ * order (D17, D52). Every clip is a placement, so every cut stays visible: a
+ * take cut into pieces that follow each other is one placement per piece, and
+ * a picture and its sound offset from each other (a J- or L-cut) are two.
+ * Only identical copies are dropped, the same asset over the same range, such
+ * as a clip's picture with its linked sound or a stereo pair, since a reader
+ * could not tell them apart. Disabled clips and the output itself are left
+ * out. Without a frame rate the times are unknown, so the list is empty for
+ * that asset.
+ */
+export function placementsOf(segments, outputRef, fps) {
+	const out = new Map();
+	const seen = new Set();
+	for (const s of segments || []) {
+		if (!s.enabled || !s.matchedAssetRef || s.matchedAssetRef === outputRef)
+			continue;
+		const list = out.get(s.matchedAssetRef) ?? [];
+		out.set(s.matchedAssetRef, list);
+		const start = seconds(s.startSeconds ?? (fps ? s.startFrame / fps : null));
+		const end = seconds(s.endSeconds ?? (fps ? s.endFrame / fps : null));
+		if (start === null || end === null || !(end > start)) continue;
+		// Compared as written, to the millisecond: equal there means the same action.
+		const key = JSON.stringify([s.matchedAssetRef, start, end]);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		list.push({ start, end });
+	}
+	for (const list of out.values())
+		list.sort((a, b) => a.start - b.start || a.end - b.end);
+	return out;
+}
+
+// A temporal region of interest (C2PA 2.4, 18.15.4.6): normal play time in
+// seconds, start inclusive, end exclusive.
+function temporalChange({ start, end }) {
+	return {
+		region: [
+			{
+				type: "temporal",
+				time: { type: "npt", start: String(start), end: String(end) },
+			},
+		],
+	};
+}
+
+// The claim thumbnail formats c2patool and the library both embed.
+const THUMBNAIL_EXTENSIONS = { "image/jpeg": "jpg", "image/png": "png" };
+
+/**
+ * A thumbnail image's format from its first bytes: "image/jpeg",
+ * "image/png", or null for anything else. Pure: the caller reads the bytes.
+ */
+export function thumbnailFormatOf(bytes) {
+	const b = bytes || [];
+	if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+	const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+	if (png.every((x, i) => b[i] === x)) return "image/png";
+	return null;
+}
+
+/**
+ * The claim thumbnail's resource name: the image's SHA-256 and extension, so
+ * the stored definition says which bytes went in without naming a path.
+ */
+export function thumbnailIdentifier({ sha256, format }) {
+	const ext = THUMBNAIL_EXTENSIONS[format];
+	if (!ext) throw new Error("A thumbnail is a JPEG or PNG image");
+	if (!/^[0-9a-f]{64}$/.test(String(sha256 || "")))
+		throw new Error("A thumbnail is named by its SHA-256");
+	return `${sha256}.${ext}`;
+}
+
+/**
  * Manifest for signing a finished edit.
- * @returns {{ definition: object, ingredients: Array<{label, relationship, title, filePath?, useInput?}>, statement: object }}
+ *
+ * `thumbnail` ({ sha256, format, filePath }) is the image the creator picked
+ * to stand for the edit: it becomes the claim thumbnail, which verifiers show
+ * (D17). The definition names it by hash; `resources` tells the signer which
+ * file that name is.
+ * @returns {{ definition: object, ingredients: Array<{label, relationship, title, filePath?, useInput?}>, resources: Array<{identifier, filePath}>, statement: object }}
  */
 export function buildOutputManifest({
 	output,
@@ -511,6 +592,8 @@ export function buildOutputManifest({
 	statement = {},
 	statedAt,
 	generator,
+	// No default: a JS default would type it as null for TypeScript callers.
+	thumbnail,
 	trainingMiningOptOut = true,
 }) {
 	if (!output?.filePath) throw new Error("The output has no file to sign");
@@ -547,6 +630,11 @@ export function buildOutputManifest({
 			parameters: { ingredientIds: [PARENT_LABEL] },
 		},
 	];
+	// One placed action per placement of an ingredient, in time order, each
+	// with its range (D17, D52). Every componentOf ingredient has at least one
+	// (C2PA 2.4, 18.16.3), without a range if the times are unknown.
+	const stretches = placementsOf(segments, requireRef(output), timeline?.fps);
+	const placed = [];
 	keys.forEach((k, i) => {
 		const a = assets.get(k) || {};
 		const label = ingredientLabel(i);
@@ -557,12 +645,28 @@ export function buildOutputManifest({
 			filePath: a.filePath,
 		});
 		const dst = sourceTypeUri(a.originClass);
-		actions.push({
+		const action = (range) => ({
 			action: "c2pa.placed",
 			...(dst ? { digitalSourceType: dst } : {}),
 			parameters: { ingredientIds: [label] },
+			...(range ? { changes: [temporalChange(range)] } : {}),
 		});
+		const ranges = stretches.get(k) ?? [];
+		if (ranges.length === 0) placed.push({ order: [-1, i], act: action(null) });
+		for (const r of ranges)
+			placed.push({ order: [r.start, i], act: action(r) });
 	});
+	placed.sort((x, y) => x.order[0] - y.order[0] || x.order[1] - y.order[1]);
+	actions.push(...placed.map((p) => p.act));
+
+	const resources = [];
+	let thumbnailRef = null;
+	if (thumbnail) {
+		const identifier = thumbnailIdentifier(thumbnail);
+		if (!thumbnail.filePath) throw new Error("The thumbnail has no file");
+		thumbnailRef = { format: thumbnail.format, identifier };
+		resources.push({ identifier, filePath: thumbnail.filePath });
+	}
 
 	const assertions = [
 		{ label: "c2pa.actions.v2", data: { actions } },
@@ -578,9 +682,11 @@ export function buildOutputManifest({
 		definition: {
 			claim_generator_info: [generator],
 			title: data.output.title,
+			...(thumbnailRef ? { thumbnail: thumbnailRef } : {}),
 			assertions,
 		},
 		ingredients,
+		resources,
 		statement: data,
 	};
 }

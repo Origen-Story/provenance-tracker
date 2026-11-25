@@ -117,18 +117,28 @@ function isCaptureDevice(sig) {
 
 /**
  * Who vouches for the file: the creator (signed at ingest with this tool or
- * c2patool, or a certificate named in `ownSignerNames`), the capture device,
- * or the tool that made or exported it. '' when there is no manifest.
+ * c2patool, or by one of `ownSigners`, the certificates the project has
+ * signed with), the capture device, or the tool that made or exported it.
+ * '' when there is no manifest.
+ *
+ * An own signer is a certificate's name and its issuer's name together, as
+ * a reader reports them: a name alone would also match anyone who made a
+ * certificate with that name, and an issuer alone every certificate it issued.
+ *
+ * @param {object} sig c2paSignals(...)
+ * @param {Array<{commonName: string, issuer: string}>} [ownSigners]
  */
-export function signerOf(sig, ownSignerNames = []) {
+export function signerOf(sig, ownSigners = []) {
 	if (!sig.hasManifest) return { signedBy: "", signerName: "" };
 	const signerName = sig.commonName || sig.issuer || sig.claimGenerator || "";
-	const own = ownSignerNames
-		.map((n) => String(n || "").toLowerCase())
-		.filter(Boolean);
-	const mine = own.some(
-		(n) => sig.commonName.toLowerCase() === n || sig.issuer.toLowerCase() === n,
-	);
+	const fold = (s) => String(s || "").toLowerCase();
+	const mine =
+		!!sig.commonName &&
+		ownSigners.some(
+			(o) =>
+				fold(o?.commonName) === fold(sig.commonName) &&
+				fold(o?.issuer) === fold(sig.issuer),
+		);
 	if (mine || CREATOR_SIGNER_PATTERNS.some((re) => re.test(sig.claimGenerator)))
 		return { signedBy: "creator", signerName };
 	if (isCaptureDevice(sig)) return { signedBy: "device", signerName };
@@ -210,7 +220,7 @@ function fromManifest(sig) {
  * @param {object|null} [input.platformData] parsed platform blob (parser output)
  * @param {object|null} [input.exifTags] stored exifJson, parsed
  * @param {string|null} [input.parentClass] origin class of a derived_from parent
- * @param {string[]} [input.ownSignerNames] certificate names that mean "the creator signed this"
+ * @param {Array<{commonName: string, issuer: string}>} [input.ownSigners] certificates that mean "the creator signed this" (signerOf)
  * @returns {{ originClass: string, source: string, signedBy: string, signerName: string, captureSigned: boolean }}
  */
 export function proposeOriginClass({
@@ -220,11 +230,11 @@ export function proposeOriginClass({
 	platformData = null,
 	exifTags = null,
 	parentClass = null,
-	ownSignerNames = [],
+	ownSigners = [],
 }) {
 	const sig = c2paSignals(c2paSummary);
 	const exif = exifTags || {};
-	const signer = signerOf(sig, ownSignerNames);
+	const signer = signerOf(sig, ownSigners);
 	const done = (originClass, source) => ({
 		originClass,
 		source,

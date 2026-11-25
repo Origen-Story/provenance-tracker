@@ -9,7 +9,7 @@ How a signed film and its public record reach an audience, and stay checkable. P
 3. **Download it once from where you host it, and compare its SHA-256** with the one on the Export tab (`signedFile.sha256` in the export). If they differ, the host changed the file: host it somewhere else.
 4. **Record where it is.** On the Export tab, under "Where v<N> is published", enter the signed file's address and the page's, or use `npm run cli -- publish <asset id> --file <url> --page <url>`. Both are https only. The tracker keeps them with history (D56) and never opens them.
 5. **Update the website's copy of the viewer before publishing a new export format.** A page keeps its own copy of `public-viewer/` (pinned to a commit), and an older viewer refuses a newer export with "This viewer reads export format 1, not 2". Copy the new `src/` and `viewer.css` first, then the export.
-6. **Download the export** from the Export tab and put it on the page with the viewer (`public-viewer/README.md`, "Put it on a page").
+6. **Download the export** from the Export tab and put it on the page with the viewer (`public-viewer/README.md`, "Put it on a page"). Visitors can then check a copy they have against it on the page itself, under "Check it yourself"; the file stays on their device.
 7. **Put the page link in the video's description** on every platform the film goes to. It is the main route from a platform copy back to the record.
 
 When a copy is taken down, empty its address on the Export tab. The history keeps where it was.

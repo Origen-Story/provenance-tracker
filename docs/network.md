@@ -38,7 +38,7 @@ Stated so nobody has to take the table above on trust further than it has been c
 
 ## The public viewer is a separate thing
 
-`public-viewer/` is a web page you host for your audience. It is not part of the local tool and sends nothing from your machine. A visitor's browser, on that page, loads fonts from Google Fonts, loads YouTube's player script and plays through `youtube-nocookie.com` if you embed a YouTube video, and offers a link to `contentcredentials.org/verify`. When the page passes no download link of its own, the viewer links the signed file at the https address the export records (format 2, D57), and the page's own address if the export names one; nothing is fetched from those addresses until the visitor follows a link. See `public-viewer/README.md`.
+`public-viewer/` is a web page you host for your audience. It is not part of the local tool and sends nothing from your machine. A visitor's browser, on that page, loads fonts from Google Fonts, loads YouTube's player script and plays through `youtube-nocookie.com` if you embed a YouTube video, and offers a link to `contentcredentials.org/verify`. When the page passes no download link of its own, the viewer links the signed file at the https address the export records (format 2, D57), and the page's own address if the export names one; nothing is fetched from those addresses until the visitor follows a link. Checking a copy the visitor already has (D58) reads that file on their device and sends nothing anywhere. See `public-viewer/README.md`.
 
 ## Development
 

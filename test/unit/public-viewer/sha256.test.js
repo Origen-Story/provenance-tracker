@@ -1,6 +1,6 @@
 // The viewer's own SHA-256 (D58), held to Node's.
 import { describe, it, expect } from "vitest";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
 	Sha256,
 	sha256Hex,
@@ -9,6 +9,23 @@ import {
 import { copyVerdict } from "../../../public-viewer/src/model.js";
 
 const node = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+/**
+ * n bytes that look random but are the same on every run (xorshift32), so a
+ * failure can be repeated exactly. Not cryptographic randomness, which a
+ * hash test has no need of.
+ */
+function testBytes(n, seed = 0x9e3779b9) {
+	const out = new Uint8Array(n);
+	let x = seed | 0;
+	for (let i = 0; i < n; i++) {
+		x ^= x << 13;
+		x ^= x >>> 17;
+		x ^= x << 5;
+		out[i] = x & 0xff;
+	}
+	return out;
+}
 
 describe("Sha256", () => {
 	it("gives the standard answers", () => {
@@ -26,7 +43,7 @@ describe("Sha256", () => {
 			4096, 65537,
 		];
 		for (const n of lengths) {
-			const bytes = randomBytes(n);
+			const bytes = testBytes(n);
 			const want = node(bytes);
 			expect(sha256Hex(bytes), `${n} bytes`).toBe(want);
 			for (const piece of [1, 3, 63, 64, 65, 1000]) {
@@ -48,7 +65,7 @@ describe("Sha256", () => {
 
 describe("hashBlob", () => {
 	it("reads a file a slice at a time, reporting progress, to Node's answer", async () => {
-		const bytes = randomBytes(1_000_003);
+		const bytes = testBytes(1_000_003);
 		const seen = [];
 		const hex = await hashBlob(new Blob([bytes]), {
 			sliceSize: 65536,
@@ -63,7 +80,7 @@ describe("hashBlob", () => {
 
 	it("stops when asked", async () => {
 		const ctrl = new AbortController();
-		const run = hashBlob(new Blob([randomBytes(200_000)]), {
+		const run = hashBlob(new Blob([testBytes(200_000)]), {
 			sliceSize: 1000,
 			signal: ctrl.signal,
 			onProgress: (done) => {

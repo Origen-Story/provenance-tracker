@@ -48,7 +48,7 @@ To update a film: render the new cut **over the same file**, run Import (it beco
 
 ### Signing certificates
 
-Signing needs a certificate and its private key, as PEM files. `npm run cert:generate` makes a throwaway pair in `./certs/` for trying it out; for real use, a CA-issued certificate. Enter their full paths on the project's Settings page (or with `npm run cli -- signing`). Signing runs through the C2PA library, with an optional time stamp from DigiCert; `npm run cli -- settings signing-engine c2patool` signs with the bundled `c2patool` instead. `npm run cert:generate -- --key-type es384|ps256|ed25519` makes a pair with another kind of key.
+Signing needs a certificate and its private key, as PEM files. `npm run cert:generate` makes a throwaway pair in `./certs/` for trying it out; for real use, a CA-issued certificate. Enter their full paths on the project's Settings page (or with `npm run cli -- signing`). Signing runs through the C2PA library, with an optional time stamp from DigiCert; `npm run cli -- settings signing-engine c2patool` signs with the bundled `c2patool` instead. `npm run cert:generate -- --key-type es384|ps256|ed25519` makes a pair with another kind of key. To say who the creator is in every signed file (a CAWG identity, D55), set an identity certificate and key on the Settings page or with `npm run cli -- identity`; `npm run cert:generate -- --name "Your Name" <folder>` makes a test one.
 
 **About the dev certificate.**
 

@@ -175,7 +175,7 @@ function Preview({
 	});
 	if (q.isLoading) return <Loading />;
 	if (q.error || !q.data) return <Problem error={q.error ?? "No preview"} />;
-	const { statement: s, blockers, ingredientAssetIds } = q.data;
+	const { statement: s, blockers, ingredientAssetIds, identity } = q.data;
 	return (
 		<div className="space-y-4">
 			{blockers.length > 0 && (
@@ -185,6 +185,23 @@ function Preview({
 						<p key={b}>{b}</p>
 					))}
 				</div>
+			)}
+			{s && identity && (
+				<Card className="space-y-1 text-xs text-text-secondary">
+					<p>
+						<span className="font-medium text-text-primary">Identity:</span>{" "}
+						{identity.name}, issued by {identity.issuer}, as the creator. It
+						vouches for the statement, the credits, how it was made and the
+						AI-training choice, as well as the file itself.
+					</p>
+					{identity.authorDiffers && (
+						<p className="text-warning">
+							The statement's author, {s.author}, is not the name on your
+							identity certificate, {identity.name}. Verifiers will show the
+							certificate's name. Sign anyway if both are you.
+						</p>
+					)}
+				</Card>
 			)}
 			{s && (
 				<Built

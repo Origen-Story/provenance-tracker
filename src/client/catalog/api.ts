@@ -237,6 +237,7 @@ export interface AssetRecord {
 		engine: string;
 		engineVersion: string;
 		signerName: string;
+		identity: { name: string; status: string } | null;
 		status: string;
 		timestamped: boolean;
 		signedAt: string;
@@ -649,6 +650,15 @@ export const outputs = {
 			/** The asset each ingredient is, in the statement's order. */
 			ingredientAssetIds: number[];
 			thumbnailAssetId: number | null;
+			/** The creator's identity signing would add (D55), when one is set up here. */
+			identity: {
+				name: string;
+				issuer: string;
+				validTo: string;
+				covers: string[];
+				role: string;
+				authorDiffers: boolean;
+			} | null;
 		}>("GET", `/projects/${projectId}/assets/${assetId}/statement-preview`),
 	signing: (projectId: string) =>
 		api<SigningStatus>("GET", `/projects/${projectId}/signing`),
@@ -658,6 +668,15 @@ export const outputs = {
 		}),
 	clearSigning: (projectId: string) =>
 		api<SigningStatus>("DELETE", `/projects/${projectId}/signing`, {}),
+	/** The creator's identity certificate and key for this project here (D55): the same shape as signing. */
+	identity: (projectId: string) =>
+		api<SigningStatus>("GET", `/projects/${projectId}/identity`),
+	setIdentity: (projectId: string, certificate: string, privateKey: string) =>
+		api<SigningStatus>("PUT", `/projects/${projectId}/identity`, {
+			fields: { certificate, private_key: privateKey },
+		}),
+	clearIdentity: (projectId: string) =>
+		api<SigningStatus>("DELETE", `/projects/${projectId}/identity`, {}),
 	/**
 	 * Sign an asset: an output gets a signed copy, a source asset a sidecar.
 	 * A job. `timestamp: true` asks the tracker's time-stamp server.

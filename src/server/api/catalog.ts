@@ -59,7 +59,10 @@ import {
 } from "@provenancetracker/core-node/sign/sign-output.ts";
 import { signingEngineFor } from "@provenancetracker/core-node/sign/engines/index.ts";
 import {
+	clearIdentity,
 	clearSigning,
+	identityStatus,
+	setIdentity,
 	setSigning,
 	signingStatus,
 } from "@provenancetracker/core-node/sign/signing-settings.ts";
@@ -1279,61 +1282,78 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 
 	// --- Signing, the public export and previews (D41) ---
 
-	// Whether this project can be signed here, and with which certificate. Never a path.
-	api.get(
-		"/projects/:projectId/signing",
-		async (req: Request, res: Response) => {
-			const projectId = String(req.params.projectId);
-			withProject(machine, projectId, () => undefined);
-			res.json(await signingStatus(machine, projectId));
+	// Two key pairs a project can have on this machine, set the same way:
+	// what signs it (D41), and the creator's identity (D55). Their files are
+	// ones the person names on purpose (docs/threat-model.md), kept in this
+	// machine's settings, never in the catalog, never sent back: each route
+	// answers only whether it is set, the certificate's name, issuer, expiry
+	// and fingerprint, and what stops it.
+	for (const pair of [
+		{
+			path: "signing",
+			set: setSigning,
+			clear: clearSigning,
+			status: signingStatus,
 		},
-	);
+		{
+			path: "identity",
+			set: setIdentity,
+			clear: clearIdentity,
+			status: identityStatus,
+		},
+	]) {
+		api.get(
+			`/projects/:projectId/${pair.path}`,
+			async (req: Request, res: Response) => {
+				const projectId = String(req.params.projectId);
+				withProject(machine, projectId, () => undefined);
+				res.json(await pair.status(machine, projectId));
+			},
+		);
 
-	// Which certificate and key sign this project on this machine: files the
-	// person names on purpose (docs/threat-model.md). Kept in this machine's
-	// settings, never in the catalog, never sent back.
-	api.put(
-		"/projects/:projectId/signing",
-		async (req: Request, res: Response) => {
-			const { fields } = editBody(req);
-			person(machine);
-			const projectId = String(req.params.projectId);
-			withProject(machine, projectId, () => undefined);
-			const unknown = Object.keys(fields).filter(
-				(k) => k !== "certificate" && k !== "private_key",
-			);
-			if (
-				unknown.length ||
-				typeof fields.certificate !== "string" ||
-				typeof fields.private_key !== "string"
-			)
-				throw new HttpError(
-					400,
-					'Give { "certificate": <file>, "private_key": <file> }',
+		api.put(
+			`/projects/:projectId/${pair.path}`,
+			async (req: Request, res: Response) => {
+				const { fields } = editBody(req);
+				person(machine);
+				const projectId = String(req.params.projectId);
+				withProject(machine, projectId, () => undefined);
+				const unknown = Object.keys(fields).filter(
+					(k) => k !== "certificate" && k !== "private_key",
 				);
-			try {
-				res.json(
-					await setSigning(machine, projectId, {
-						certificate: fields.certificate,
-						privateKey: fields.private_key,
-					}),
-				);
-			} catch (err) {
-				throw new HttpError(400, (err as Error).message);
-			}
-		},
-	);
+				if (
+					unknown.length ||
+					typeof fields.certificate !== "string" ||
+					typeof fields.private_key !== "string"
+				)
+					throw new HttpError(
+						400,
+						'Give { "certificate": <file>, "private_key": <file> }',
+					);
+				try {
+					res.json(
+						await pair.set(machine, projectId, {
+							certificate: fields.certificate,
+							privateKey: fields.private_key,
+						}),
+					);
+				} catch (err) {
+					throw new HttpError(400, (err as Error).message);
+				}
+			},
+		);
 
-	api.delete(
-		"/projects/:projectId/signing",
-		async (req: Request, res: Response) => {
-			person(machine);
-			const projectId = String(req.params.projectId);
-			withProject(machine, projectId, () => undefined);
-			clearSigning(machine, projectId);
-			res.json(await signingStatus(machine, projectId));
-		},
-	);
+		api.delete(
+			`/projects/:projectId/${pair.path}`,
+			async (req: Request, res: Response) => {
+				person(machine);
+				const projectId = String(req.params.projectId);
+				withProject(machine, projectId, () => undefined);
+				pair.clear(machine, projectId);
+				res.json(await pair.status(machine, projectId));
+			},
+		);
+	}
 
 	// Sign an output: a job, since c2patool reads the whole film and each source.
 	api.post(

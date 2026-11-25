@@ -15,8 +15,12 @@ export type SigningAlg = "es256" | "es384" | "es512" | "ps256" | "ed25519";
 export async function algorithmFor(
 	certificatePath: string,
 ): Promise<SigningAlg> {
-	const key = new X509Certificate(await readFile(certificatePath, "utf8"))
-		.publicKey;
+	return algorithmOf(await readFile(certificatePath, "utf8"));
+}
+
+/** The signing algorithm of a certificate (or a chain: its first), given as PEM text. */
+export function algorithmOf(pem: string): SigningAlg {
+	const key = new X509Certificate(pem).publicKey;
 	const type = key.asymmetricKeyType;
 	if (type === "ec") {
 		const curve = key.asymmetricKeyDetails?.namedCurve;
@@ -35,13 +39,21 @@ export async function algorithmFor(
  * the record of which certificate signed. The first certificate of a chain
  * is the signer's.
  */
-export async function certificateInfo(certificatePath: string): Promise<{
+export async function certificateInfo(
+	certificatePath: string,
+): Promise<CertificateInfo> {
+	return certificateInfoOf(await readFile(certificatePath, "utf8"));
+}
+
+export interface CertificateInfo {
 	commonName: string;
 	issuer: string;
 	fingerprint: string;
 	validTo: string;
-}> {
-	const pem = await readFile(certificatePath, "utf8");
+}
+
+/** What a certificate (or a chain: its first) says, given as PEM text. */
+export function certificateInfoOf(pem: string): CertificateInfo {
 	const cert = new X509Certificate(pem);
 	const cn = (dn: string) =>
 		/(?:^|\n)CN=([^\n]*)/.exec(dn)?.[1]?.trim() ?? dn.trim();

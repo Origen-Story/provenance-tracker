@@ -227,6 +227,40 @@ describe.skipIf(!haveOpenssl)("signing through the API", () => {
 		);
 	});
 
+	it("sets up your identity apart from signing, without ever sending a path back, and forgets it (D55)", async () => {
+		const w = await world();
+		expect(await w.json(await w.call("GET", "/identity"))).toMatchObject({
+			configured: false,
+		});
+		const id = devCertificate(w.dir, "Test Person")!;
+		const set = await w.call("PUT", "/identity", {
+			fields: { certificate: id.certificate, private_key: id.privateKey },
+		});
+		const setText = await set.text();
+		expect(set.status).toBe(200);
+		expect(setText).not.toContain(id.privateKey.replaceAll("\\", "\\\\"));
+		expect(setText).not.toContain(id.certificate.replaceAll("\\", "\\\\"));
+		expect(JSON.parse(setText)).toMatchObject({
+			configured: true,
+			problem: null,
+			certificate: { commonName: "Test Person" },
+		});
+		// Signing is a separate pair, still not set up.
+		expect(await w.json(await w.call("GET", "/signing"))).toMatchObject({
+			configured: false,
+		});
+		expect(
+			(
+				await w.call("PUT", "/identity", {
+					fields: { certificate: id.certificate },
+				})
+			).status,
+		).toBe(400);
+		expect((await w.json(await w.call("DELETE", "/identity"))).configured).toBe(
+			false,
+		);
+	});
+
 	it("records a refusal as the job's error, in words", async () => {
 		const w = await world();
 		const started = await w.json(

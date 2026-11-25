@@ -82,3 +82,10 @@ export function engineLabel(engine: string, version: string): string {
 				: engine || "an unrecorded engine";
 	return version ? `${name} ${version}` : name;
 }
+
+/** How a creator's identity reads (D55), apart from the claim's verdict. */
+export const IDENTITY_STATUS: Record<string, string> = {
+	trusted: "trusted",
+	unrecognised_issuer: "valid, unrecognised issuer",
+	invalid: "invalid",
+};

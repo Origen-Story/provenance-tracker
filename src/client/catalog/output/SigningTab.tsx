@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fileUrl, outputs, projects, type AssetRecord } from "../api.ts";
-import { SIGNED_STATUS, engineLabel } from "../labels.ts";
+import { SIGNED_STATUS, engineLabel, IDENTITY_STATUS } from "../labels.ts";
 import { jobsKey, useJobs } from "../media/Jobs.tsx";
 import {
 	Button,
@@ -219,6 +219,8 @@ function SignedCopies({
 							Signed by {s.signerName || "an unnamed signer"} with{" "}
 							{engineLabel(s.engine, s.engineVersion)}
 							{s.timestamped ? ", time-stamped" : ", no trusted time stamp"}
+							{s.identity &&
+								`, with the identity of ${s.identity.name} (${IDENTITY_STATUS[s.identity.status] ?? s.identity.status})`}
 							{place &&
 								!place.live &&
 								". The file is not where it was last seen"}
@@ -256,26 +258,64 @@ function joinPath(folder: string, rel: string) {
 	return `${folder.replace(/[\\/]+$/, "")}${sep}${rel.split("/").join(sep)}`;
 }
 
-export function SigningSetUp({ projectId }: { projectId: string }) {
+/** The two key pairs a project has on this machine, and how each is spoken of. */
+const PAIRS = {
+	signing: {
+		get: outputs.signing,
+		set: outputs.setSigning,
+		clear: outputs.clearSigning,
+		key: signingKey,
+		notSet: "not set up",
+		certificateHint: "Its full path. A PEM file with the certificate chain.",
+		forget:
+			"Forget the certificate and key for this project on this machine? The files are not touched.",
+		about: "",
+	},
+	identity: {
+		get: outputs.identity,
+		set: outputs.setIdentity,
+		clear: outputs.clearIdentity,
+		key: (projectId: string) => ["catalog", projectId, "identity"],
+		notSet: "none: files are signed without one",
+		certificateHint:
+			"Its full path. A PEM file: an identity certificate issued to you, not the one that signs.",
+		forget:
+			"Forget your identity for this project on this machine? Files are then signed without it. The files are not touched.",
+		about:
+			'Says who the creator is in every file signed here (a CAWG identity), signed with its own certificate, apart from the certificate that signs. For trying it out: npm run cert:generate -- --name "Your Name" makes a test one.',
+	},
+} as const;
+
+export function SigningSetUp({
+	projectId,
+	pair = "signing",
+}: {
+	projectId: string;
+	/** Which pair: what signs (D41), or the creator's identity (D55). */
+	pair?: keyof typeof PAIRS;
+}) {
 	const qc = useQueryClient();
-	const status = useSigning(projectId);
+	const words = PAIRS[pair];
+	const status = useQuery({
+		queryKey: words.key(projectId),
+		queryFn: () => words.get(projectId),
+	});
 	const [certificate, setCertificate] = useState("");
 	const [key, setKey] = useState("");
 	const [editing, setEditing] = useState(false);
 	const take = (s: Awaited<ReturnType<typeof outputs.signing>>) => {
-		qc.setQueryData(signingKey(projectId), s);
+		qc.setQueryData(words.key(projectId), s);
 		qc.invalidateQueries({ queryKey: ["catalog", projectId, "asset"] });
 		setEditing(false);
 		setCertificate("");
 		setKey("");
 	};
 	const save = useMutation({
-		mutationFn: () =>
-			outputs.setSigning(projectId, certificate.trim(), key.trim()),
+		mutationFn: () => words.set(projectId, certificate.trim(), key.trim()),
 		onSuccess: take,
 	});
 	const forget = useMutation({
-		mutationFn: () => outputs.clearSigning(projectId),
+		mutationFn: () => words.clear(projectId),
 		onSuccess: take,
 	});
 	const s = status.data;
@@ -288,7 +328,7 @@ export function SigningSetUp({ projectId }: { projectId: string }) {
 					<div className="flex items-center gap-2">
 						<Status ok={s.configured && !s.problem}>
 							{!s.configured
-								? "not set up"
+								? words.notSet
 								: s.problem
 									? "needs attention"
 									: "ready"}
@@ -305,6 +345,9 @@ export function SigningSetUp({ projectId }: { projectId: string }) {
 							<span className="font-mono">{c.fingerprint.slice(0, 16)}…</span>
 						</p>
 					)}
+					{words.about && (
+						<p className="text-xs text-text-secondary">{words.about}</p>
+					)}
 					<p className="text-xs text-text-secondary">
 						Kept in this machine's settings, never in the project: a copy of the
 						project elsewhere is set up there. The files' paths are not shown
@@ -312,7 +355,7 @@ export function SigningSetUp({ projectId }: { projectId: string }) {
 					</p>
 				</div>
 			)}
-			{editing || (s && !s.configured) ? (
+			{editing || (s && !s.configured && pair === "signing") ? (
 				<form
 					className="space-y-3"
 					onSubmit={(e) => {
@@ -326,7 +369,7 @@ export function SigningSetUp({ projectId }: { projectId: string }) {
 							value={certificate}
 							onChange={setCertificate}
 							placeholder="C:\Certificates\signer.pem"
-							hint="Its full path. A PEM file with the certificate chain."
+							hint={words.certificateHint}
 						/>
 						<TextField
 							label="Private key file"
@@ -351,6 +394,11 @@ export function SigningSetUp({ projectId }: { projectId: string }) {
 					</div>
 					<Problem error={save.error} />
 				</form>
+			) : s && !s.configured ? (
+				// Only the identity gets here unset: it is optional.
+				<Button quiet onClick={() => setEditing(true)}>
+					Set up your identity…
+				</Button>
 			) : (
 				s?.configured && (
 					<div className="flex gap-2">
@@ -361,12 +409,7 @@ export function SigningSetUp({ projectId }: { projectId: string }) {
 							quiet
 							disabled={forget.isPending}
 							onClick={() => {
-								if (
-									confirm(
-										"Forget the certificate and key for this project on this machine? The files are not touched.",
-									)
-								)
-									forget.mutate();
+								if (confirm(words.forget)) forget.mutate();
 							}}
 						>
 							Forget them here

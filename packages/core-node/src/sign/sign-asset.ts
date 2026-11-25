@@ -24,15 +24,20 @@ import type { Machine } from "../machine.ts";
 import type { OpenProject } from "../project.ts";
 import { listRoots } from "../roots.ts";
 import { TOOL } from "../tool.ts";
-import { certificateInfo } from "./certificates.ts";
+import { certificateInfoOf } from "./certificates.ts";
+import type { CredentialHolder } from "./holders/index.ts";
 import {
 	storableDefinition,
 	type SignIngredient,
 	type SigningEngine,
 } from "./engine.ts";
 import { signingEngineFor } from "./engines/index.ts";
-import { NotReadyError } from "./sign-output.ts";
-import { signerPaths } from "./signing-settings.ts";
+import {
+	holderOrRefuse,
+	identityFor,
+	NotReadyError,
+	refuseUnlessSetUp,
+} from "./sign-output.ts";
 
 const GENERATOR = { name: "provenance-tracker", version: TOOL.version };
 
@@ -48,6 +53,10 @@ export interface AssetSigningOptions {
 	/** Ask that it not be used to train or mine (the default). */
 	trainingMiningOptOut?: boolean;
 	engine?: SigningEngine;
+	/** What holds the key; this machine's setup for the project when not given. */
+	holder?: CredentialHolder;
+	/** What holds the creator's identity key; this machine's setup for the project, if any, when not given. */
+	identityHolder?: CredentialHolder;
 	timestampUrl?: string;
 	now?: () => string;
 }
@@ -81,12 +90,7 @@ export async function signAsset(
 		.prepare("SELECT * FROM assets WHERE id = ?")
 		.get(opts.assetId) as Record<string, unknown> | undefined;
 	if (!asset) throw new NotReadyError("There is no such asset");
-	let signer;
-	try {
-		signer = signerPaths(machine, project.projectId);
-	} catch (err) {
-		throw new NotReadyError((err as Error).message);
-	}
+	if (!opts.holder) refuseUnlessSetUp(machine, project.projectId);
 
 	// The asset's own newest file, and a live place of it on this machine.
 	const roots = new Map(
@@ -197,6 +201,16 @@ export async function signAsset(
 	}
 	const { definition, ingredients } = built;
 
+	// The keys are opened for this signing only, and let go with the holders.
+	const identity = await identityFor(
+		machine,
+		project.projectId,
+		engine,
+		definition as Record<string, unknown>,
+		opts.identityHolder,
+	);
+	const holder =
+		opts.holder ?? (await holderOrRefuse(machine, project.projectId));
 	if (plan.action === "rotate") renameSync(plan.archive.from, plan.archive.to);
 	let report: Record<string, unknown> | null;
 	try {
@@ -205,8 +219,8 @@ export async function signAsset(
 			outputPath: plan.sidecarPath,
 			definition: definition as Record<string, unknown>,
 			ingredients: ingredients as SignIngredient[],
-			certificatePath: signer.certificatePath,
-			privateKeyPath: signer.privateKeyPath,
+			holder,
+			identity,
 			timestampUrl: opts.timestampUrl,
 			sidecar: true,
 		}));
@@ -234,8 +248,7 @@ export async function signAsset(
 			},
 			engine: engine.name,
 			engineVersion: engine.version,
-			certificateSha256: (await certificateInfo(signer.certificatePath))
-				.fingerprint,
+			certificateSha256: certificateInfoOf(holder.chain).fingerprint,
 			definition: storableDefinition(definition as Record<string, unknown>),
 			statementId: null,
 			statement: null,

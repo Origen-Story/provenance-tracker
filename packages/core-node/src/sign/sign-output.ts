@@ -3,7 +3,14 @@
 // (the C2PA library by default, D53) signs a new versioned copy beside the
 // cut, and the copy and the signing are recorded.
 
-import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
+import {
+	closeSync,
+	existsSync,
+	openSync,
+	readFileSync,
+	readSync,
+	statSync,
+} from "node:fs";
 import path from "node:path";
 import {
 	nextSignatureVersion,
@@ -31,15 +38,24 @@ import type { Machine } from "../machine.ts";
 import type { OpenProject } from "../project.ts";
 import { listRoots } from "../roots.ts";
 import { TOOL } from "../tool.ts";
-import { certificateInfo } from "./certificates.ts";
+import { certificateInfoOf } from "./certificates.ts";
+import {
+	IDENTITY_COVERS,
+	IDENTITY_ROLE,
+	identityReferences,
+} from "@provenancetracker/core/manifest/identity.ts";
+import { readSettings, signingEngineOf } from "../settings.ts";
+import { keyFilesHolder } from "./holders/key-files.ts";
+import { identityPaths, signerPaths } from "./signing-settings.ts";
+import { openHolder, type CredentialHolder } from "./holders/index.ts";
 import {
 	storableDefinition,
 	type SignIngredient,
+	type SignArgs,
 	type SigningEngine,
 	type SignResource,
 } from "./engine.ts";
 import { signingEngineFor } from "./engines/index.ts";
-import { signerPaths } from "./signing-settings.ts";
 
 export type { SigningEngine } from "./engine.ts";
 
@@ -55,6 +71,58 @@ export const TIMESTAMP_URL = "http://timestamp.digicert.com";
 
 /** A refusal before anything is signed: the caller's to fix (HTTP 400). */
 export class NotReadyError extends Error {}
+
+/** Refuse, in words, when this project has no signing set up on this machine. */
+export function refuseUnlessSetUp(machine: Machine, projectId: string): void {
+	try {
+		signerPaths(machine, projectId);
+	} catch (err) {
+		throw new NotReadyError((err as Error).message);
+	}
+}
+
+/**
+ * The creator's identity to add (D55): the holder given, or this machine's
+ * identity for the project, or none. Refused with c2patool (decision 5c).
+ */
+export async function identityFor(
+	machine: Machine,
+	projectId: string,
+	engine: SigningEngine,
+	definition: Record<string, unknown>,
+	given?: CredentialHolder,
+): Promise<SignArgs["identity"]> {
+	const files = given ? null : identityPaths(machine, projectId);
+	if (!given && !files) return undefined;
+	if (engine.name === "c2patool")
+		throw new NotReadyError(IDENTITY_NEEDS_LIBRARY);
+	let holder = given;
+	if (!holder)
+		try {
+			holder = await keyFilesHolder(files!);
+		} catch (err) {
+			throw new NotReadyError(`Your identity: ${(err as Error).message}`);
+		}
+	return {
+		holder,
+		covers: identityReferences(
+			definition as { assertions?: Array<{ label?: string }> },
+		),
+		roles: [IDENTITY_ROLE],
+	};
+}
+
+/** Open what holds this project's key for one signing; a holder that can't open is a refusal. */
+export async function holderOrRefuse(
+	machine: Machine,
+	projectId: string,
+): Promise<CredentialHolder> {
+	try {
+		return await openHolder(machine, projectId);
+	} catch (err) {
+		throw new NotReadyError((err as Error).message);
+	}
+}
 
 type Row = Record<string, unknown>;
 
@@ -242,6 +310,70 @@ export interface StatementPreview {
 	ingredientAssetIds: number[];
 	/** The image that will be the claim thumbnail, when one is picked and usable here. */
 	thumbnailAssetId: number | null;
+	/** The creator's identity signing would add (D55), when one is set up here. Never a path. */
+	identity: IdentityPreview | null;
+}
+
+export interface IdentityPreview {
+	/** The identity certificate's name and issuer, as a verifier will show them. */
+	name: string;
+	issuer: string;
+	validTo: string;
+	/** What it vouches for, and as what. */
+	covers: string[];
+	role: string;
+	/** The statement's author is not the name on the certificate (a warning, not a blocker; decision 5c). */
+	authorDiffers: boolean;
+}
+
+/** Signing with an identity needs the C2PA library (decision 5c). */
+const IDENTITY_NEEDS_LIBRARY =
+	"Your identity is set up for this project, and c2patool cannot add it. Sign with the C2PA library: npm run cli -- settings signing-engine library";
+
+/** The same name, ignoring case and spacing. */
+const sameName = (a: string, b: string) =>
+	a.trim().replace(/s+/g, " ").toLowerCase() ===
+	b.trim().replace(/s+/g, " ").toLowerCase();
+
+/**
+ * The identity this project signs with here, for the preview, or why it
+ * cannot be used; null when none is set up. Reads only the certificate.
+ */
+function identityHere(
+	machine: Machine,
+	projectId: string,
+	author: string,
+): { preview: IdentityPreview | null; problem: string | null } {
+	const files = identityPaths(machine, projectId);
+	if (!files) return { preview: null, problem: null };
+	let info;
+	try {
+		info = certificateInfoOf(readFileSync(files.certificatePath, "utf8"));
+	} catch {
+		return {
+			preview: null,
+			problem:
+				"Your identity certificate cannot be read. Check this project's identity settings.",
+		};
+	}
+	const preview: IdentityPreview = {
+		name: info.commonName,
+		issuer: info.issuer,
+		validTo: info.validTo,
+		covers: [...IDENTITY_COVERS],
+		role: IDENTITY_ROLE,
+		authorDiffers: !!author.trim() && !sameName(author, info.commonName),
+	};
+	if (!existsSync(files.privateKeyPath))
+		return { preview, problem: "Your identity's private key is not there." };
+	if (Date.parse(info.validTo) < Date.now())
+		return {
+			preview,
+			problem: `Your identity certificate expired on ${info.validTo.slice(0, 10)}.`,
+		};
+	if (signingEngineOf(readSettings(machine.settingsPath)) === "c2patool")
+		return { preview, problem: IDENTITY_NEEDS_LIBRARY };
+	return { preview, problem: null };
 }
 
 /**
@@ -287,6 +419,7 @@ export function previewOutputStatement(
 			blockers,
 			ingredientAssetIds: [],
 			thumbnailAssetId: null,
+			identity: null,
 		};
 	}
 	const saved = db
@@ -317,6 +450,12 @@ export function previewOutputStatement(
 		);
 	const thumb = thumbnailHere(project, places, opts.assetId);
 	if (thumb.problem) blockers.push(thumb.problem);
+	const identity = identityHere(
+		machine,
+		project.projectId,
+		String(saved?.author ?? ""),
+	);
+	if (identity.problem) blockers.push(identity.problem);
 	const statement = buildCreatorStatement({
 		output: {
 			ref: outputRef,
@@ -350,6 +489,7 @@ export function previewOutputStatement(
 		blockers,
 		ingredientAssetIds,
 		thumbnailAssetId: thumb.thumbnail?.assetId ?? null,
+		identity: identity.preview,
 	};
 }
 
@@ -388,6 +528,10 @@ export async function signOutput(
 	opts: {
 		assetId: number;
 		engine?: SigningEngine;
+		/** What holds the key; this machine's setup for the project when not given. */
+		holder?: CredentialHolder;
+		/** What holds the creator's identity key; this machine's setup for the project, if any, when not given. */
+		identityHolder?: CredentialHolder;
 		timestampUrl?: string;
 		now?: () => string;
 	},
@@ -398,12 +542,8 @@ export async function signOutput(
 		.prepare("SELECT * FROM assets WHERE id = ?")
 		.get(opts.assetId) as Row | undefined;
 	if (!asset) throw new NotReadyError("There is no such asset");
-	let signer;
-	try {
-		signer = signerPaths(machine, project.projectId);
-	} catch (err) {
-		throw new NotReadyError((err as Error).message);
-	}
+	// Whether signing is set up here at all is said before anything else.
+	if (!opts.holder) refuseUnlessSetUp(machine, project.projectId);
 
 	const cut = ownContent(project, opts.assetId);
 	const places = placesHere(project, machine);
@@ -505,14 +645,24 @@ export async function signOutput(
 		nextSignatureVersion(db, opts.assetId, "output"),
 	);
 	const engine = opts.engine ?? (await signingEngineFor(machine));
+	// The keys are opened for this signing only, and let go with the holders.
+	const identity = await identityFor(
+		machine,
+		project.projectId,
+		engine,
+		definition as Record<string, unknown>,
+		opts.identityHolder,
+	);
+	const holder =
+		opts.holder ?? (await holderOrRefuse(machine, project.projectId));
 	const { report } = await engine.sign({
 		inputPath: cutPlace.file,
 		outputPath,
 		definition: definition as Record<string, unknown>,
 		ingredients: ingredients as SignIngredient[],
 		resources: resources as SignResource[],
-		certificatePath: signer.certificatePath,
-		privateKeyPath: signer.privateKeyPath,
+		holder,
+		identity,
 		timestampUrl: opts.timestampUrl,
 	});
 	const rel = toCatalogPath(cutPlace.rootFolder, outputPath, machine.platform);
@@ -534,8 +684,7 @@ export async function signOutput(
 			},
 			engine: engine.name,
 			engineVersion: engine.version,
-			certificateSha256: (await certificateInfo(signer.certificatePath))
-				.fingerprint,
+			certificateSha256: certificateInfoOf(holder.chain).fingerprint,
 			definition: storableDefinition(definition as Record<string, unknown>),
 			statementId: statement.id as number,
 			statement: signedStatement,

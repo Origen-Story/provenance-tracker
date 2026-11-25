@@ -1,9 +1,7 @@
 // Signing through the C2PA library (@contentauth/c2pa-node): the default
-// engine (D53). The library builds and embeds the manifest; this machine's
-// Node signs the bytes it is handed (a callback), so the private key is read
-// here, once per signing, and never passes into the library. Node reads the
-// key as the files hold it (SEC1, PKCS#1 or PKCS#8 PEM), so nothing is
-// converted.
+// engine (D53). The library builds and embeds the manifest, and asks for the
+// bytes it hands over to be signed (a callback), so the private key is held
+// by whatever holds it (holders/, D54) and never passes into the library.
 //
 // Ingredients are read by the library itself, against the same trust lists
 // and remote-credentials setting as `extract` (c2pa-library.ts): D15's "the
@@ -11,69 +9,80 @@
 // ingest carries its credentials in a .c2pa sidecar (D13); the library reads
 // only embedded ones, so the sidecar goes in as the ingredient's manifest
 // store, with the library's reading of it, as the c2patool engine does.
+//
+// The creator's identity (D55), when there is one, is a CAWG identity
+// assertion the library adds as it signs: it asks for a finished COSE_Sign1
+// over its signer payload, which core's cose.ts builds and the identity's own
+// holder signs. The library drops a label it cannot find without a word, so
+// what the read-back says the identity covers is checked against what was
+// asked for, and a copy that falls short is not kept.
 
-import {
-	constants,
-	sign as cryptoSign,
-	X509Certificate,
-	type KeyObject,
-} from "node:crypto";
+import { X509Certificate } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { sidecarPathFor } from "@provenancetracker/core/manifest/build.js";
 import { mediaTypeForSigning } from "@provenancetracker/core/manifest/formats.ts";
+import { coseSign1 } from "@provenancetracker/core/manifest/cose.ts";
+import { readIdentity } from "@provenancetracker/core/manifest/identity.ts";
 import { readStore, type LoadedLibrary } from "../../extract/c2pa-library.ts";
-import { algorithmFor, type SigningAlg } from "../certificates.ts";
-import {
-	checkSignArgs,
-	loadSigningKey,
-	type SignArgs,
-	type SigningEngine,
-} from "../engine.ts";
+import { checkSignArgs, type SignArgs, type SigningEngine } from "../engine.ts";
 
 /** The name recorded on signatures the library made (the reader's name too). */
 export const LIBRARY_ENGINE = "c2pa-node";
 
-const DIGEST: Record<SigningAlg, string | null> = {
-	es256: "sha256",
-	es384: "sha384",
-	es512: "sha512",
-	ps256: "sha256",
-	ed25519: null,
-};
-
-/**
- * Sign bytes as the C2PA algorithm wants them: ECDSA as the raw r‖s pair
- * (not DER), RSA as PSS with a salt the length of the digest, Ed25519 as it
- * is. The library wraps the signature in COSE itself.
- */
-export function signBytes(
-	alg: SigningAlg,
-	key: KeyObject,
-	data: Buffer,
-): Buffer {
-	const digest = DIGEST[alg];
-	if (alg.startsWith("es"))
-		return cryptoSign(digest, data, { key, dsaEncoding: "ieee-p1363" });
-	if (alg === "ps256")
-		return cryptoSign(digest, data, {
-			key,
-			padding: constants.RSA_PKCS1_PSS_PADDING,
-			saltLength: 32,
-		});
-	return cryptoSign(null, data, key);
+/** The DER certificates of a PEM chain, the signer's first. */
+export function derChain(chainPem: string): Buffer[] {
+	return (
+		chainPem.match(
+			/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g,
+		) ?? []
+	).map((pem) => new X509Certificate(pem).raw);
 }
 
 /** Room the library leaves for the signature: the chain, the signature itself, and a time stamp's reply. */
 export function reserveFor(chainPem: string, timeStamped: boolean): number {
-	const der = (
-		chainPem.match(
-			/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g,
-		) ?? []
-	).reduce((n, pem) => n + new X509Certificate(pem).raw.length, 0);
+	const der = derChain(chainPem).reduce((n, c) => n + c.length, 0);
 	return der + 4096 + (timeStamped ? 16384 : 0);
+}
+
+type Lib = LoadedLibrary["lib"];
+
+/**
+ * What signs: the claim signer with the creator's identity assertion added
+ * to it (D55). The library asks for a finished COSE_Sign1 over its signer
+ * payload; the identity's own holder signs it.
+ */
+async function signerWithIdentity(
+	lib: Lib,
+	claimSigner: ReturnType<Lib["CallbackSigner"]["newSigner"]>,
+	identity: NonNullable<SignArgs["identity"]>,
+) {
+	const { holder } = identity;
+	const certificates = derChain(holder.chain);
+	const credential = lib.CallbackCredentialHolder.newCallbackCredentialHolder(
+		reserveFor(holder.chain, false),
+		"cawg.x509.cose",
+		async (payload) =>
+			Buffer.from(
+				await coseSign1({
+					alg: holder.alg,
+					certificates,
+					payload: lib.encodeSignerPayload(payload),
+					sign: async (bytes) => holder.sign(Buffer.from(bytes)),
+				}),
+			),
+	);
+	const assertion =
+		await lib.IdentityAssertionBuilder.identityBuilderForCredentialHolder(
+			credential,
+		);
+	assertion.addReferencedAssertions(identity.covers);
+	assertion.addRoles(identity.roles);
+	const signer = lib.IdentityAssertionSigner.new(claimSigner.getHandle());
+	signer.addIdentityAssertion(assertion);
+	return signer;
 }
 
 async function addIngredients(
@@ -124,21 +133,20 @@ export async function signWithLibrary(
 ): Promise<{ report: Record<string, unknown> | null }> {
 	checkSignArgs(args);
 	const { lib, context } = loaded;
-	const alg = await algorithmFor(args.certificatePath);
-	const { chain, key } = await loadSigningKey(
-		args.certificatePath,
-		args.privateKeyPath,
-	);
-	const signer = lib.CallbackSigner.newSigner(
+	const { holder } = args;
+	const claimSigner = lib.CallbackSigner.newSigner(
 		{
-			alg,
-			certs: [Buffer.from(chain)],
-			reserveSize: reserveFor(chain, !!args.timestampUrl),
+			alg: holder.alg,
+			certs: [Buffer.from(holder.chain)],
+			reserveSize: reserveFor(holder.chain, !!args.timestampUrl),
 			...(args.timestampUrl ? { tsaUrl: args.timestampUrl } : {}),
 			directCoseHandling: false,
 		},
-		async (data) => signBytes(alg, key, data),
+		(data) => holder.sign(data),
 	);
+	const signer = args.identity
+		? await signerWithIdentity(lib, claimSigner, args.identity)
+		: claimSigner;
 	const input = {
 		path: args.inputPath,
 		mimeType: mediaTypeForSigning(args.inputPath),
@@ -181,10 +189,24 @@ export async function signWithLibrary(
 		if (scratch)
 			await rm(scratch, { recursive: true, force: true }).catch(() => {});
 	}
-	const report = args.sidecar
-		? await readStore(loaded, args.inputPath, args.outputPath)
-		: await readStore(loaded, args.outputPath);
-	return { report: report as Record<string, unknown> | null };
+	const report = (
+		args.sidecar
+			? await readStore(loaded, args.inputPath, args.outputPath)
+			: await readStore(loaded, args.outputPath)
+	) as Record<string, unknown> | null;
+	if (args.identity) {
+		// The library drops a label it cannot find without a word.
+		const reading = readIdentity(report);
+		const covers = new Set(reading?.covers ?? []);
+		const missing = args.identity.covers.filter((l) => !covers.has(l));
+		if (!reading || missing.length) {
+			await rm(args.outputPath, { force: true }).catch(() => {});
+			throw new Error(
+				`Signing failed: the identity did not cover ${missing.join(", ") || "the record"}. Nothing was kept.`,
+			);
+		}
+	}
+	return { report };
 }
 
 /** The library, loaded with this machine's reading settings, as the engine. */

@@ -92,6 +92,20 @@ describe("interpretReport", () => {
 		).toBe("invalid");
 	});
 
+	it("leaves the creator's identity out of the claim's verdict (D55)", () => {
+		expect(
+			interpretReport(
+				report({
+					failure: [
+						UNTRUSTED,
+						{ code: "cawg.x509.credential.untrusted" },
+						{ code: "cawg.x509.signature.mismatch" },
+					],
+				}),
+			),
+		).toMatchObject({ status: "unrecognised_issuer", failures: [UNTRUSTED] });
+	});
+
 	it("counts an ingredient's recorded problems as well as later deltas, once each (D53)", () => {
 		const EKU = {
 			code: "signingCredential.invalid",

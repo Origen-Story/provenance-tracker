@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xmeml>
+<!-- Hand-authored, neutral names. A whole-project export, as Premiere Pro
+     writes when the project rather than one sequence is exported: three
+     sequences of the project's own (one in the project, two in bins) and one
+     nested inside a clip, which is part of the sequence that uses it and never
+     a choice. At 30 fps: "Film v12" is 146 s, "Assembly v1" 631 s, and
+     "Film v11" 144 s. -->
+<xmeml version="4">
+	<project>
+		<name>example-project</name>
+		<children>
+			<bin>
+				<name>Assembly</name>
+				<children>
+					<sequence id="sequence-2">
+						<name>Assembly v1</name>
+						<duration>18930</duration>
+						<rate><timebase>30</timebase><ntsc>FALSE</ntsc></rate>
+						<media>
+							<video>
+								<track>
+									<clipitem id="clipitem-21">
+										<name>Clip 01.mp4</name>
+										<start>0</start>
+										<end>18930</end>
+										<in>0</in>
+										<out>18930</out>
+										<file id="file-1">
+											<name>Clip 01.mp4</name>
+											<pathurl>file://localhost/media/Clip%2001.mp4</pathurl>
+										</file>
+									</clipitem>
+								</track>
+							</video>
+							<audio></audio>
+						</media>
+					</sequence>
+				</children>
+			</bin>
+			<sequence id="sequence-1">
+				<name>Film v12</name>
+				<duration>4380</duration>
+				<rate><timebase>30</timebase><ntsc>FALSE</ntsc></rate>
+				<media>
+					<video>
+						<track>
+							<clipitem id="clipitem-11">
+								<name>Clip 01.mp4</name>
+								<start>0</start>
+								<end>3000</end>
+								<in>0</in>
+								<out>3000</out>
+								<file id="file-1"/>
+							</clipitem>
+							<clipitem id="clipitem-12">
+								<name>Nested title</name>
+								<start>3000</start>
+								<end>4380</end>
+								<in>0</in>
+								<out>1380</out>
+								<sequence id="sequence-nested">
+									<name>Nested title</name>
+									<duration>1380</duration>
+									<rate><timebase>30</timebase><ntsc>FALSE</ntsc></rate>
+								</sequence>
+							</clipitem>
+						</track>
+					</video>
+					<audio></audio>
+				</media>
+			</sequence>
+			<bin>
+				<name>Old cuts</name>
+				<children>
+					<sequence id="sequence-3">
+						<name>Film v11</name>
+						<duration>4320</duration>
+						<rate><timebase>30</timebase><ntsc>FALSE</ntsc></rate>
+						<media>
+							<video>
+								<track>
+									<clipitem id="clipitem-31">
+										<name>Clip 01.mp4</name>
+										<start>0</start>
+										<end>4320</end>
+										<in>0</in>
+										<out>4320</out>
+										<file id="file-1"/>
+									</clipitem>
+								</track>
+							</video>
+							<audio></audio>
+						</media>
+					</sequence>
+				</children>
+			</bin>
+		</children>
+	</project>
+</xmeml>

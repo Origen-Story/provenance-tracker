@@ -7,7 +7,9 @@ import { Link } from "react-router";
 import {
 	fileUrl,
 	outputs,
+	timelineSequences,
 	type AssetRecord,
+	type SequenceChoice,
 	type Timeline,
 	type TimelineClip,
 	type TimelineSource,
@@ -89,11 +91,21 @@ function ImportTimeline({
 }) {
 	const qc = useQueryClient();
 	const [file, setFile] = useState<File | null>(null);
+	// When the file holds several sequences and none matches the edit's length.
+	const [sequence, setSequence] = useState<number | null>(null);
+	const [offered, setOffered] = useState<SequenceChoice[] | null>(null);
 	const picker = useRef<HTMLInputElement>(null);
 	const send = useMutation({
-		mutationFn: () => outputs.importTimeline(projectId, asset.id, file!),
+		mutationFn: () =>
+			outputs.importTimeline(projectId, asset.id, file!, sequence),
+		onError: (err) => {
+			const list = timelineSequences(err);
+			if (list) setOffered(list);
+		},
 		onSuccess: () => {
 			setFile(null);
+			setSequence(null);
+			setOffered(null);
 			if (picker.current) picker.current.value = "";
 			qc.invalidateQueries({ queryKey: assetKey(projectId, asset.id) });
 			qc.invalidateQueries({ queryKey: ["catalog", projectId, "assets"] });
@@ -121,6 +133,8 @@ function ImportTimeline({
 					accept=".xml,.fcpxml,text/xml,application/xml"
 					onChange={(e) => {
 						setFile(e.target.files?.[0] ?? null);
+						setSequence(null);
+						setOffered(null);
 						send.reset();
 					}}
 					className="hidden"
@@ -133,12 +147,37 @@ function ImportTimeline({
 				</span>
 				<Button
 					onClick={() => send.mutate()}
-					disabled={!file || send.isPending}
+					disabled={!file || send.isPending || (!!offered && sequence === null)}
 				>
 					{send.isPending ? "Importing…" : "Import"}
 				</Button>
 			</div>
-			<Problem error={send.error} />
+			{offered ? (
+				<fieldset className="space-y-1.5">
+					<legend className="text-sm text-text-primary mb-1">
+						{send.error instanceof Error ? send.error.message : ""}
+					</legend>
+					{offered.map((s) => (
+						<label
+							key={s.index}
+							className="flex items-center gap-2 text-sm text-text-primary cursor-pointer"
+						>
+							<input
+								type="radio"
+								name="timeline-sequence"
+								checked={sequence === s.index}
+								onChange={() => setSequence(s.index)}
+							/>
+							<span>{s.name || `Sequence ${s.index + 1}`}</span>
+							<span className="text-xs text-text-secondary">
+								{s.seconds == null ? "length unknown" : fmtClock(s.seconds)}
+							</span>
+						</label>
+					))}
+				</fieldset>
+			) : (
+				<Problem error={send.error} />
+			)}
 		</Card>
 	);
 }

@@ -35,6 +35,7 @@ import {
 import { scanProject } from "@provenancetracker/core-node/scan.ts";
 import {
 	importTimeline,
+	SequenceChoiceError,
 	matchEvidence,
 } from "@provenancetracker/core-node/timeline-import.ts";
 import {
@@ -1051,7 +1052,10 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 		}
 	};
 
-	// Import a timeline file (form field "timeline") for an output.
+	// Import a timeline file (form field "timeline") for an output. A file
+	// holding several sequences needs form field "sequence" (its index) unless
+	// one matches the edit's length: otherwise the answer is 409 with the
+	// sequences to choose from (Phase 8 step 6).
 	api.post(
 		"/projects/:projectId/assets/:assetId/timelines",
 		(req: Request, res: Response, next: NextFunction) =>
@@ -1066,6 +1070,22 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 					400,
 					'Send the timeline file as form field "timeline"',
 				);
+			const fields = (req.body ?? {}) as Record<string, unknown>;
+			const unknown = Object.keys(fields).filter((k) => k !== "sequence");
+			if (unknown.length)
+				throw new HttpError(
+					400,
+					`A timeline import has no field ${unknown.join(", ")}`,
+				);
+			let sequence: number | null = null;
+			if (fields.sequence !== undefined && fields.sequence !== "") {
+				sequence = Number(fields.sequence);
+				if (!Number.isSafeInteger(sequence) || sequence < 0)
+					throw new HttpError(
+						400,
+						"sequence is a sequence's number: 0, 1, ...",
+					);
+			}
 			const project = openById(machine, String(req.params.projectId));
 			try {
 				if (!project.db.prepare("SELECT 1 FROM assets WHERE id = ?").get(id))
@@ -1076,8 +1096,15 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 						outputAssetId: id,
 						bytes: file.buffer,
 						fileName: file.originalname,
+						sequence,
 					});
 				} catch (err) {
+					if (err instanceof SequenceChoiceError) {
+						res
+							.status(409)
+							.json({ error: err.message, sequences: err.choices });
+						return;
+					}
 					if (err instanceof HttpError || err instanceof NotFoundError)
 						throw err;
 					// Not a timeline this tracker reads, or a cut that is not the output's.

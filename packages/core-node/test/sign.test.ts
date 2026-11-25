@@ -258,6 +258,36 @@ function stubEngine() {
 	return { engine, calls };
 }
 
+describe("the development certificate script, asked for an identity", () => {
+	it("refuses --name without a folder, so an identity never lands in certs/ beside the signing pair", () => {
+		const dir = mkdtempSync(path.join(tmpdir(), "pt-devcert-name-"));
+		try {
+			const r = spawnSync(
+				process.execPath,
+				[
+					path.resolve(
+						import.meta.dirname,
+						"..",
+						"..",
+						"..",
+						"scripts",
+						"generate-dev-cert.mjs",
+					),
+					"--name",
+					"Test Person",
+				],
+				// certs/ would be resolved against this folder.
+				{ cwd: dir, encoding: "utf8" },
+			);
+			expect(r.status).toBe(1);
+			expect(r.stderr).toContain("say which folder it goes in");
+			expect(existsSync(path.join(dir, "certs"))).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+});
+
 describe.skipIf(!haveOpenssl)("the development certificate script", () => {
 	it("names the authority key identifier, which c2patool requires and macOS's openssl does not add unasked", () => {
 		const dir = mkdtempSync(path.join(tmpdir(), "pt-devcert-"));

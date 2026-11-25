@@ -16,7 +16,7 @@
 //         The others: es384 (P-384), ps256 (RSA 2048, signed with RSA-PSS) and
 //         ed25519. Every type the tracker signs with is tested with these.
 //         --name makes it a test identity certificate in that name, for
-//         `npm run cli -- identity`, D55.)
+//         `npm run cli -- identity`, D55; it needs the output folder.)
 //
 // The cert is self-issued so signatures won't show "trusted publisher" on
 // contentcredentials.org. Creator trust comes from the CAWG identity
@@ -69,6 +69,14 @@ for (const o of ["--name", "--org"])
 // development signing certificate's.
 const subjectName = opts["--name"] || "Origen Story Dev Signing Cert";
 const organisation = opts["--org"] || "Origen Story";
+// An identity certificate (--name) always names its folder: the default,
+// certs/, holds the signing pair under the same file names (2026-11-25).
+if (opts["--name"] && !positional[0]) {
+	console.error(
+		`--name makes an identity certificate, so say which folder it goes in, for example:\n  npm run cert:generate -- --name "${opts["--name"]}" "C:\\Certificates\\identity"\nIt never goes in certs/, where the signing certificate and key are.`,
+	);
+	process.exit(1);
+}
 const outDir = path.resolve(positional[0] || "certs");
 const OPENSSL = findOpenssl();
 if (!OPENSSL) {

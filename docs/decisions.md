@@ -161,3 +161,15 @@ Short numbered log of decisions that shape the code. Add a line when one is made
     - both engines' real signed copies meet the format 2 schema;
     - the demo page renders format 2 and format 1 in a headless browser (Edge, reduced motion so the fade-ins don't hide it): three cards for format 2, two for format 1.
   - _Watch list:_ CAWG #286 is unchanged (open, no activity since 22 Oct).
+- **D59 (2026-11-25) A timeline file holding several sequences: the one the edit was exported from, never the first by chance.** Phase 8, step 6, first part; no new dependency, no catalog change.
+  - _The problem._ A Premiere Pro export of a whole project holds every sequence in it. On 15 Nov 2026 the xmeml reader took the first one without saying so: a 631-second assembly instead of the 146-second film.
+  - _Listing._ The xmeml reader lists the sequences a file holds as its own (`sequences()`): at the top level, then in a project, then in the project's bins, bin by bin. A sequence nested inside a clip is part of the sequence that uses it, never a choice. `parse(text, { sequence })` reads the one asked for. The format registry has `listSequences` and passes the choice on; a format with one sequence per file need not say.
+  - _Choosing_ (`packages/core/src/timeline/sequence-choice.js`, pure):
+    - the sequence a person chose;
+    - else the only one;
+    - else the one whose length is within half a second (or a frame) of the edit's own file, read from the catalog's `technical` view, if exactly one is;
+    - else none: the import is refused, naming the sequences, and nothing is kept or written.
+  - _The app._ `POST …/assets/<id>/timelines` takes one more named field, `sequence` (a sequence's number). A refusal answers 409 with `{ error, sequences: [{ index, name, seconds }] }`. The Composition tab then lists the sequences by name and length to choose from. Every import says which sequence it took, of how many, and how (`chosen`, `only`, `length`).
+  - _Checked:_
+    - on the demo project's three kept timeline files, the reader's output is identical before and after this change, each holding one sequence;
+    - a committed fixture shaped like a whole-project export (three sequences of 146, 631 and 144 s, and one nested in a clip) is tested through the reader, the rule, the API and the client.

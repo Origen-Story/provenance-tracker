@@ -263,38 +263,28 @@ function parseTracks(mediaNode, kind, fileDefs, notes) {
 	return tracks;
 }
 
-export function parse(xmlText) {
-	const doc = parser.parse(xmlText);
-	const root = first(doc.xmeml);
-	if (!root) throw new Error("not an xmeml document");
-	const version = root["@_version"] || "";
-	const notes = [];
+/**
+ * The sequences a file holds as sequences of its own: at the top level, then
+ * in a project, then in the project's bins, bin by bin. A sequence nested
+ * inside a clip is part of the sequence that uses it, never a choice.
+ */
+function ownSequences(root) {
+	const out = [...(root.sequence || [])];
+	const visit = (children) => {
+		if (!children) return;
+		out.push(...(children.sequence || []));
+		for (const b of children.bin || []) visit(first(b.children));
+	};
+	const projects = Array.isArray(root.project)
+		? root.project
+		: root.project
+			? [root.project]
+			: [];
+	for (const p of projects) visit(first(p.children));
+	return out;
+}
 
-	const fileDefs = new Map();
-	collectFileDefs(root, fileDefs);
-
-	// The main sequence: top-level, or the first inside project/children.
-	let seq = first(root.sequence);
-	if (!seq) {
-		const project = first(root.project);
-		const children = first(project?.children);
-		seq = first(children?.sequence);
-		if (!seq) {
-			// Some exports nest sequences inside bins.
-			const stack = [children];
-			while (stack.length && !seq) {
-				const n = stack.pop();
-				if (!n) continue;
-				if (n.sequence) {
-					seq = first(n.sequence);
-					break;
-				}
-				for (const b of n.bin || []) stack.push(first(b.children));
-			}
-		}
-	}
-	if (!seq) throw new Error("xmeml: no <sequence> found");
-
+function readSequence(seq, fileDefs, notes) {
 	const rate = rateOf(seq, { timebase: 30, ntsc: false, fps: 30 });
 	const media = first(seq.media);
 	const video = first(media?.video);
@@ -317,10 +307,7 @@ export function parse(xmlText) {
 		notes.push(
 			`the sequence declares ${declared} frames but its clips run to frame ${lastEnd}; using ${lastEnd}`,
 		);
-
 	return {
-		format: id,
-		version,
 		sequence: {
 			name: text(seq.name),
 			timebase: rate.timebase,
@@ -332,6 +319,54 @@ export function parse(xmlText) {
 			startTimecode: text(tc?.string) || "",
 		},
 		tracks,
-		notes,
 	};
+}
+
+function documentOf(xmlText) {
+	const doc = parser.parse(xmlText);
+	const root = first(doc.xmeml);
+	if (!root) throw new Error("not an xmeml document");
+	const fileDefs = new Map();
+	collectFileDefs(root, fileDefs);
+	return { root, fileDefs, list: ownSequences(root) };
+}
+
+/**
+ * Every sequence the file holds (Phase 8 step 6): a whole-project export
+ * holds them all. { index, name, durationFrames, fps, seconds } each, in the
+ * order ownSequences finds them; `index` is what parse's `sequence` option takes.
+ */
+export function sequences(xmlText) {
+	const { fileDefs, list } = documentOf(xmlText);
+	return list.map((seq, index) => {
+		const { sequence } = readSequence(seq, fileDefs, []);
+		return {
+			index,
+			name: sequence.name,
+			durationFrames: sequence.durationFrames,
+			fps: sequence.fps,
+			seconds: sequence.fps ? sequence.durationFrames / sequence.fps : null,
+		};
+	});
+}
+
+/**
+ * Parse one sequence of the file: the one `opts.sequence` names by its index
+ * in sequences(), or the first. Choosing among several is the caller's
+ * (timeline/sequence-choice.js), so a whole-project export is never read as
+ * whichever sequence happens to come first without saying so.
+ */
+export function parse(xmlText, opts = {}) {
+	const { root, fileDefs, list } = documentOf(xmlText);
+	const version = root["@_version"] || "";
+	const notes = [];
+	if (!list.length) throw new Error("xmeml: no <sequence> found");
+	const index = opts.sequence ?? 0;
+	const seq = list[index];
+	if (!seq)
+		throw new Error(
+			`xmeml: there is no sequence ${index}; the file holds ${list.length}`,
+		);
+	const { sequence, tracks } = readSequence(seq, fileDefs, notes);
+	return { format: id, version, sequence, tracks, notes };
 }

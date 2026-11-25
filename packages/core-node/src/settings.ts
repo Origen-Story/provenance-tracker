@@ -41,6 +41,11 @@ export interface Settings {
 	 * them. Absent means yes (D51); docs/network.md says what goes out.
 	 */
 	remoteCredentials?: boolean;
+	/**
+	 * What signs on this machine: the C2PA library, or c2patool as the
+	 * fallback (D53). Absent means the library.
+	 */
+	signingEngine?: SigningEngineName;
 	/** Project id → what this machine knows about it. */
 	projects: Record<string, ProjectSettings>;
 	/** Anything a newer version of the same format added is kept as it is. */
@@ -86,6 +91,14 @@ export function readSettings(file: string): Settings {
 		typeof data.remoteCredentials !== "boolean"
 	)
 		throw damaged(file, "remoteCredentials is not true or false");
+	if (
+		data.signingEngine !== undefined &&
+		!SIGNING_ENGINES.includes(data.signingEngine as SigningEngineName)
+	)
+		throw damaged(
+			file,
+			`signingEngine is not one of ${SIGNING_ENGINES.join(", ")}`,
+		);
 	const projects = data.projects ?? {};
 	if (!isPlainObject(projects))
 		throw damaged(file, "projects is not an object");
@@ -120,6 +133,14 @@ export function readSettings(file: string): Settings {
 	}
 	return { ...data, format: data.format, projects } as Settings;
 }
+
+/** The engines a machine can sign with (D53); the first is the default. */
+export const SIGNING_ENGINES = ["library", "c2patool"] as const;
+export type SigningEngineName = (typeof SIGNING_ENGINES)[number];
+
+/** What signs on this machine: its setting, else the library. */
+export const signingEngineOf = (settings: Settings): SigningEngineName =>
+	settings.signingEngine ?? "library";
 
 /** Whether this machine fetches Content Credentials a file points to on the web (D51). */
 export const fetchesRemoteCredentials = (settings: Settings): boolean =>

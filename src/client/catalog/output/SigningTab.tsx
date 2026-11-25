@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fileUrl, outputs, projects, type AssetRecord } from "../api.ts";
-import { SIGNED_STATUS } from "../labels.ts";
+import { SIGNED_STATUS, engineLabel } from "../labels.ts";
 import { jobsKey, useJobs } from "../media/Jobs.tsx";
 import {
 	Button,
@@ -216,7 +216,8 @@ function SignedCopies({
 							</span>
 						</div>
 						<p className="text-xs text-text-secondary">
-							Signed by {s.signerName || "an unnamed signer"} with {s.engine}
+							Signed by {s.signerName || "an unnamed signer"} with{" "}
+							{engineLabel(s.engine, s.engineVersion)}
 							{s.timestamped ? ", time-stamped" : ", no trusted time stamp"}
 							{place &&
 								!place.live &&

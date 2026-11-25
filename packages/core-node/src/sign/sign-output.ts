@@ -1,7 +1,7 @@
 // Signing a finished edit from its catalog (D41): its newest timeline and
-// saved statement build the manifest (core's build.js, unchanged), c2patool
-// signs a new versioned copy beside the cut, and the copy and the signing are
-// recorded. The same steps as the app's signOutput, read from the catalog.
+// saved statement build the manifest (core's build.js), the signing engine
+// (the C2PA library by default, D53) signs a new versioned copy beside the
+// cut, and the copy and the signing are recorded.
 
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import path from "node:path";
@@ -26,67 +26,22 @@ import {
 	placedAssetRefs,
 	thumbnailFormatOf,
 } from "@provenancetracker/core/manifest/build.js";
-import { c2patoolPath, c2patoolVersion } from "../extract/c2patool.ts";
 import { sha256OfFile } from "../hash.ts";
 import type { Machine } from "../machine.ts";
 import type { OpenProject } from "../project.ts";
 import { listRoots } from "../roots.ts";
 import { TOOL } from "../tool.ts";
+import { certificateInfo } from "./certificates.ts";
 import {
-	certificateInfo,
-	readReport,
-	signWithC2patool,
 	storableDefinition,
 	type SignIngredient,
+	type SigningEngine,
 	type SignResource,
-} from "./c2patool-sign.ts";
+} from "./engine.ts";
+import { signingEngineFor } from "./engines/index.ts";
 import { signerPaths } from "./signing-settings.ts";
 
-/** What signs: c2patool by default; tests give a stand-in. */
-export interface SigningEngine {
-	name: string;
-	version: string;
-	sign: (args: {
-		inputPath: string;
-		outputPath: string;
-		definition: Record<string, unknown>;
-		ingredients: SignIngredient[];
-		/** Files the definition names, such as the claim thumbnail. */
-		resources?: SignResource[];
-		certificatePath: string;
-		privateKeyPath: string;
-		timestampUrl?: string;
-		/** Write the manifest to outputPath as a .c2pa sidecar; the input is untouched. */
-		sidecar?: boolean;
-	}) => Promise<{ report: Record<string, unknown> | null }>;
-	/**
-	 * The credentials a file carries itself, if any, and who signed them; null
-	 * when it has none. A file that has them is not signed at ingest.
-	 */
-	readEmbedded: (file: string) => Promise<{ signer: string } | null>;
-}
-
-/** c2patool on this machine, as the engine. */
-export async function c2patoolEngine(machine: Machine): Promise<SigningEngine> {
-	const tool = c2patoolPath(machine.env, machine.platform);
-	return {
-		name: "c2patool",
-		version: (await c2patoolVersion(tool)) ?? "",
-		sign: (args) => signWithC2patool({ ...args, tool }),
-		readEmbedded: async (file) => {
-			const report = await readReport(file, { tool }).catch(() => null);
-			if (!report?.active_manifest) return null;
-			const manifests = report.manifests as
-				| Record<
-						string,
-						{ signature_info?: { common_name?: string; issuer?: string } }
-				  >
-				| undefined;
-			const info = manifests?.[String(report.active_manifest)]?.signature_info;
-			return { signer: info?.common_name || info?.issuer || "" };
-		},
-	};
-}
+export type { SigningEngine } from "./engine.ts";
 
 /** What signs the file says it was made by: this tracker, under its public name. */
 const GENERATOR = { name: "provenance-tracker", version: TOOL.version };
@@ -358,7 +313,7 @@ export function previewOutputStatement(
 	);
 	if (missing.length)
 		blockers.push(
-			`These files the timeline places are not on this machine, and c2patool reads each one: ${missing.join(", ")}`,
+			`These files the timeline places are not on this machine, and signing reads each one: ${missing.join(", ")}`,
 		);
 	const thumb = thumbnailHere(project, places, opts.assetId);
 	if (thumb.problem) blockers.push(thumb.problem);
@@ -492,7 +447,7 @@ export async function signOutput(
 	);
 	if (missing.length)
 		throw new NotReadyError(
-			`These files the timeline places are not on this machine, and c2patool reads each one: ${missing.join(", ")}`,
+			`These files the timeline places are not on this machine, and signing reads each one: ${missing.join(", ")}`,
 		);
 
 	const thumb = thumbnailHere(project, places, opts.assetId);
@@ -549,7 +504,7 @@ export async function signOutput(
 		cutPlace.file,
 		nextSignatureVersion(db, opts.assetId, "output"),
 	);
-	const engine = opts.engine ?? (await c2patoolEngine(machine));
+	const engine = opts.engine ?? (await signingEngineFor(machine));
 	const { report } = await engine.sign({
 		inputPath: cutPlace.file,
 		outputPath,

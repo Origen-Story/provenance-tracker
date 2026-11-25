@@ -21,7 +21,7 @@ git clone https://github.com/Origen-Story/provenance-tracker.git
 cd provenance-tracker
 npm ci
 
-# c2patool at its pinned version, checksum-verified (needed to sign and to read credentials)
+# the C2PA library's native binary, c2patool and the C2PA trust lists, pinned and checksum-verified
 npm run tools:fetch
 
 # Optional: a throwaway signing certificate, for trying signing out
@@ -48,7 +48,7 @@ To update a film: render the new cut **over the same file**, run Import (it beco
 
 ### Signing certificates
 
-Signing needs a certificate and its private key, as PEM files. `npm run cert:generate` makes a throwaway pair in `./certs/` for trying it out; for real use, a CA-issued certificate. Enter their full paths on the project's Settings page (or with `npm run cli -- signing`). Signing runs through the bundled `c2patool`, with an optional trusted time stamp from DigiCert.
+Signing needs a certificate and its private key, as PEM files. `npm run cert:generate` makes a throwaway pair in `./certs/` for trying it out; for real use, a CA-issued certificate. Enter their full paths on the project's Settings page (or with `npm run cli -- signing`). Signing runs through the C2PA library, with an optional time stamp from DigiCert; `npm run cli -- settings signing-engine c2patool` signs with the bundled `c2patool` instead. `npm run cert:generate -- --key-type es384|ps256|ed25519` makes a pair with another kind of key.
 
 **About the dev certificate.**
 
@@ -87,7 +87,7 @@ Adobe Firefly, ElevenLabs, Topaz Video AI and Topaz Gigapixel files are recognis
 
 ## Tech stack and layout
 
-Node 24 with its built-in SQLite, TypeScript, Express 5, React 19, TanStack Query, Tailwind 4 and Vite. ExifTool and c2patool read and sign files.
+Node 24 with its built-in SQLite, TypeScript, Express 5, React 19, TanStack Query, Tailwind 4 and Vite. ExifTool and the C2PA library read files; the C2PA library signs them, with c2patool as a fallback.
 
 ```
 packages/core/        # pure logic: the catalog format and its SQL, classification, timelines, manifests (no file access)

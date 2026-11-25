@@ -92,6 +92,66 @@ describe("interpretReport", () => {
 		).toBe("invalid");
 	});
 
+	it("counts an ingredient's recorded problems as well as later deltas, once each (D53)", () => {
+		const EKU = {
+			code: "signingCredential.invalid",
+			explanation: "certificate missing required EKU",
+		};
+		const ingredient = (extra) => ({
+			title: "music.wav",
+			relationship: "componentOf",
+			label: "c2pa.ingredient.v3__1",
+			active_manifest: "urn:c2pa:other",
+			...extra,
+		});
+		const delta = {
+			ingredientAssertionURI: `self#jumbf=/c2pa/${URN}/c2pa.assertions/c2pa.ingredient.v3__1`,
+			validationDeltas: { failure: [EKU] },
+		};
+		const problemsOf = (r) =>
+			interpretReport(r).ingredients[0].problems.map((p) => p.code);
+		// Signed in by the library: the problem is in the ingredient's record.
+		expect(
+			problemsOf(
+				report({
+					ingredients: [
+						ingredient({
+							validation_results: {
+								activeManifest: { failure: [UNTRUSTED, EKU] },
+							},
+						}),
+					],
+				}),
+			),
+		).toEqual(["signingCredential.invalid"]);
+		// Signed in by c2patool: recorded as fine, found later as a delta.
+		expect(
+			problemsOf(
+				report({
+					ingredients: [
+						ingredient({
+							validation_results: { activeManifest: { failure: [UNTRUSTED] } },
+						}),
+					],
+					deltas: [delta],
+				}),
+			),
+		).toEqual(["signingCredential.invalid"]);
+		// Both: listed once.
+		expect(
+			problemsOf(
+				report({
+					ingredients: [
+						ingredient({
+							validation_results: { activeManifest: { failure: [EKU] } },
+						}),
+					],
+					deltas: [delta],
+				}),
+			),
+		).toEqual(["signingCredential.invalid"]);
+	});
+
 	it("lists ingredients with whether they carry credentials and their own problems", () => {
 		const v = interpretReport(
 			report({

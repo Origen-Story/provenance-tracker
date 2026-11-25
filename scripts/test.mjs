@@ -1,8 +1,9 @@
 // `npm test`: run vitest inside the repo guard.
 //
 // The guard snapshots the working tree before and after the run and fails if
-// any test changed it. Tests are pure or write to temp directories only; the
-// database, managed storage and certs/ are never touched by a test.
+// any test changed it, including anything under certs/ or a .env file (by
+// name, size and time; never opened). Tests are pure or write to temp
+// directories only.
 //
 //   npm test                                   all tests
 //   npm test -- test/unit/parsers/freepik.test.js   one file

@@ -18,14 +18,28 @@ const SCRIPT = path.resolve(
 	"generate-dev-cert.mjs",
 );
 
+/** The key types the dev-cert script makes (its --key-type). */
+export type DevKeyType = "es256" | "es384" | "ps256" | "ed25519";
+
+/**
+ * A throwaway chain and key in `dir`. With a key type other than es256, null
+ * when this machine's openssl cannot make that kind of key (older LibreSSL),
+ * so the test can skip.
+ */
 export function devCertificate(
 	dir: string,
+	keyType: DevKeyType = "es256",
 ): { certificate: string; privateKey: string } | null {
 	if (!haveOpenssl) return null;
-	const certDir = path.join(dir, "test-certs");
-	const r = spawnSync(process.execPath, [SCRIPT, certDir], {
-		encoding: "utf8",
-	});
+	const certDir = path.join(dir, `test-certs-${keyType}`);
+	const r = spawnSync(
+		process.execPath,
+		[SCRIPT, certDir, "--key-type", keyType],
+		{
+			encoding: "utf8",
+		},
+	);
+	if (r.status !== 0 && keyType !== "es256") return null;
 	if (r.status !== 0)
 		throw new Error(`certificate generation failed: ${r.stderr || r.stdout}`);
 	return {

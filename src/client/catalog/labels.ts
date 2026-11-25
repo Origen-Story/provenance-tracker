@@ -71,3 +71,14 @@ export const SIGNED_STATUS: Record<string, string> = {
 	invalid: "Invalid",
 	absent: "No Content Credentials",
 };
+
+/** What signed a copy, in words: the engine recorded on its signature (D53). */
+export function engineLabel(engine: string, version: string): string {
+	const name =
+		engine === "c2pa-node"
+			? "the C2PA library"
+			: engine === "c2patool"
+				? "c2patool"
+				: engine || "an unrecorded engine";
+	return version ? `${name} ${version}` : name;
+}

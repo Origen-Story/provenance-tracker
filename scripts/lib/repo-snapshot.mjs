@@ -3,12 +3,39 @@
 // git status lists every tracked file that differs from HEAD and every
 // untracked file; hashing each listed file's content as well catches a test
 // that edits a file that was already dirty before the run. Gitignored paths
-// (node_modules, .env, data/, test-fixtures/) are not covered on purpose.
+// (node_modules, data/, test-fixtures/) are not covered, except the two that
+// hold secrets: certs/ and .env files. A test must never create, change or
+// remove anything there (CLAUDE.md), and on 2026-11-25 a test wrote
+// throwaway keys into certs/ unseen, because the folder is gitignored. Those
+// are fingerprinted by name, size and modification time only: the guard never
+// opens them.
 // Pattern copied from target-watch (scripts/lib/repo-snapshot.mjs).
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
+
+/** Every file under certs/ and every .env file at the root, by name, size and time. */
+function secretPaths(root) {
+	const out = new Map();
+	const add = (abs) => {
+		const st = statSync(abs);
+		out.set(
+			`(secret) ${relative(root, abs).replaceAll("\\", "/")}`,
+			`${st.size} ${st.mtimeMs}`,
+		);
+	};
+	const certs = join(root, "certs");
+	if (existsSync(certs))
+		for (const e of readdirSync(certs, {
+			recursive: true,
+			withFileTypes: true,
+		}))
+			if (e.isFile()) add(join(e.parentPath, e.name));
+	for (const e of readdirSync(root, { withFileTypes: true }))
+		if (e.isFile() && /^.env(..*)?$/.test(e.name)) add(join(root, e.name));
+	return out;
+}
 
 export function snapshot(root) {
 	const r = spawnSync(
@@ -36,6 +63,8 @@ export function snapshot(root) {
 		}
 		snap.set(path, `${status} ${content}`);
 	}
+	for (const [path, fingerprint] of secretPaths(root))
+		snap.set(path, fingerprint);
 	return snap;
 }
 

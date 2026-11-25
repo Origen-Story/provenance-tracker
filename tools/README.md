@@ -12,7 +12,7 @@ This downloads each tool at the version pinned in [`scripts/lib/pinned-tools.mjs
 
 ## c2patool
 
-The C2PA command-line tool (`tools/c2patool/c2patool`, `.exe` on Windows). The tracker signs with it (`packages/core-node/src/sign/c2patool-sign.ts`) and reads back what it has just signed.
+The C2PA command-line tool (`tools/c2patool/c2patool`, `.exe` on Windows). It is the signing fallback: the C2PA library below signs by default, and a machine signs with c2patool only when set to (`npm run cli -- settings signing-engine c2patool`, or `sign --engine c2patool`; `packages/core-node/src/sign/engines/c2patool.ts`, D53). It then reads back what it has just signed.
 
 It no longer reads files for the catalog: every c2patool release up to 0.27.23 misreads genuine Pixel video as invalid (`assertion.bmffHash.mismatch`), because it is built on an older version of the C2PA library than the fix for that (decision D15). The C2PA library below reads instead.
 

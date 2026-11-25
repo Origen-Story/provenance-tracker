@@ -51,13 +51,13 @@ import { download } from "./download.ts";
 import { showable, streamFile } from "./stream.ts";
 import { signAsset } from "@provenancetracker/core-node/sign/sign-asset.ts";
 import {
-	c2patoolEngine,
 	NotReadyError,
 	previewOutputStatement,
 	signOutput,
 	TIMESTAMP_URL,
 	type SigningEngine,
 } from "@provenancetracker/core-node/sign/sign-output.ts";
+import { signingEngineFor } from "@provenancetracker/core-node/sign/engines/index.ts";
 import {
 	clearSigning,
 	setSigning,
@@ -260,7 +260,7 @@ export interface CatalogApiOptions {
 	/** For downloads; tests give their own, so no test reaches the network. */
 	fetchImpl?: (url: string, init: RequestInit) => Promise<globalThis.Response>;
 	lookup?: (hostname: string) => Promise<Array<{ address: string }>>;
-	/** What signs; c2patool on this machine when not given. */
+	/** What signs; this machine's engine (the C2PA library unless its settings say c2patool) when not given. */
 	signingEngine?: (machine: Machine) => Promise<SigningEngine>;
 }
 
@@ -272,7 +272,8 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 	const readers = opts.readers ?? (() => machineReaders(machine));
 	const lookup =
 		opts.lookup ?? ((host: string) => dnsLookup(host, { all: true }));
-	const signingEngine = opts.signingEngine ?? c2patoolEngine;
+	const signingEngine =
+		opts.signingEngine ?? ((m: Machine) => signingEngineFor(m));
 	const api = Router();
 
 	/** Start a job that opens the project for as long as it runs. */

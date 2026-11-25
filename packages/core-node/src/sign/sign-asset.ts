@@ -24,16 +24,14 @@ import type { Machine } from "../machine.ts";
 import type { OpenProject } from "../project.ts";
 import { listRoots } from "../roots.ts";
 import { TOOL } from "../tool.ts";
+import { certificateInfo } from "./certificates.ts";
 import {
-	certificateInfo,
 	storableDefinition,
 	type SignIngredient,
-} from "./c2patool-sign.ts";
-import {
-	c2patoolEngine,
-	NotReadyError,
 	type SigningEngine,
-} from "./sign-output.ts";
+} from "./engine.ts";
+import { signingEngineFor } from "./engines/index.ts";
+import { NotReadyError } from "./sign-output.ts";
 import { signerPaths } from "./signing-settings.ts";
 
 const GENERATOR = { name: "provenance-tracker", version: TOOL.version };
@@ -130,7 +128,7 @@ export async function signAsset(
 			"The file has changed since it was scanned. Scan its root, then sign.",
 		);
 
-	const engine = opts.engine ?? (await c2patoolEngine(machine));
+	const engine = opts.engine ?? (await signingEngineFor(machine));
 	const embedded = await engine.readEmbedded(file);
 	if (embedded)
 		throw new NotReadyError(

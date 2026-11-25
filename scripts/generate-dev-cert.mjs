@@ -10,8 +10,10 @@
 // profile validator rejects certs whose issuer equals their subject on an
 // end-entity cert. A proper chain (even a trivially-rooted one) satisfies it.
 //
-// Usage:  node scripts/generate-dev-cert.mjs [output-dir]
-//         (output-dir defaults to ./certs)
+// Usage:  node scripts/generate-dev-cert.mjs [output-dir] [--key-type <type>]
+//         (output-dir defaults to ./certs; the key type to es256, a P-256 key.
+//         The others: es384 (P-384), ps256 (RSA 2048, signed with RSA-PSS) and
+//         ed25519. Every type the tracker signs with is tested with these.)
 //
 // The cert is self-issued so signatures won't show "trusted publisher" on
 // contentcredentials.org. Creator trust comes from the CAWG identity
@@ -24,7 +26,25 @@ import { execFileSync } from "child_process";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, rmSync } from "fs";
 import path from "path";
 
-const outDir = path.resolve(process.argv[2] || "certs");
+const KEY_TYPES = {
+	// SEC1 EC keys ("BEGIN EC PRIVATE KEY"), as openssl's ecparam writes them.
+	es256: ["ecparam", "-genkey", "-name", "prime256v1", "-noout"],
+	es384: ["ecparam", "-genkey", "-name", "secp384r1", "-noout"],
+	ps256: ["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"],
+	ed25519: ["genpkey", "-algorithm", "ED25519"],
+};
+const args = process.argv.slice(2);
+const typeAt = args.indexOf("--key-type");
+const keyType = typeAt >= 0 ? args[typeAt + 1] : "es256";
+if (!KEY_TYPES[keyType]) {
+	console.error(
+		`Unknown key type "${keyType}". Use one of: ${Object.keys(KEY_TYPES).join(", ")}`,
+	);
+	process.exit(1);
+}
+const positional =
+	typeAt < 0 ? args : args.filter((a, i) => i !== typeAt && i !== typeAt + 1);
+const outDir = path.resolve(positional[0] || "certs");
 if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
 
 const caKeyPath = path.join(outDir, "_ca-key.pem");
@@ -124,15 +144,7 @@ try {
 	]);
 
 	// 2. Signing key + CSR
-	run("openssl", [
-		"ecparam",
-		"-genkey",
-		"-name",
-		"prime256v1",
-		"-noout",
-		"-out",
-		signingKeyPath,
-	]);
+	run("openssl", [...KEY_TYPES[keyType], "-out", signingKeyPath]);
 	run("openssl", [
 		"req",
 		"-new",
@@ -205,12 +217,9 @@ console.log(
 	`  (_ca-cert.pem and _ca-key.pem are the dev root; keep them for re-issuing more certs)\n`,
 );
 console.log(
-	`Wire these into your active project via the Settings UI, or directly:`,
+	`Use them for a project on its Settings page, or with: npm run cli -- signing --certificate <chain> --key <key>`,
 );
-console.log(`  UPDATE projects SET`);
-console.log(`    certificate_path = '${chainPath.replace(/\\/g, "/")}',`);
-console.log(`    private_key_path = '${signingKeyPath.replace(/\\/g, "/")}'`);
-console.log(`  WHERE is_active = true;\n`);
+console.log();
 console.log(
 	`This cert is self-issued — fine for local dev and demos. Creator trust`,
 );

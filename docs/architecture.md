@@ -8,7 +8,7 @@ Explanations that used to live in `CLAUDE.md`. `CLAUDE.md` is rules only; this f
 - **Frontend:** React 19, React Router 8, TanStack Query 5, Tailwind CSS 4 (dark theme in `src/client/app.css`), built by Vite.
 - **Backend:** Express 5, the local API on `/api`.
 - **Dev:** `concurrently` runs the server (port 3001) and the Vite dev server (port 5173, proxying `/api` to the server).
-- **Helper programs:** ExifTool (through `exiftool-vendored`); the C2PA library (`@contentauth/c2pa-node`), which reads every file's C2PA credentials against the pinned C2PA trust lists (D51); and `c2patool`, which signs. The library's native binary, c2patool and the trust lists are installed by `npm run tools:fetch`, pinned and checksummed. Neither binary is code-signed, so Windows Smart App Control, when it is on, can block them (D15).
+- **Helper programs:** ExifTool (through `exiftool-vendored`); the C2PA library (`@contentauth/c2pa-node`), which reads every file's C2PA credentials against the pinned C2PA trust lists (D51) and signs (D53); and `c2patool`, the signing fallback a machine can choose. The library's native binary, c2patool and the trust lists are installed by `npm run tools:fetch`, pinned and checksummed. Neither binary is code-signed, so Windows Smart App Control, when it is on, can block them (D15).
 
 ## The shape of it
 
@@ -65,7 +65,7 @@ Real-world notes from a Premiere Pro export: file definitions live in the master
 
 Signing runs as a job. A finished edit is signed into a new file beside the cut, `<name>.signed.v<N>.<ext>` (D13, D41): the cut as parent, each asset the newest timeline places as an ingredient with its class, and the newest saved statement as the `org.provenancetracker.creator_statement` assertion. An ingredient with credentials of its own, embedded or in a sidecar, keeps them inside the new file. Any other asset is signed into a `.c2pa` sidecar beside it (D42). The original is never changed. What would be signed is shown before signing, built by the same code (D46).
 
-After signing, c2patool reads the file back and the report becomes a status (`verify.js`; `unrecognised_issuer` is expected for a test certificate). The public export (`manifest/public-export.js`, schema `spec/public-export.v1.schema.json`) is built from a signature's record, never the live timeline, so it always matches its file. c2patool renames ingredient labels in its read-back, so read-back entries are paired with the statement's ingredients by position and file name.
+Signing goes through an engine picked by name (`packages/core-node/src/sign/engines/`, D53): the C2PA library by default, with the private key kept in Node, which signs the bytes the library hands over; or c2patool, when this machine's setting or `sign --engine` says so. After signing, the engine reads the file back and the report becomes a status (`verify.js`; `unrecognised_issuer` is expected for a test certificate). The public export (`manifest/public-export.js`, schema `spec/public-export.v1.schema.json`) is built from a signature's record, never the live timeline, so it always matches its file. Both engines rename ingredient labels in the file they write, so read-back entries are paired with the statement's ingredients by position and file name.
 
 ## Long work
 

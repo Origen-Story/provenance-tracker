@@ -25,7 +25,14 @@ import { c2patoolPath } from "../src/extract/c2patool.ts";
 import { createProject, openProject } from "../src/project.ts";
 import { addRoot } from "../src/roots.ts";
 import { scanProject } from "../src/scan.ts";
-import { certificateInfo } from "../src/sign/c2patool-sign.ts";
+import { certificateInfo } from "../src/sign/certificates.ts";
+import { signingEngineFor } from "../src/sign/engines/index.ts";
+import {
+	loadLibrary,
+	PINNED_BINARY,
+	readStore,
+} from "../src/extract/c2pa-library.ts";
+import { interpretReport } from "@provenancetracker/core/manifest/verify.js";
 import { signAsset } from "../src/sign/sign-asset.ts";
 import {
 	NotReadyError,
@@ -549,7 +556,7 @@ describe.skipIf(!haveOpenssl)("signOutput", () => {
 		rmSync(path.join(w.media, "still.png"));
 		await expect(
 			signOutput(w.p, w.m, { assetId: w.film.id, engine }),
-		).rejects.toThrow(/not on this machine, and c2patool reads each one/);
+		).rejects.toThrow(/not on this machine, and signing reads each one/);
 		tinyPng(path.join(w.media, "still.png"), [0, 255, 0]);
 		writeFileSync(path.join(w.media, "export.png"), "edited since the scan");
 		await expect(
@@ -581,39 +588,70 @@ const haveC2patool = (() => {
 	}
 })();
 
-describe.skipIf(!haveOpenssl || !haveC2patool)(
-	"signOutput with c2patool",
-	() => {
-		it("writes the time ranges and the thumbnail into the file, where a reader finds them", async () => {
+const haveLibrary = existsSync(PINNED_BINARY);
+const ENGINES = [
+	{ name: "library", recorded: "c2pa-node", ready: haveLibrary },
+	{ name: "c2patool", recorded: "c2patool", ready: haveC2patool },
+] as const;
+
+/** What a reader makes of a signed file: c2patool's report, or the library's. */
+async function readWith(
+	reader: "library" | "c2patool",
+	file: string,
+	sidecar?: string,
+) {
+	if (reader === "c2patool")
+		return JSON.parse(
+			spawnSync(
+				c2patoolPath({}, process.platform),
+				sidecar ? [file, "--external-manifest", sidecar] : [file],
+				{ encoding: "utf8" },
+			).stdout,
+		);
+	const loaded = await loadLibrary({}, { remoteManifests: false });
+	if ("unavailable" in loaded) throw new Error(loaded.unavailable);
+	return readStore(loaded, file, sidecar);
+}
+
+describe.each(ENGINES)("signOutput with $name", ({ name, recorded, ready }) => {
+	const other = name === "library" ? "c2patool" : "library";
+	const otherReady = ENGINES.find((e) => e.name === other)!.ready;
+
+	it.skipIf(!haveOpenssl || !ready || !otherReady)(
+		`writes the time ranges and the thumbnail into the file, where ${other} finds them`,
+		async () => {
 			const w = await world();
 			await withPoster(w);
-			const r = await signOutput(w.p, w.m, { assetId: w.film.id });
-			const report = JSON.parse(
-				spawnSync(
-					c2patoolPath({}, process.platform),
-					[path.join(w.media, r.path)],
-					{ encoding: "utf8" },
-				).stdout,
-			);
+			const engine = await signingEngineFor(w.m, name);
+			const r = await signOutput(w.p, w.m, { assetId: w.film.id, engine });
+			const report = await readWith(other, path.join(w.media, r.path));
 			const active = report.manifests[report.active_manifest];
 			expect(active.thumbnail).toMatchObject({ format: "image/png" });
 			expect(placements(active)).toEqual([
 				{ type: "npt", start: "0", end: "1" },
 				{ type: "npt", start: "0", end: "1" },
 			]);
-		}, 120000);
+			expect(interpretReport(report).status).toBe("unrecognised_issuer");
+		},
+		120000,
+	);
 
-		it("signs for real with a throwaway certificate, and the public export builds from the record and meets its published schema", async () => {
+	it.skipIf(!haveOpenssl || !ready)(
+		"signs for real with a throwaway certificate, and the public export builds from the record and meets its published schema",
+		async () => {
 			const w = await world();
-			const r = await signOutput(w.p, w.m, { assetId: w.film.id });
+			const engine = await signingEngineFor(w.m, name);
+			const r = await signOutput(w.p, w.m, { assetId: w.film.id, engine });
 			expect(existsSync(path.join(w.media, r.path))).toBe(true);
+			expect(r.status).toBe("unrecognised_issuer");
 			const s = w.p.db
 				.prepare(
 					"SELECT engine, engine_version, report, signer_name FROM signatures WHERE id = ?",
 				)
 				.get(r.signatureId) as Record<string, unknown>;
-			expect(s.engine).toBe("c2patool");
+			expect(s.engine).toBe(recorded);
 			expect(s.engine_version).not.toBe("");
+			expect(s.signer_name).toBe("Origen Story Dev Signing Cert");
 			expect(JSON.parse(s.report as string)).toHaveProperty("active_manifest");
 			const { data } = publicExport(w.p.db, r.signatureId, {
 				generatedAt: "2026-11-23T00:00:00.000Z",
@@ -623,7 +661,7 @@ describe.skipIf(!haveOpenssl || !haveC2patool)(
 				ingredients: [{ fileName: "still.png" }, { fileName: "tone.wav" }],
 				signedFile: { version: 1 },
 			});
-			// Built from c2patool's real read-back of the signed file, as the viewer reads it.
+			// Built from the engine's real read-back of the signed file, as the viewer reads it.
 			const schema = JSON.parse(
 				readFileSync(
 					path.resolve(
@@ -638,9 +676,25 @@ describe.skipIf(!haveOpenssl || !haveC2patool)(
 				),
 			);
 			expect(validate(schema, data)).toEqual([]);
-		}, 120000);
-	},
-);
+		},
+		120000,
+	);
+
+	it.skipIf(!haveOpenssl || !ready)(
+		"carries a source signed at ingest into the edit with its credentials from the sidecar",
+		async () => {
+			const w = await world();
+			const engine = await signingEngineFor(w.m, name);
+			await signAsset(w.p, w.m, { assetId: w.id("tone.wav").id, engine });
+			const r = await signOutput(w.p, w.m, { assetId: w.film.id, engine });
+			const tone = interpretReport(
+				await readWith(name, path.join(w.media, r.path)),
+			).ingredients.find((i: { title: string }) => i.title === "tone.wav");
+			expect(tone).toMatchObject({ credentials: "present", problems: [] });
+		},
+		120000,
+	);
+});
 
 describe.skipIf(!haveOpenssl)("signAsset", () => {
 	const sidecarOf = (w: Awaited<ReturnType<typeof world>>) =>
@@ -770,19 +824,33 @@ describe.skipIf(!haveOpenssl)("signAsset", () => {
 	});
 });
 
-describe.skipIf(!haveOpenssl || !haveC2patool)(
-	"signAsset with c2patool",
-	() => {
-		it("writes a sidecar c2patool reads back against the file", async () => {
+describe.each(ENGINES)("signAsset with $name", ({ name, recorded, ready }) => {
+	it.skipIf(!haveOpenssl || !ready)(
+		"writes a sidecar both readers read back against the file",
+		async () => {
 			const w = await world();
 			const still = w.id("still.png");
-			const r = await signAsset(w.p, w.m, { assetId: still.id });
+			const engine = await signingEngineFor(w.m, name);
+			const r = await signAsset(w.p, w.m, { assetId: still.id, engine });
 			expect(r).toMatchObject({ path: "still.c2pa", version: 1 });
+			expect(r.status).toBe("unrecognised_issuer");
 			const s = w.p.db
 				.prepare("SELECT engine, report FROM signatures WHERE id = ?")
 				.get(r.signatureId) as Record<string, unknown>;
-			expect(s.engine).toBe("c2patool");
+			expect(s.engine).toBe(recorded);
 			expect(JSON.parse(s.report as string)).toHaveProperty("active_manifest");
-		}, 120000);
-	},
-);
+			for (const reader of ["library", "c2patool"] as const)
+				if (ENGINES.find((e) => e.name === reader)!.ready)
+					expect(
+						interpretReport(
+							await readWith(
+								reader,
+								path.join(w.media, "still.png"),
+								path.join(w.media, "still.c2pa"),
+							),
+						).status,
+					).toBe("unrecognised_issuer");
+		},
+		120000,
+	);
+});

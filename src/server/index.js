@@ -9,7 +9,11 @@ import { fileURLToPath } from "url";
 import { thisMachine } from "@provenancetracker/core-node/machine.ts";
 import { createApp } from "./app.ts";
 import { createLogger } from "./lib/logger.js";
-import { listenHost, isLoopbackHost } from "./lib/core/local-only.js";
+import {
+	allowedHostnames,
+	listenHost,
+	isLoopbackHost,
+} from "./lib/core/local-only.js";
 
 const log = createLogger("server");
 
@@ -49,8 +53,9 @@ app.listen(PORT, HOST, () => {
 		`✓ Provenance Tracker API listening on http://${HOST.includes(":") ? `[${HOST}]` : HOST}:${PORT}`,
 	);
 	if (!isLoopbackHost(HOST)) {
+		const allowed = allowedHostnames(process.env);
 		log.warn(
-			`HOST=${HOST}: the API is reachable from other machines and has no login. Requests are still refused unless their Host header is this address or is listed in ALLOWED_HOSTS. See README, "Deployment notes".`,
+			`HOST=${HOST}: the API is listening beyond this machine, and it has no login. A request from another machine is answered only when its Host header is ${allowed.length ? `one of: ${allowed.join(", ")}` : "listed in ALLOWED_HOSTS (nothing is, so every one is refused)"}; whoever can reach this port can send that header, so put a login in front. "Host: localhost" is accepted from this machine only. If you did not set HOST, another program did: unset it. See README, "Deployment notes".`,
 		);
 	}
 });

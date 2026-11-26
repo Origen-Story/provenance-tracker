@@ -120,7 +120,7 @@ export function offeredFileName(
 	}
 }
 
-/** The extension a media type usually has, for a download whose name has none. */
+/** The ending a media type usually has, for a download whose name has no media ending. */
 const EXTENSIONS: Readonly<Record<string, string>> = {
 	"image/jpeg": ".jpg",
 	"image/png": ".png",
@@ -138,12 +138,56 @@ const EXTENSIONS: Readonly<Record<string, string>> = {
 	"audio/flac": ".flac",
 	"audio/ogg": ".ogg",
 	"audio/mp4": ".m4a",
+	"image/jpg": ".jpg",
+	"image/bmp": ".bmp",
+	"image/avif": ".avif",
+	"image/heif": ".heif",
+	"image/x-adobe-dng": ".dng",
+	"video/x-m4v": ".m4v",
+	"video/x-msvideo": ".avi",
+	"video/x-matroska": ".mkv",
+	"video/mpeg": ".mpg",
+	"video/ogg": ".ogv",
+	"audio/mp3": ".mp3",
+	"audio/wave": ".wav",
+	"audio/vnd.wave": ".wav",
+	"audio/x-flac": ".flac",
+	"audio/x-m4a": ".m4a",
+	"audio/aac": ".aac",
+	"audio/aiff": ".aiff",
+	"audio/x-aiff": ".aiff",
+	"audio/opus": ".opus",
+	"audio/webm": ".weba",
 };
 
-/** Add the media type's usual extension to a name that has none. */
-export function withExtension(name: string, mediaType: string): string {
-	if (/\.[A-Za-z0-9]{1,5}$/.test(name)) return name;
-	return name + (EXTENSIONS[mediaType] ?? "");
+/**
+ * The endings a downloaded file may have: those of pictures, video and
+ * sound. Every ending in the table above, and the other spellings of them.
+ */
+export const MEDIA_ENDINGS: ReadonlySet<string> = new Set([
+	...Object.values(EXTENSIONS),
+	".jpeg",
+	".tiff",
+	".mpeg",
+	".aif",
+	".oga",
+]);
+
+/**
+ * The name a download is kept under: one that ends as a picture, video or
+ * sound does. The name comes from someone else's server, and so does the
+ * media type: `clip.mp4.exe` sent as video/mp4 would otherwise land in a
+ * media folder as a program. A media ending is kept; any other name gets the
+ * usual ending of its media type after it (`clip.mp4.exe.mp4`).
+ * @returns null when the name has no media ending and the type has no usual one
+ */
+export function mediaFileName(name: string, mediaType: string): string | null {
+	const dot = name.lastIndexOf(".");
+	if (dot > 0 && MEDIA_ENDINGS.has(name.slice(dot).toLowerCase())) return name;
+	const ending = Object.hasOwn(EXTENSIONS, mediaType)
+		? EXTENSIONS[mediaType]
+		: "";
+	return ending ? name + ending : null;
 }
 
 /** Whether a download's media type is one the tracker takes: pictures, video and sound. */

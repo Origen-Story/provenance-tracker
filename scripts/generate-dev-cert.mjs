@@ -16,7 +16,9 @@
 //         The others: es384 (P-384), ps256 (RSA 2048, signed with RSA-PSS) and
 //         ed25519. Every type the tracker signs with is tested with these.
 //         --name makes it a test identity certificate in that name, for
-//         `npm run cli -- identity`, D55; it needs the output folder.)
+//         `npm run cli -- identity`, D55; it needs the output folder. Without
+//         --org its organisation reads "Unverified, self-issued <tag>".
+//         Each run puts a tag of its own in the names it makes, D67.)
 //
 // The cert is self-issued so signatures won't show "trusted publisher" on
 // contentcredentials.org. Creator trust comes from the CAWG identity
@@ -26,6 +28,7 @@
 // (C:\Program Files\Git\usr\bin\openssl.exe), found from any shell.
 
 import { execFileSync } from "child_process";
+import { randomBytes } from "crypto";
 import { mkdirSync, existsSync, writeFileSync, readFileSync, rmSync } from "fs";
 import path from "path";
 import { findOpenssl, OPENSSL_MISSING } from "./lib/openssl.mjs";
@@ -65,10 +68,19 @@ for (const o of ["--name", "--org"])
 		);
 		process.exit(1);
 	}
+// Something no other run has, in the names of what this run makes (D67). Two
+// people who use the defaults must not end up with certificates that read
+// the same: a name is all a reader shows, and all a person compares.
+const tag = randomBytes(4).toString("hex");
 // The signer's name: a person's, for an identity certificate (D55), or the
 // development signing certificate's.
-const subjectName = opts["--name"] || "Origen Story Dev Signing Cert";
-const organisation = opts["--org"] || "Origen Story";
+const subjectName = opts["--name"] || `Origen Story Dev Signing Cert ${tag}`;
+// An identity nobody checked says so in the organisation a reader shows
+// beside it, unless the person gives one of their own. It is never put under
+// an organisation they did not name.
+const organisation =
+	opts["--org"] ||
+	(opts["--name"] ? `Unverified, self-issued ${tag}` : "Origen Story");
 // An identity certificate (--name) always names its folder: the default,
 // certs/, holds the signing pair under the same file names (2026-11-25).
 if (opts["--name"] && !positional[0]) {
@@ -121,7 +133,7 @@ distinguished_name = dn
 prompt = no
 x509_extensions = v3_ca
 [dn]
-CN = Origen Story Dev Root CA
+CN = Origen Story Dev Root CA ${tag}
 O = Origen Story
 [v3_ca]
 basicConstraints = critical, CA:TRUE

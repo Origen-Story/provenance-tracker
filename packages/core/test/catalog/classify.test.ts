@@ -25,8 +25,32 @@ function store(opts: {
 	action: string;
 	sourceType?: string;
 	ingredients?: unknown[];
+	/**
+	 * What the reader found: a signer on the trust list, a claim that verified
+	 * under a certificate no list knows (the usual case, and the default), or
+	 * a signature that does not verify.
+	 */
+	read?: "trusted" | "unrecognised" | "broken";
 }) {
+	const read = opts.read ?? "unrecognised";
 	return {
+		validation_results: {
+			activeManifest: {
+				success:
+					read === "trusted"
+						? [
+								{ code: "claimSignature.validated" },
+								{ code: "signingCredential.trusted" },
+							]
+						: [],
+				failure:
+					read === "broken"
+						? [{ code: "claimSignature.mismatch" }]
+						: read === "unrecognised"
+							? [{ code: "signingCredential.untrusted" }]
+							: [],
+			},
+		},
 		active_manifest: "m1",
 		manifests: {
 			m1: {
@@ -128,14 +152,17 @@ function world() {
 		kind: string,
 		status: string,
 		data: unknown = null,
+		/** The sidecar that was read, for a sidecar reading. */
+		source: string | null = null,
 	) => {
 		const run = startRun(db, { kind: "extract", tool: TEST_TOOL, now: AT });
 		const r = db
 			.prepare(
-				"INSERT INTO observations (content_sha256, run_id, kind, extractor, extractor_version, status, data, observed_at) VALUES (?, ?, ?, 'x', '1', ?, ?, ?)",
+				"INSERT INTO observations (content_sha256, source_sha256, run_id, kind, extractor, extractor_version, status, data, observed_at) VALUES (?, ?, ?, ?, 'x', '1', ?, ?, ?)",
 			)
 			.run(
 				content,
+				source,
 				run,
 				kind,
 				status,
@@ -264,6 +291,7 @@ describe("classify", () => {
 				signer: "Google LLC",
 				action: "c2pa.created",
 				sourceType: CAPTURE,
+				read: "trusted",
 			}),
 		);
 		const plain = file("notes/readme.txt");
@@ -425,47 +453,118 @@ describe("classify", () => {
 		});
 	});
 
-	it("knows a file signed with a certificate the project has signed with as the creator's, by name and issuer", () => {
+	it("calls a file device-signed only under a trusted signer, and names no signer from a broken claim (D67)", () => {
 		const { db, file, read } = world();
-		const cam = file("takes/take-01.mp4");
-		const other = file("takes/take-02.mp4");
-		const byMe = {
-			generator: "Some Field Recorder 2.0",
+		const words = {
+			generator: "Pixel Camera",
+			signer: "Google LLC",
+			action: "c2pa.created",
+			sourceType: CAPTURE,
+		};
+		const real = file("takes/real.mp4");
+		const lookalike = file("takes/lookalike.mp4");
+		const forged = file("takes/forged.mp4");
+		read(real.content, "c2pa", "ok", store({ ...words, read: "trusted" }));
+		// The same words under a certificate anyone could make.
+		read(lookalike.content, "c2pa", "ok", store(words));
+		// The same words, and a signature that does not verify.
+		read(forged.content, "c2pa", "ok", store({ ...words, read: "broken" }));
+		classifyCatalog(db, { tool: TEST_TOOL, now: () => AT });
+		expect(asset(db, real.id)).toMatchObject({
+			signed_by: "device",
+			signer_name: "Google LLC",
+		});
+		expect(asset(db, lookalike.id)).toMatchObject({
+			signed_by: "tool",
+			signer_name: "Google LLC",
+		});
+		// Nobody is said to have signed it. The class it declares is still
+		// proposed, for a person to confirm or not.
+		expect(asset(db, forged.id)).toMatchObject({
+			signed_by: "",
+			signer_name: "",
+			origin_class: "digitalCapture",
+			origin_class_confirmed: 0,
+		});
+	});
+
+	it("knows a file as signed by the creator only by the catalog's own signing record, never by a name (D67)", () => {
+		const { db, file, read } = world();
+		const mine = {
+			generator: "provenance-tracker",
 			signer: "A. Creator",
 			issuer: "Studio Dev Root CA",
 			action: "c2pa.created",
 			sourceType: CAPTURE,
 		};
-		read(cam.content, "c2pa", "ok", store(byMe));
-		// The same name under another authority is someone else.
-		read(other.content, "c2pa", "ok", store({ ...byMe, issuer: "Anyone CA" }));
-		classifyCatalog(db, { tool: TEST_TOOL, now: () => AT });
-		expect(asset(db, cam.id).signed_by).toBe("tool");
-
-		// The project signs something with that certificate.
+		// The project has signed with a certificate of that name before.
 		const film = file("exports/film.mp4");
 		const signRun = startRun(db, { kind: "sign", tool: TEST_TOOL, now: AT });
-		const signed = sha("e");
+		const signedFilm = sha("e");
 		createRow(
 			db,
 			"contents",
-			{ sha256: signed, size: 11, asset_id: film.id, first_run_id: signRun },
+			{
+				sha256: signedFilm,
+				size: 11,
+				asset_id: film.id,
+				first_run_id: signRun,
+			},
 			{ actor: { kind: "tool", name: "t", runId: signRun }, now: AT },
 		);
 		db.prepare(
-			"INSERT INTO signatures (asset_id, kind, version, source_sha256, signed_sha256, run_id, engine, signer_name, signer_issuer, definition, signed_at) VALUES (?, 'output', 1, ?, ?, ?, 'c2patool', 'A. Creator', 'Studio Dev Root CA', '{}', ?)",
-		).run(film.id, film.content, signed, signRun, AT);
+			"INSERT INTO signatures (asset_id, kind, version, source_sha256, signed_sha256, run_id, engine, signer_name, signer_issuer, certificate_sha256, definition, signed_at) VALUES (?, 'output', 1, ?, ?, ?, 'c2pa-node', 'A. Creator', 'Studio Dev Root CA', ?, '{}', ?)",
+		).run(film.id, film.content, signedFilm, signRun, "c".repeat(64), AT);
+
+		// A file that names the same signer and issuer, and this tracker as its
+		// generator: anyone can make that certificate and write those words.
+		const lookalike = file("takes/take-01.mp4");
+		read(lookalike.content, "c2pa", "ok", store(mine));
+
+		// A take the project signed itself, into a sidecar the catalog recorded.
+		const take = file("takes/take-02.mp4");
+		const sidecar = sha("d");
+		createRow(
+			db,
+			"contents",
+			{ sha256: sidecar, size: 12, asset_id: take.id, first_run_id: signRun },
+			{ actor: { kind: "tool", name: "t", runId: signRun }, now: AT },
+		);
+		db.prepare(
+			"INSERT INTO signatures (asset_id, kind, version, source_sha256, signed_sha256, run_id, engine, signer_name, signer_issuer, certificate_sha256, definition, signed_at) VALUES (?, 'asset', 1, ?, ?, ?, 'c2pa-node', 'A. Creator', 'Studio Dev Root CA', ?, '{}', ?)",
+		).run(take.id, take.content, sidecar, signRun, "c".repeat(64), AT);
 		finishRun(db, signRun, { outcome: "ok", now: AT });
+		read(take.content, "c2pa", "absent");
+		read(take.content, "c2pa-sidecar", "ok", store(mine), sidecar);
+
+		// And one with a sidecar the catalog did not write, saying the same.
+		const other = file("takes/take-03.mp4");
+		read(other.content, "c2pa", "absent");
+		read(
+			other.content,
+			"c2pa-sidecar",
+			"ok",
+			store(mine),
+			file("takes/take-03.c2pa").content,
+		);
 
 		const report = classifyCatalog(db, { tool: TEST_TOOL, now: () => AT });
-		expect(asset(db, cam.id)).toMatchObject({
-			signed_by: "creator",
+		expect(asset(db, lookalike.id)).toMatchObject({
+			signed_by: "tool",
 			signer_name: "A. Creator",
 		});
 		expect(asset(db, other.id).signed_by).toBe("tool");
+		expect(asset(db, take.id)).toMatchObject({
+			signed_by: "creator",
+			signer_name: "A. Creator",
+		});
+		// The evidence names the certificate, by its fingerprint.
 		expect(
-			report.assets.find((a) => a.assetId === cam.id)?.changes,
-		).toContainEqual({ field: "signed_by", from: "tool", to: "creator" });
+			report.assets.find((a) => a.assetId === take.id)?.evidence,
+		).toMatchObject({ signed_here_with: "c".repeat(64) });
+		expect(
+			report.assets.find((a) => a.assetId === lookalike.id)?.evidence,
+		).not.toHaveProperty("signed_here_with");
 	});
 
 	it("changes nothing when run again, follows a newer reading, and writes nothing on a dry run", () => {

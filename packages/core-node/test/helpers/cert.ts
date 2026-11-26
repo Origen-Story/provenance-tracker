@@ -20,6 +20,9 @@ const SCRIPT = path.resolve(
 	"generate-dev-cert.mjs",
 );
 
+/** The development signing certificate's name: each has a tag of its own (D67). */
+export const DEV_CERT_NAME = /^Origen Story Dev Signing Cert [0-9a-f]{8}$/;
+
 /** The key types the dev-cert script makes (its --key-type). */
 export type DevKeyType = "es256" | "es384" | "ps256" | "ed25519";
 

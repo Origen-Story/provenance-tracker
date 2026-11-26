@@ -95,6 +95,7 @@ Note: Origen Story's projects currently use only the high-priority set. Deferred
 - **Code-signing the native binaries** — for Windows Smart App Control and a downloadable app (D15).
 
 - **Choosing the identity's role per edit** (D55, 2026-11-25). The identity signs as `cawg.creator` always. Someone who edits or publishes another person's work would sign as `cawg.editor` or `cawg.publisher`. It ties into the credits table, which already keeps "made by" apart from "on behalf of".
+- **Knowing the creator's own certificate on a file signed elsewhere** (D67, 2026-11-26). "Signed by the creator" now rests on the catalog's own record of signing a file. A file signed with the same certificate in another project, or by hand, reads as signed by a tool. Matching it by the certificate's fingerprint needs the signer's certificate from the reader; the C2PA library gives its name, issuer and serial number only. Revisit when the library exposes the certificate chain.
 - **Trusting an identity's issuer** (D55). No CAWG trust list is pinned, so every identity reads "valid, unrecognised issuer". Pin CAWG's interim trust list (extended to 31 Dec 2027) the way the C2PA lists are (`npm run tools:fetch`, by commit and checksum), and add a per-machine setting for extra identity anchors, beside the one planned for claim anchors. Re-check CAWG's new certificate profile first.
 
 ### The public record, left for after Phase 8 (2026-11-25)

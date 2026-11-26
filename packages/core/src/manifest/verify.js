@@ -4,19 +4,30 @@
 // informational codes and failures for the active manifest, and per-ingredient
 // deltas. The tracker's statuses:
 //
-//   valid                every check passed and the issuer is on a trust list
-//   unrecognised_issuer  every check passed except trust: the certificate is
-//                        not on a list this reader knows (a dev certificate,
-//                        or no trust list configured). The signature and the
-//                        content hash still verified.
+//   valid                every check passed and the reader said the issuer is
+//                        on a trust list (signingCredential.trusted)
+//   unrecognised_issuer  every check passed except trust: the reader said the
+//                        certificate is not on a list it knows (a dev
+//                        certificate, or no trust list configured). The
+//                        signature and the content hash still verified.
 //   hash_mismatch        the content does not match what was signed: the file
 //                        changed, or this reader cannot check that hash format
-//   invalid              any other failure
+//   invalid              any other failure, or a report that says neither
+//                        "trusted" nor "untrusted": nothing checked it (D67)
 //   absent               no credentials in the file
 //
 // A dev-certificate signature is expected to read as unrecognised_issuer.
 
 const UNTRUSTED = "signingCredential.untrusted";
+const TRUSTED = "signingCredential.trusted";
+// The tracker's own finding, in the form of a reader's: the report says
+// neither that the signer is trusted nor that it is not, so nothing checked
+// the signature (a report with no results, or one cut short).
+export const UNCHECKED = {
+	code: "provenancetracker.signature.unchecked",
+	explanation:
+		"The reader gave no verdict on the signing certificate, so the signature could not be checked",
+};
 const HASH_MATCH =
 	/^assertion\.(dataHash|bmffHash|boxesHash|collectionHash)\.match$/;
 const HASH_MISMATCH =
@@ -65,20 +76,25 @@ export function interpretReport(report) {
 	);
 	const successes = codes(results.success);
 	const untrusted = failures.some((f) => f.code === UNTRUSTED);
+	// Trusted is something a reader says, never the absence of a complaint
+	// (D67): a report with no results at all must not read as trusted.
+	const trusted = !untrusted && successes.some((s) => s.code === TRUSTED);
+	// Neither said: the signature was not checked, which is not a pass.
+	if (!trusted && !untrusted) failures.push(UNCHECKED);
 	const blocking = failures.filter((f) => f.code !== UNTRUSTED);
 
 	let status;
 	if (blocking.some((f) => HASH_MISMATCH.test(f.code)))
 		status = "hash_mismatch";
 	else if (blocking.length) status = "invalid";
-	else status = untrusted ? "unrecognised_issuer" : "valid";
+	else status = trusted ? "valid" : "unrecognised_issuer";
 	// The claim signature on its own, apart from whether the content still
 	// matches it (export format 2 shows the two as separate results, D57).
 	const claim = blocking.some((f) => !HASH_MISMATCH.test(f.code))
 		? "invalid"
-		: untrusted
-			? "unrecognised_issuer"
-			: "trusted";
+		: trusted
+			? "trusted"
+			: "unrecognised_issuer";
 
 	const deltas = new Map();
 	for (const d of report.validation_results?.ingredientDeltas || []) {

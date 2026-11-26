@@ -51,7 +51,12 @@ import {
 	signingStatus,
 } from "../src/sign/signing-settings.ts";
 import { TOOL } from "../src/tool.ts";
-import { devCertificate, haveOpenssl, OPENSSL } from "./helpers/cert.ts";
+import {
+	DEV_CERT_NAME,
+	devCertificate,
+	haveOpenssl,
+	OPENSSL,
+} from "./helpers/cert.ts";
 import { memoryHolder } from "./helpers/holder.ts";
 import { machinesForTests } from "./helpers/machine.ts";
 
@@ -308,6 +313,84 @@ describe.skipIf(!haveOpenssl)("the development certificate script", () => {
 		}
 	});
 });
+
+describe.skipIf(!haveOpenssl)(
+	"the names the development certificate script gives (D67)",
+	() => {
+		const subject = (certificate: string) =>
+			spawnSync(
+				OPENSSL!,
+				[
+					"x509",
+					"-in",
+					certificate,
+					"-noout",
+					"-subject",
+					"-issuer",
+					"-nameopt",
+					"RFC2253",
+				],
+				{ encoding: "utf8" },
+			).stdout;
+
+		it("gives each run a name of its own, so two people's default certificates never read the same", async () => {
+			const dir = mkdtempSync(path.join(tmpdir(), "pt-devcert-names-"));
+			try {
+				const one = devCertificate(path.join(dir, "one"))!;
+				const two = devCertificate(path.join(dir, "two"))!;
+				const [a, b] = await Promise.all(
+					[one, two].map((c) => certificateInfo(c.certificate)),
+				);
+				expect(a.commonName).toMatch(DEV_CERT_NAME);
+				expect(b.commonName).toMatch(DEV_CERT_NAME);
+				expect(a.commonName).not.toBe(b.commonName);
+				// The authority that issued each is named for the same run.
+				expect(a.issuer).toBe(
+					`Origen Story Dev Root CA ${a.commonName.split(" ").pop()}`,
+				);
+				expect(a.issuer).not.toBe(b.issuer);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+
+		it("puts an identity nobody checked under no organisation but the person's own", () => {
+			const dir = mkdtempSync(path.join(tmpdir(), "pt-devcert-names-"));
+			try {
+				const script = path.resolve(
+					import.meta.dirname,
+					"..",
+					"..",
+					"..",
+					"scripts",
+					"generate-dev-cert.mjs",
+				);
+				const make = (folder: string, ...args: string[]) => {
+					const r = spawnSync(
+						process.execPath,
+						[script, path.join(dir, folder), "--name", "Jane Example", ...args],
+						{ encoding: "utf8" },
+					);
+					expect(r.status, r.stderr).toBe(0);
+					return subject(path.join(dir, folder, "c2pa-dev-cert.pem"));
+				};
+				// No organisation given: it says what it is, and never names one
+				// the person did not.
+				const bare = make("bare");
+				expect(bare).toMatch(
+					/subject=O=Unverified\\, self-issued [0-9a-f]{8},CN=Jane Example/,
+				);
+				expect(bare).not.toMatch(/subject=.*Origen Story/);
+				// Their own organisation is their own claim.
+				expect(make("own", "--org", "Example Studio")).toMatch(
+					/subject=O=Example Studio,CN=Jane Example/,
+				);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
+		});
+	},
+);
 
 describe.skipIf(!haveOpenssl)("signing settings", () => {
 	it("sets the certificate and key for a project on this machine, says what signs, and forgets them", async () => {
@@ -687,7 +770,7 @@ describe.each(ENGINES)("signOutput with $name", ({ name, recorded, ready }) => {
 				.get(r.signatureId) as Record<string, unknown>;
 			expect(s.engine).toBe(recorded);
 			expect(s.engine_version).not.toBe("");
-			expect(s.signer_name).toBe("Origen Story Dev Signing Cert");
+			expect(s.signer_name).toMatch(DEV_CERT_NAME);
 			expect(JSON.parse(s.report as string)).toHaveProperty("active_manifest");
 			const { data } = publicExport(w.p.db, r.signatureId, {
 				generatedAt: "2026-11-23T00:00:00.000Z",
@@ -737,7 +820,7 @@ describe.each(ENGINES)("signOutput with $name", ({ name, recorded, ready }) => {
 			const preview = previewOutputStatement(w.p, w.m, { assetId: w.film.id });
 			expect(preview.identity).toMatchObject({
 				name: "Test Person",
-				issuer: "Origen Story Dev Root CA",
+				issuer: expect.stringMatching(/^Origen Story Dev Root CA [0-9a-f]{8}$/),
 				role: "cawg.creator",
 				// The statement's author is "A. Maker".
 				authorDiffers: true,
@@ -1061,7 +1144,9 @@ describe("keeping a source's details out of the signed film (D62)", () => {
 			const source = preview.reveals.find((r) => r.assetId === stillAsset.id)!;
 			const author = source.reveal.items.find((i) => i.kind === "author")!;
 			expect(author).toMatchObject({ redactable: true, values: ["A. Person"] });
-			expect(source.reveal.signers).toContain("Origen Story Dev Signing Cert");
+			expect(source.reveal.signers).toEqual([
+				expect.stringMatching(DEV_CERT_NAME),
+			]);
 			expect(preview.lastWithheld).toBeNull();
 
 			const engine = await signingEngineFor(w.m, "library");

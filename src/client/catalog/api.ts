@@ -89,13 +89,16 @@ export interface ProjectSummary {
 
 export const projects = {
 	list: () => api<{ projects: KnownProject[] }>("GET", "/projects"),
-	open: (folder: string) =>
+	/**
+	 * Open a project folder. A folder holding a project this machine already
+	 * has at another folder is refused (409, with `elsewhere` in the error's
+	 * data) unless `takeOver` says this is where the project lives now (D68).
+	 */
+	open: (folder: string, takeOver = false) =>
 		api<{ projectId: string; name: string; folder: string }>(
 			"POST",
 			"/projects/open",
-			{
-				folder,
-			},
+			takeOver ? { folder, take_over: true } : { folder },
 		),
 	create: (folder: string, name: string) =>
 		api<{ projectId: string; name: string; folder: string }>(

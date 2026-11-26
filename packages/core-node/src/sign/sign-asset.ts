@@ -35,6 +35,7 @@ import { signingEngineFor } from "./engines/index.ts";
 import {
 	holderOrRefuse,
 	identityFor,
+	identityUrlOf,
 	NotReadyError,
 	refuseUnlessSetUp,
 } from "./sign-output.ts";
@@ -171,6 +172,16 @@ export async function signAsset(
 		  }
 		| { action: "refuse"; reason: string };
 	if (plan.action === "refuse") throw new NotReadyError(plan.reason);
+	// The catalog says the .c2pa beside the file is one the tracker wrote, and
+	// it is about to be renamed on that word. Its bytes must be the ones the
+	// catalog recorded: a catalog from someone else could claim any file (D68).
+	if (
+		plan.action === "rotate" &&
+		(await sha256OfFile(plan.archive.from)) !== current!.signed_sha256
+	)
+		throw new NotReadyError(
+			`${path.basename(plan.archive.from)} beside this file is not the sidecar the tracker wrote: it has changed since. Move or rename it, then sign again.`,
+		);
 	if (plan.action === "rotate" && existsSync(plan.archive.to))
 		throw new NotReadyError(
 			`Cannot set the earlier signature aside: ${path.basename(plan.archive.to)} already exists.`,
@@ -192,7 +203,7 @@ export async function signAsset(
 			toolUsed: opts.toolUsed ?? "",
 			authorName: opts.creatorName ?? meta("author"),
 			organization: opts.organization ?? meta("organization"),
-			identityUrl: meta("cawg_identity_url"),
+			identityUrl: identityUrlOf(project),
 			trainingMiningOptOut: opts.trainingMiningOptOut !== false,
 			generator: GENERATOR,
 		});

@@ -21,7 +21,6 @@ import { createCatalog } from "@provenancetracker/core/catalog/create.ts";
 import {
 	CATALOG_FORMAT,
 	inspectCatalog,
-	prepareConnection,
 	refusalMessage,
 	type CatalogState,
 } from "@provenancetracker/core/catalog/format.ts";
@@ -31,6 +30,7 @@ import {
 	type UpgradeStep,
 } from "@provenancetracker/core/catalog/upgrade.ts";
 import { verifyCatalog } from "@provenancetracker/core/catalog/verify.ts";
+import { openCatalogFile, structureRefusal } from "./catalog-file.ts";
 import type { Machine } from "./machine.ts";
 import { projectEntry, readSettings, updateSettings } from "./settings.ts";
 import { findSyncFolder, type SyncFolder } from "./sync-folders.ts";
@@ -156,7 +156,7 @@ export function placeNewCatalog(
 	const temp = `${catalogPath}.${projectId.slice(0, 8)}.new`;
 	try {
 		write(temp);
-		const db = new DatabaseSync(temp);
+		const db = openCatalogFile(temp);
 		try {
 			const problems = verifyCatalog(db);
 			if (problems.length)
@@ -248,7 +248,7 @@ export function backupCatalog(
 	// VACUUM INTO writes a consistent copy from a live connection, WAL
 	// included, and refuses to overwrite an existing file.
 	db.prepare("VACUUM INTO ?").run(dest);
-	const copy = new DatabaseSync(dest, { readOnly: true });
+	const copy = openCatalogFile(dest, { readOnly: true });
 	try {
 		const check = copy.prepare("PRAGMA integrity_check").get() as {
 			integrity_check: string;
@@ -282,15 +282,71 @@ export class NoCatalogError extends Error {
 }
 
 /**
+ * A catalog with the id of a project this machine already has at another
+ * folder, where that project's catalog still is (D68). The id is all that
+ * ties a catalog to this machine's signing certificate, identity and media
+ * folders, so a second folder with the same id is not given them unasked: it
+ * may be a copy someone altered and handed back. Opening it with `takeOver`
+ * moves them to it. The message states only what was found; each front end
+ * adds its own way to go on (the command line's --take-over, the app's
+ * button).
+ */
+export class ProjectElsewhereError extends Error {
+	projectId: string;
+	/** Where this machine has the project now. */
+	known: string;
+	/** The folder that was asked for. */
+	folder: string;
+	constructor(projectId: string, known: string, folder: string) {
+		super(
+			`This catalog says it is a project this machine already has at ${known}, and that folder still holds its catalog. A project's signing set-up, identity and media folders on this machine go with its id, so they are not handed to a second copy unasked. Nothing was changed.`,
+		);
+		this.name = "ProjectElsewhereError";
+		this.projectId = projectId;
+		this.known = known;
+		this.folder = folder;
+	}
+}
+
+/** Whether a folder still holds the catalog of the project with this id. Reads only. */
+function stillHolds(folder: string, projectId: string): boolean {
+	const catalogPath = catalogPathOf(folder);
+	if (!existsSync(catalogPath)) return false;
+	let db: DatabaseSync | null = null;
+	try {
+		db = openCatalogFile(catalogPath, { readOnly: true });
+		const state = inspectCatalog(db);
+		if (!("format" in state) || structureRefusal(db, state.format))
+			return false;
+		const row = db
+			.prepare("SELECT value FROM meta WHERE key = 'project_id'")
+			.get() as { value: string } | undefined;
+		return row?.value === projectId;
+	} catch {
+		return false;
+	} finally {
+		db?.close();
+	}
+}
+
+/**
  * Open the project in `folder`. Refuses a folder inside a sync folder, a
- * file that is not a catalog, and a catalog newer than this tracker. An
- * older catalog is copied to backups/ and then upgraded.
+ * file that is not a catalog, a catalog newer than this tracker, one whose
+ * structure is not its format's, and (unless `takeOver`) one with the id of
+ * a project this machine has elsewhere. An older catalog is copied to
+ * backups/ and then upgraded.
  */
 export function openProject(
 	folderIn: string,
 	opts: {
 		machine: Machine;
 		now?: string;
+		/**
+		 * This folder is where the project lives now: move this machine's
+		 * signing set-up, identity and media folders for its id here, though the
+		 * folder it was at still holds a catalog with that id.
+		 */
+		takeOver?: boolean;
 		/** For tests: upgrade steps and the format to reach. */
 		upgrade?: { steps: readonly UpgradeStep[]; target: number };
 	},
@@ -304,10 +360,24 @@ export function openProject(
 	if (sync) throw syncRefusal(folder, sync);
 
 	// readOnly first: it never creates a file, and inspecting changes nothing.
-	const look = new DatabaseSync(catalogPath, { readOnly: true });
+	// It also matters for safety: opened for writing, SQLite acts on a journal
+	// file beside the catalog before anything can be checked. Everything that
+	// decides whether to open is read here, and nothing in the catalog runs.
+	const look = openCatalogFile(catalogPath, { readOnly: true });
 	let state: CatalogState;
+	let structure: string | null = null;
+	let lookId: string | undefined;
 	try {
 		state = inspectCatalog(look);
+		if ("format" in state && !refusalMessage(state)) {
+			structure = structureRefusal(look, state.format);
+			if (!structure)
+				lookId = (
+					look
+						.prepare("SELECT value FROM meta WHERE key = 'project_id'")
+						.get() as { value: string } | undefined
+				)?.value;
+		}
 	} finally {
 		look.close();
 	}
@@ -315,15 +385,25 @@ export function openProject(
 		throw new Error(
 			`${catalogPath} is an empty file, not a catalog. Nothing was changed.`,
 		);
-	const refusal = refusalMessage(state);
+	const refusal = refusalMessage(state) ?? structure;
 	if (refusal) throw new Error(`${catalogPath}: ${refusal}`);
 	// This machine's settings are read before anything is written, so a
 	// damaged settings file stops the open before an upgrade changes the catalog.
 	const settings = readSettings(machine.settingsPath);
+	// A project this machine has at another folder, whose catalog is still
+	// there, does not hand its set-up to this one unasked.
+	const known = lookId ? settings.projects[lookId]?.folder : undefined;
+	if (
+		lookId &&
+		known &&
+		known !== folder &&
+		!opts.takeOver &&
+		stillHolds(known, lookId)
+	)
+		throw new ProjectElsewhereError(lookId, known, folder);
 
-	const db = new DatabaseSync(catalogPath);
+	const db = openCatalogFile(catalogPath);
 	try {
-		prepareConnection(db);
 		db.exec("PRAGMA busy_timeout = 5000");
 		db.exec("PRAGMA journal_mode = WAL");
 		const target = opts.upgrade?.target ?? CATALOG_FORMAT;

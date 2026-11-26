@@ -26,7 +26,9 @@ import {
 	refreshTimeline,
 	timelineSegments,
 } from "@provenancetracker/core/catalog/timelines.ts";
+import { inOneRead } from "@provenancetracker/core/catalog/format.ts";
 import { c2paSummaryOf } from "@provenancetracker/core/extraction/c2pa-summary.ts";
+import { isHttpsAddress } from "@provenancetracker/core/catalog/edits.ts";
 import { UNVERIFIED_SIGNER } from "@provenancetracker/core/origin-vocabulary.js";
 import { thumbnailOf } from "@provenancetracker/core/catalog/edits.ts";
 import {
@@ -453,15 +455,24 @@ function withheldBefore(
 	};
 }
 
-/** The CAWG identity address the project's statements carry, or "". */
-function identityUrlOf(project: OpenProject): string {
-	return (
+/**
+ * The CAWG identity address the project's statements carry, or "". It is
+ * signed into the file as a link, so it is held to the rule it is edited
+ * under (https only) again here: a catalog may come from someone else, and
+ * one written another way could hold anything (D68).
+ */
+export function identityUrlOf(project: OpenProject): string {
+	const url =
 		(
 			project.db
 				.prepare("SELECT value FROM meta WHERE key = 'cawg_identity_url'")
 				.get() as { value: string } | undefined
-		)?.value ?? ""
-	);
+		)?.value ?? "";
+	if (url && !isHttpsAddress(url))
+		throw new NotReadyError(
+			"This project's identity link is not a web address starting https://, so it is not signed into a file. Set it again on the project's Settings page.",
+		);
+	return url;
 }
 
 /** The newest place the catalog knows for a content, here or not: its catalog path. */
@@ -923,76 +934,118 @@ export async function signOutput(
 ): Promise<SignedOutput> {
 	const { db } = project;
 	const now = opts.now ?? (() => new Date().toISOString());
-	const asset = db
-		.prepare("SELECT * FROM assets WHERE id = ?")
-		.get(opts.assetId) as Row | undefined;
-	if (!asset) throw new NotReadyError("There is no such asset");
-	// Whether signing is set up here at all is said before anything else.
-	if (!opts.holder) refuseUnlessSetUp(machine, project.projectId);
-
-	const cut = ownContent(project, opts.assetId);
-	const places = placesHere(project, machine);
-	const cutPlace = cut ? places.get(cut)?.[0] : undefined;
-	if (!cut || !cutPlace)
-		throw new NotReadyError(
-			"The output's file is not on this machine. Scan its root, or locate it.",
-		);
-	const timeline = db
-		.prepare(
-			"SELECT id, sequence_name, fps, duration_frames FROM timelines WHERE content_sha256 = ? ORDER BY id DESC LIMIT 1",
-		)
-		.get(cut) as Row | undefined;
-	if (!timeline)
-		throw new NotReadyError(
-			"Import the timeline first: the statement is built from it.",
-		);
-	const statement = db
-		.prepare(
-			"SELECT id, text, author, organization, edited_with FROM statements WHERE asset_id = ? ORDER BY id DESC LIMIT 1",
-		)
-		.get(opts.assetId) as Row | undefined;
-	if (!statement || !String(statement.text ?? "").trim())
-		throw new NotReadyError(
-			"Write and save the creator statement before signing.",
-		);
-
-	const breakdown = refreshTimeline(db, timeline.id as number) as {
-		composition?: unknown;
-	};
-	const segments = timelineSegments(db, timeline.id as number, {
-		refOf: (id) => String(id),
-		segmentIdOf: (id) => id,
-	});
-	const outputRef = String(opts.assetId);
-	const { assets, missing } = placedAssets(
-		project,
-		places,
+	// Everything the manifest says comes from this one read of the catalog,
+	// made before signing writes anything and before it waits for anything:
+	// what is signed is the catalog as it was at one moment, and a write
+	// inside the read is refused.
+	const {
+		asset,
+		cut,
+		cutPlace,
+		timeline,
+		statement,
+		breakdown,
 		segments,
 		outputRef,
-	);
-	if (missing.length)
-		throw new NotReadyError(
-			`These files the timeline places are not on this machine, and signing reads each one: ${missing.join(", ")}`,
-		);
-
-	const thumb = thumbnailHere(project, places, opts.assetId);
-	if (thumb.problem) throw new NotReadyError(thumb.problem);
-
-	// Every file signing reads must be the bytes the catalog knows: the cut,
-	// each source the timeline places, and a sidecar used for one. A file
-	// changed or swapped since its scan would otherwise be signed in under
-	// the class and the review of the one the catalog has.
-	const placedIds = (placedAssetRefs(segments, outputRef) as string[]).map(
-		Number,
-	);
-	const sources = sourcesOf(
-		project,
-		machine,
-		places,
-		opts.assetId,
-		cut,
+		assets,
+		thumb,
 		placedIds,
-	);
+		sources,
+		shown,
+		withheldLast,
+		identityUrl,
+	} = inOneRead(db, () => {
+		const asset = db
+			.prepare("SELECT * FROM assets WHERE id = ?")
+			.get(opts.assetId) as Row | undefined;
+		if (!asset) throw new NotReadyError("There is no such asset");
+		// Whether signing is set up here at all is said before anything else.
+		if (!opts.holder) refuseUnlessSetUp(machine, project.projectId);
+
+		const cut = ownContent(project, opts.assetId);
+		const places = placesHere(project, machine);
+		const cutPlace = cut ? places.get(cut)?.[0] : undefined;
+		if (!cut || !cutPlace)
+			throw new NotReadyError(
+				"The output's file is not on this machine. Scan its root, or locate it.",
+			);
+		const timeline = db
+			.prepare(
+				"SELECT id, sequence_name, fps, duration_frames FROM timelines WHERE content_sha256 = ? ORDER BY id DESC LIMIT 1",
+			)
+			.get(cut) as Row | undefined;
+		if (!timeline)
+			throw new NotReadyError(
+				"Import the timeline first: the statement is built from it.",
+			);
+		const statement = db
+			.prepare(
+				"SELECT id, text, author, organization, edited_with FROM statements WHERE asset_id = ? ORDER BY id DESC LIMIT 1",
+			)
+			.get(opts.assetId) as Row | undefined;
+		if (!statement || !String(statement.text ?? "").trim())
+			throw new NotReadyError(
+				"Write and save the creator statement before signing.",
+			);
+
+		const naming = {
+			refOf: (id: number) => String(id),
+			segmentIdOf: (id: number) => id,
+		};
+		const breakdown = breakdownOf(db, timeline.id as number, naming) as {
+			composition?: unknown;
+		};
+		const segments = timelineSegments(db, timeline.id as number, naming);
+		const outputRef = String(opts.assetId);
+		const { assets, missing } = placedAssets(
+			project,
+			places,
+			segments,
+			outputRef,
+		);
+		if (missing.length)
+			throw new NotReadyError(
+				`These files the timeline places are not on this machine, and signing reads each one: ${missing.join(", ")}`,
+			);
+
+		const thumb = thumbnailHere(project, places, opts.assetId);
+		if (thumb.problem) throw new NotReadyError(thumb.problem);
+
+		// Every file signing reads must be the bytes the catalog knows: the cut,
+		// each source the timeline places, and a sidecar used for one. A file
+		// changed or swapped since its scan would otherwise be signed in under
+		// the class and the review of the one the catalog has.
+		const placedIds = (placedAssetRefs(segments, outputRef) as string[]).map(
+			Number,
+		);
+		const sources = sourcesOf(
+			project,
+			machine,
+			places,
+			opts.assetId,
+			cut,
+			placedIds,
+		);
+		return {
+			asset,
+			cut,
+			cutPlace,
+			timeline,
+			statement,
+			breakdown,
+			segments,
+			outputRef,
+			assets,
+			thumb,
+			placedIds,
+			sources,
+			// What the review showed for each source, and what the last signing
+			// of this edit kept out: compared with what the files carry now.
+			shown: sources.map((s) => shownReveal(project, s)),
+			withheldLast: lastWithheld(project, opts.assetId),
+			identityUrl: identityUrlOf(project),
+		};
+	});
 	for (const s of sources) {
 		if ((await sha256OfFile(s.file!)) !== s.sha)
 			throw new NotReadyError(
@@ -1023,7 +1076,7 @@ export async function signOutput(
 	// before it or the reader changed, would bring in what nobody was shown.
 	const read: SourceReveal[] = [];
 	const unseen: string[] = [];
-	for (const s of sources) {
+	for (const [i, s] of sources.entries()) {
 		const own = await engine.read(s.file!);
 		const side = s.sidecar ? await engine.read(s.file!, s.sidecar.file) : null;
 		const cannot = [own, side].find((r) => r?.status === "unavailable");
@@ -1032,8 +1085,7 @@ export async function signOutput(
 				`Signing a finished edit first reads what each source carries, and nothing here can read it: ${cannot.error}`,
 			);
 		const reveal = revealOfReading(chosenReading(own, side));
-		if (!sameReveal(reveal, shownReveal(project, s) ?? revealOf(null)))
-			unseen.push(s.title);
+		if (!sameReveal(reveal, shown[i] ?? revealOf(null))) unseen.push(s.title);
 		read.push({
 			assetId: s.assetId,
 			title: s.title,
@@ -1054,7 +1106,7 @@ export async function signOutput(
 	let withhold: Withhold;
 	if (opts.withhold === undefined) {
 		const carried = carryWithheld(
-			lastWithheld(project, opts.assetId) ?? { redact: [], leaveOut: [] },
+			withheldLast ?? { redact: [], leaveOut: [] },
 			read,
 		);
 		withhold = carried.withhold;
@@ -1080,7 +1132,6 @@ export async function signOutput(
 	// The manifest is built once the choice is known: a source whose
 	// credentials are left out is not named by its signer in the statement
 	// either (D64).
-	const identityUrl = identityUrlOf(project);
 	const {
 		definition,
 		ingredients,
@@ -1241,6 +1292,9 @@ export async function signOutput(
 		},
 		{ tool: TOOL, now },
 	);
+	// The timeline's stored breakdown is a cache: brought up to date once the
+	// signing is recorded, never before the catalog is read.
+	refreshTimeline(db, timeline.id as number);
 	const root = listRoots(project, machine).find(
 		(r) => r.id === cutPlace.rootId,
 	)!.name;

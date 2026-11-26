@@ -20,9 +20,16 @@ import {
 import { publicExport } from "@provenancetracker/core/catalog/signatures.ts";
 import { validate } from "../../core/test/helpers/json-schema-lite.js";
 import { editRow } from "@provenancetracker/core/catalog/edit.ts";
-import { setThumbnail } from "@provenancetracker/core/catalog/edits.ts";
+import {
+	editSettings,
+	setThumbnail,
+} from "@provenancetracker/core/catalog/edits.ts";
 import { c2patoolPath } from "../src/extract/c2patool.ts";
-import { createProject, openProject } from "../src/project.ts";
+import {
+	createProject,
+	openProject,
+	type OpenProject,
+} from "../src/project.ts";
 import { addRoot } from "../src/roots.ts";
 import { scanProject } from "../src/scan.ts";
 import { extractProject } from "../src/extract.ts";
@@ -677,6 +684,75 @@ describe.skipIf(!haveOpenssl)("previewOutputStatement and signOutput", () => {
 	});
 });
 
+describe.skipIf(!haveOpenssl)("signOutput and the catalog (D68)", () => {
+	const changes = (db: OpenProject["db"]) =>
+		(db.prepare("SELECT total_changes() AS n").get() as { n: number }).n;
+
+	it("writes nothing to the catalog before the film is signed", async () => {
+		const w = await world();
+		const { engine } = stubEngine();
+		// How many rows this connection had changed, each time the engine is
+		// asked to read a source and when it is asked to sign.
+		const seen: number[] = [];
+		const watching: SigningEngine = {
+			...engine,
+			read: async (...args) => {
+				seen.push(changes(w.p.db));
+				return engine.read(...args);
+			},
+			sign: async (args) => {
+				seen.push(changes(w.p.db));
+				return engine.sign(args);
+			},
+		};
+		const before = changes(w.p.db);
+		const r = await signOutput(w.p, w.m, {
+			assetId: w.film.id,
+			engine: watching,
+		});
+		// The cut and the two sources read, then the signing.
+		expect(seen).toEqual([before, before, before, before]);
+		// The signing itself is recorded, and the timeline's cache brought up
+		// to date, afterwards.
+		expect(changes(w.p.db)).toBeGreaterThan(before);
+		const { breakdown } = w.p.db
+			.prepare(
+				"SELECT t.breakdown FROM timelines t JOIN signatures s ON s.source_sha256 = t.content_sha256 WHERE s.id = ?",
+			)
+			.get(r.signatureId) as { breakdown: string };
+		expect(JSON.parse(breakdown)).toHaveProperty("composition");
+	});
+
+	it("signs the catalog as it was when signing began, not as it is changed while the files are read", async () => {
+		const w = await world();
+		const settings = (url: string) =>
+			editSettings(
+				w.p.db,
+				{ cawg_identity_url: url },
+				{ actor: ME, tool: TOOL },
+			);
+		settings("https://example.org/me");
+		const { engine, calls } = stubEngine();
+		let changed = false;
+		const slow: SigningEngine = {
+			...engine,
+			// The first source takes a while to read, and meanwhile the project
+			// is changed from another window.
+			read: async (...args) => {
+				if (!changed) settings("https://example.org/someone-else");
+				changed = true;
+				return engine.read(...args);
+			},
+		};
+		await signOutput(w.p, w.m, { assetId: w.film.id, engine: slow });
+		expect(changed).toBe(true);
+		// The identity link is in the definition the engine signs.
+		const signed = JSON.stringify(calls[0].definition);
+		expect(signed).toContain("https://example.org/me");
+		expect(signed).not.toContain("someone-else");
+	});
+});
+
 describe.skipIf(!haveOpenssl)("signOutput", () => {
 	it("signs a new copy beside the output's file and records it as a version of the output", async () => {
 		const w = await world();
@@ -1167,6 +1243,31 @@ describe.skipIf(!haveOpenssl)("signAsset", () => {
 		expect(
 			w.p.db.prepare("SELECT count(*) AS n FROM signatures").get(),
 		).toEqual({ n: 0 });
+	});
+
+	it("moves an earlier sidecar aside only when its bytes are the ones the catalog recorded (D68)", async () => {
+		const w = await world();
+		const tone = w.id("tone.wav");
+		await signAsset(w.p, w.m, {
+			assetId: tone.id,
+			engine: stubEngine().engine,
+		});
+		// The catalog says the .c2pa beside the file is the tracker's own; the
+		// file there is now something else.
+		writeFileSync(sidecarOf(w), "not what the tracker wrote");
+		await expect(
+			signAsset(w.p, w.m, { assetId: tone.id, engine: stubEngine().engine }),
+		).rejects.toThrow(
+			/tone\.c2pa beside this file is not the sidecar the tracker wrote/,
+		);
+		// It was not renamed, and nothing new was recorded.
+		expect(readFileSync(sidecarOf(w), "utf8")).toBe(
+			"not what the tracker wrote",
+		);
+		expect(existsSync(path.join(w.media, "tone.v1.c2pa"))).toBe(false);
+		expect(
+			w.p.db.prepare("SELECT count(*) AS n FROM signatures").get(),
+		).toEqual({ n: 1 });
 	});
 
 	it("puts the earlier sidecar back when signing fails", async () => {

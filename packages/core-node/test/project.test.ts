@@ -7,6 +7,7 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
+	renameSync,
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
@@ -366,7 +367,9 @@ describe("openProject", () => {
 		const m = t.machine();
 		const made = createProject(t.folder("film"), { name: "Film", machine: m });
 		const moved = path.join(t.tempDir(), "film moved");
-		cpSync(made.folder, moved, { recursive: true });
+		// Moved, not copied: a second copy beside the first is asked about
+		// (foreign-catalog.test.ts).
+		renameSync(made.folder, moved);
 		t.track(openProject(moved, { machine: m }));
 		expect(readSettings(m.settingsPath).projects[made.projectId].folder).toBe(
 			moved,

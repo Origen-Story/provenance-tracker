@@ -762,8 +762,13 @@ export const outputs = {
 			reveals: SourceReveal[];
 			/** What the newest signing of this edit kept out; null before the first. */
 			lastWithheld: WithheldBefore | null;
-			/** Who signed each source that names a signer; the statement leaves out those the last signing left out. */
-			sourceSigners: Array<{ assetId: number; title: string; signer: string }>;
+			/** The signer each source's credentials name, and whether that signature verified; the statement leaves out those the last signing left out. */
+			sourceSigners: Array<{
+				assetId: number;
+				title: string;
+				signer: string;
+				verified: boolean;
+			}>;
 			/** What the cut and the thumbnail carry in their own metadata (D64). */
 			filesCarry: FileCarries[];
 		}>("GET", `/projects/${projectId}/assets/${assetId}/statement-preview`),

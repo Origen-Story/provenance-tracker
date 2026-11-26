@@ -27,6 +27,7 @@ import {
 	timelineSegments,
 } from "@provenancetracker/core/catalog/timelines.ts";
 import { c2paSummaryOf } from "@provenancetracker/core/extraction/c2pa-summary.ts";
+import { UNVERIFIED_SIGNER } from "@provenancetracker/core/origin-vocabulary.js";
 import { thumbnailOf } from "@provenancetracker/core/catalog/edits.ts";
 import {
 	buildCreatorStatement,
@@ -588,11 +589,18 @@ export interface StatementPreview {
 	 */
 	lastWithheld: WithheldBefore | null;
 	/**
-	 * Who signed each source that names a signer, as the statement would say
-	 * it. The statement above leaves out those of the sources the last signing
-	 * left out; this lists them all, so the page can show what a choice changes.
+	 * The signer each source's credentials name, as the statement would say
+	 * it. `verified` is false when that signature could not be verified (D67):
+	 * the name is what the file says, and nobody is known to have signed. The
+	 * statement above leaves out those of the sources the last signing left
+	 * out; this lists them all, so the page can show what a choice changes.
 	 */
-	sourceSigners: Array<{ assetId: number; title: string; signer: string }>;
+	sourceSigners: Array<{
+		assetId: number;
+		title: string;
+		signer: string;
+		verified: boolean;
+	}>;
 	/** What the cut and the thumbnail carry in their own metadata, outside any credentials (D64). */
 	filesCarry: FileCarries[];
 }
@@ -820,10 +828,20 @@ export function previewOutputStatement(
 	}) as Record<string, unknown>;
 	const sourceSigners = ingredientAssetIds.flatMap((id) => {
 		const a = assets.get(String(id));
-		const signer = String(a?.signerName || a?.signedBy || "");
+		const verified = a?.signedBy !== UNVERIFIED_SIGNER;
+		// With no name, a kind of signer ("tool") still says something; "not
+		// verified" on its own names nobody.
+		const signer = String(a?.signerName || (verified && a?.signedBy) || "");
 		const file = String(a?.filePath ?? "");
 		return signer
-			? [{ assetId: id, title: file.split(/[\\/]/).pop() ?? "", signer }]
+			? [
+					{
+						assetId: id,
+						title: file.split(/[\\/]/).pop() ?? "",
+						signer,
+						verified,
+					},
+				]
 			: [];
 	});
 	const filesCarry: FileCarries[] = [];

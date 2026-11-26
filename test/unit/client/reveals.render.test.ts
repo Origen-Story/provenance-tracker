@@ -132,7 +132,7 @@ const filesCarry: FileCarries[] = [
 	},
 ];
 
-const render = (leaveOut: number[] = []) =>
+const render = (leaveOut: number[] = [], verified = true) =>
 	renderToStaticMarkup(
 		createElement(Reveals, {
 			statement,
@@ -140,7 +140,12 @@ const render = (leaveOut: number[] = []) =>
 			signerName: "Example Signer",
 			reveals,
 			sourceSigners: [
-				{ assetId: 2, title: "still.png", signer: "Example Camera Co" },
+				{
+					assetId: 2,
+					title: "still.png",
+					signer: "Example Camera Co",
+					verified,
+				},
 			],
 			filesCarry,
 			choice: { redact: new Set<string>(), leaveOut: new Set(leaveOut) },
@@ -189,7 +194,7 @@ describe("the review before signing, as shown", () => {
 
 	it("lists everything a source's credentials say, what made them, and what cannot be removed on its own", () => {
 		expect(text).toContain(
-			"1 manifest, signed by Example Camera Co · made with Example Camera 2.1 · 3 more that only bind or picture the file",
+			"1 manifest, whose signature names Example Camera Co · made with Example Camera 2.1 · 3 more that only bind or picture the file",
 		);
 		expect(text).toContain("File names: File names it records");
 		expect(text).toContain("Cannot be removed on its own");
@@ -202,6 +207,21 @@ describe("the review before signing, as shown", () => {
 		expect(text).toContain(
 			"Its Content Credentials could not be read (a broken manifest), so what they say cannot be shown here. They can only be left out.",
 		);
+	});
+
+	it("never says a source was signed by a name its credentials give when that signature could not be verified (D67)", () => {
+		const unverified = render([], false);
+		expect(unverified).toContain(
+			"Who the credentials of 1 source name as signer",
+		);
+		expect(unverified).toContain(
+			"still.png: Example Camera Co (that signature could not be verified)",
+		);
+		expect(unverified).not.toContain("Who signed");
+		// What a source's credentials carry is worded the same either way: the
+		// review does not know whether those signatures verify.
+		for (const shown of [text, unverified])
+			expect(shown).not.toContain("signed by");
 	});
 
 	it("no longer names the signer of a source whose credentials are left out", () => {

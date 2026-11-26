@@ -641,6 +641,40 @@ describe.skipIf(!haveOpenssl)("previewOutputStatement and signOutput", () => {
 			.get(r.signatureId) as { statement: string };
 		expect(JSON.parse(signed.statement)).toEqual(preview.statement);
 	});
+
+	it("says of each source's signer whether that signature verified, and names nobody for an unverified one with no name (D67)", async () => {
+		const w = await world();
+		const signers = () =>
+			previewOutputStatement(w.p, w.m, { assetId: w.film.id }).sourceSigners;
+		const said = (name: string, signedBy: string, signerName: string) =>
+			editRow(
+				w.p.db,
+				"assets",
+				w.id(name).id,
+				{ signed_by: signedBy, signer_name: signerName },
+				{ actor: ME },
+			);
+		// As classify records a name from credentials whose signature did not
+		// verify, beside a source signed by a tool that gives no name.
+		said("still.png", "unverified", "Gen Tool");
+		said("tone.wav", "tool", "");
+		expect(signers()).toEqual([
+			{
+				assetId: w.id("still.png").id,
+				title: "still.png",
+				signer: "Gen Tool",
+				verified: false,
+			},
+			{
+				assetId: w.id("tone.wav").id,
+				title: "tone.wav",
+				signer: "tool",
+				verified: true,
+			},
+		]);
+		said("still.png", "unverified", "");
+		expect(signers().map((s) => s.title)).toEqual(["tone.wav"]);
+	});
 });
 
 describe.skipIf(!haveOpenssl)("signOutput", () => {
@@ -1664,7 +1698,12 @@ describe("everything a source says is reviewed, and the signed copy is checked (
 			);
 			const before = previewOutputStatement(w.p, w.m, { assetId: w.film.id });
 			expect(before.sourceSigners).toEqual([
-				{ assetId: still.id, title: "still.png", signer: "Example Camera Co" },
+				{
+					assetId: still.id,
+					title: "still.png",
+					signer: "Example Camera Co",
+					verified: true,
+				},
 			]);
 			const author = before.reveals[0].reveal.items.find(
 				(i) => i.kind === "author",

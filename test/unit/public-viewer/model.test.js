@@ -19,6 +19,7 @@ import {
 	timeStampSentence,
 	withheldSentence,
 	safeLink,
+	recordedCertificate,
 	pageLink,
 	sameOriginAddress,
 	sourceTypeLink,
@@ -45,13 +46,15 @@ const read = (p) => JSON.parse(readFileSync(path.join(ROOT, p), "utf8"));
 const example = read("public-viewer/example/example.provenance.json");
 // The example as format 1 made it, before D57: the format the live site's records are in.
 const exampleV1 = read("test/unit/public-viewer/fixtures/export.v1.json");
+// And as format 2 made it, before D72 added the certificate's fingerprint.
+const exampleV2 = read("test/unit/public-viewer/fixtures/export.v2.json");
 
 describe("the committed example export", () => {
 	it("matches the public export schema", () => {
 		expect(
-			validate(read("spec/public-export.v2.schema.json"), example),
+			validate(read("spec/public-export.v3.schema.json"), example),
 		).toEqual([]);
-		expect(example.formatVersion).toBe(2);
+		expect(example.formatVersion).toBe(3);
 		expect(
 			validate(read("spec/public-export.v1.schema.json"), exampleV1),
 		).toEqual([]);
@@ -496,10 +499,11 @@ describe("small formatters", () => {
 		expect(() => assertViewable({ format: "x" })).toThrow(
 			/not a provenance tracker/,
 		);
-		expect(() => assertViewable({ ...example, formatVersion: 3 })).toThrow(
-			/reads export formats 1 and 2, not 3/,
+		expect(() => assertViewable({ ...example, formatVersion: 4 })).toThrow(
+			/reads export formats 1 to 3, not 4/,
 		);
 		expect(assertViewable(example)).toBe(example);
+		expect(assertViewable(exampleV2)).toBe(exampleV2);
 		expect(assertViewable(exampleV1)).toBe(exampleV1);
 	});
 });
@@ -942,5 +946,53 @@ describe("what an export, or a link to the page, may not do (D71)", () => {
 				"certutil -hashfile <the file you downloaded> SHA256",
 			);
 		}
+	});
+});
+
+describe("export format 3: the signing certificate's fingerprint (D72)", () => {
+	it("reads the fingerprint from a format 3 record, and none from an older one", () => {
+		expect(example.formatVersion).toBe(3);
+		expect(recordedCertificate(example)).toMatch(/^[0-9a-f]{64}$/);
+		expect(recordedCertificate(example)).toBe(example.signer.certificateSha256);
+		expect(recordedCertificate(exampleV2)).toBe("");
+		expect(recordedCertificate(exampleV1)).toBe("");
+		// A format 2 record that happens to carry the field is not believed.
+		expect(
+			recordedCertificate({
+				...exampleV2,
+				signer: { ...exampleV2.signer, certificateSha256: "ab".repeat(32) },
+			}),
+		).toBe("");
+		expect(
+			recordedCertificate({
+				...example,
+				signer: { ...example.signer, certificateSha256: "" },
+			}),
+		).toBe("");
+	});
+
+	it("still reads a format 2 record as before, against its own schema", () => {
+		expect(
+			validate(read("spec/public-export.v2.schema.json"), exampleV2),
+		).toEqual([]);
+		expect(resultsOf(exampleV2).signer).toEqual(exampleV2.signer);
+	});
+
+	it("refuses a format 3 record whose fingerprint is not one", () => {
+		for (const certificateSha256 of [
+			"xyz",
+			"AB".repeat(32),
+			12,
+			null,
+			undefined,
+		])
+			expect(
+				() =>
+					assertViewable({
+						...example,
+						signer: { ...example.signer, certificateSha256 },
+					}),
+				String(certificateSha256),
+			).toThrow(/fingerprint is not one/);
 	});
 });

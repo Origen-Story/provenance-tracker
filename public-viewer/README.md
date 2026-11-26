@@ -2,7 +2,7 @@
 
 A page section that shows a signed film with how it was made: a strip of the timeline coloured by how much generative AI is in each moment, what is playing now, the creator's statement, every tracked source with its credentials, and how to check the signed file yourself.
 
-It reads one file, the **public export** the tracker writes on an output's **Export** tab (`<name>.provenance.json`, format 2 in [`spec/public-export.v2.schema.json`](../spec/public-export.v2.schema.json); format 1, which it also reads, in [`spec/public-export.v1.schema.json`](../spec/public-export.v1.schema.json)). It needs no build step and no dependencies: four ES modules and one stylesheet, served by any static server.
+It reads one file, the **public export** the tracker writes on an output's **Export** tab (`<name>.provenance.json`, format 3 in [`spec/public-export.v3.schema.json`](../spec/public-export.v3.schema.json); formats 1 and 2, which it also reads, beside it). It needs no build step and no dependencies: five ES modules and one stylesheet, served by any static server.
 
 ## Try it
 
@@ -83,16 +83,19 @@ mountViewer(element, {
 
 In a desktop browser, c2pa-web 0.16.1 read the signed 354 MB demo film in about 2 seconds and gave the tracker's own verdict. A phone is untested. Take the newest c2pa-web release at least 14 days old, as the tracker does with its own dependencies.
 
-**Formats.** The viewer reads export formats 1 and 2. Format 2 (D57) shows what the signature says as separate results, never one badge: the film (did its content match what was signed), the signer (whether a reader recognises the certificate, and who issued the time stamp), and the creator's identity when the file carries one, marked self-declared when no recognised issuer vouches for it. Each result says its tone in words as well as colour. A format 1 record has one signature block and no identity, so the viewer shows the film and the signer and says nothing about an identity. A viewer older than format 2 refuses a format 2 export with "This viewer reads export format 1, not 2": update a site's copy of `src/` before publishing a format 2 export ([docs/publishing.md](../docs/publishing.md)).
+**Comparing the certificate (D72).** A format 3 record names the certificate the film was signed with, by its SHA-256 fingerprint. When the page has a reader (`readCredentials`, above) and that reader says the copy's signature validated, the viewer finds the copy's signing certificate with its own code (`src/certificate.js`: MP4, MOV, WAV, PNG and `.c2pa`, read a piece at a time) and compares fingerprints, for the manifest the reader judged. The card then says the copy was signed with the certificate the record names, or with another one, whatever name it carries. A name, an issuer and a serial number can be put into any certificate, which is all a browser reader reports; a fingerprint cannot. The viewer stops, and says the certificates were not compared, whenever a file could be read two ways. Without a reader nothing is compared: a certificate is public, and finding it in a file whose signature nobody checked would show nothing.
+
+**Formats.** The viewer reads export formats 1 to 3. Format 3 (D72) is format 2 with the signing certificate's fingerprint. Format 2 (D57) shows what the signature says as separate results, never one badge: the film (did its content match what was signed), the signer (whether a reader recognises the certificate, and who issued the time stamp), and the creator's identity when the file carries one, marked self-declared when no recognised issuer vouches for it. Each result says its tone in words as well as colour. A format 1 record has one signature block and no identity, so the viewer shows the film and the signer and says nothing about an identity. A viewer older than format 2 refuses a format 2 export with "This viewer reads export format 1, not 2": update a site's copy of `src/` before publishing a format 2 export ([docs/publishing.md](../docs/publishing.md)).
 
 ## Files
 
-| File             |                                                                                                                 |
-| ---------------- | --------------------------------------------------------------------------------------------------------------- |
-| `src/model.js`   | pure: sections, shares, the plain-language sentences, the verdict wording. Tested in `test/unit/public-viewer/` |
-| `src/sha256.js`  | pure: SHA-256 a piece at a time, for checking a copy a visitor picks (D58). Tested against Node's own hash      |
-| `src/players.js` | adapters for a `<video>`, a YouTube embed, and a clock with no video                                            |
-| `src/viewer.js`  | builds the page section                                                                                         |
-| `viewer.css`     | all styles, scoped under `.ptv`                                                                                 |
-| `index.html`     | the demo, for a local server; it takes files only from its own address                                          |
-| `example/`       | the made-up export and the script that makes it                                                                 |
+| File                 |                                                                                                                                                    |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/model.js`       | pure: sections, shares, the plain-language sentences, the verdict wording. Tested in `test/unit/public-viewer/`                                    |
+| `src/sha256.js`      | pure: SHA-256 a piece at a time, for checking a copy a visitor picks (D58). Tested against Node's own hash                                         |
+| `src/certificate.js` | finds the signing certificate inside a copy, to compare its fingerprint with the record's (D72). Tested against files signed with the real library |
+| `src/players.js`     | adapters for a `<video>`, a YouTube embed, and a clock with no video                                                                               |
+| `src/viewer.js`      | builds the page section                                                                                                                            |
+| `viewer.css`         | all styles, scoped under `.ptv`                                                                                                                    |
+| `index.html`         | the demo, for a local server; it takes files only from its own address                                                                             |
+| `example/`           | the made-up export and the script that makes it                                                                                                    |

@@ -38,6 +38,11 @@ describe("the viewer, drawn", () => {
 		// "Checks out" is kept for a check the page makes on a visitor's copy.
 		expect(text).not.toContain("Checks out");
 		expect(text).toContain("The record names Example Studio");
+		// The certificate the record names, by its fingerprint (D72).
+		expect(text).toContain("Signing certificate");
+		expect(text.replaceAll(" ", "")).toContain(
+			example().signer.certificateSha256,
+		);
 		expect(links).toContain(
 			"https://media.example.org/films/morning-market.signed.v1.mp4",
 		);

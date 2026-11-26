@@ -265,7 +265,7 @@ describe.skipIf(!haveOpenssl)("signing through the API", () => {
 				await w.call("GET", `/signatures/${signatureId}/public-export`),
 			),
 		).toMatchObject({
-			formatVersion: 2,
+			formatVersion: 3,
 			signedFile: { url: "https://media.example.org/film.signed.v1.mp4" },
 			page: { url: "https://example.org/films/demo" },
 			// The stand-in engine reads nothing back, so nothing was checked.

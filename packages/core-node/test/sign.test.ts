@@ -19,6 +19,7 @@ import {
 } from "@provenancetracker/core/catalog/timelines.ts";
 import { publicExport } from "@provenancetracker/core/catalog/signatures.ts";
 import { validate } from "../../core/test/helpers/json-schema-lite.js";
+import { signingCertificate } from "../../../public-viewer/src/certificate.js";
 import { editRow } from "@provenancetracker/core/catalog/edit.ts";
 import {
 	editSettings,
@@ -1017,15 +1018,32 @@ describe.each(ENGINES)("signOutput with $name", ({ name, recorded, ready }) => {
 						"..",
 						"..",
 						"spec",
-						"public-export.v2.schema.json",
+						"public-export.v3.schema.json",
 					),
 					"utf8",
 				),
 			);
 			expect(validate(schema, data)).toEqual([]);
 			// Three results, read apart (D57). A throwaway certificate, no identity.
+			// The record names the certificate by its fingerprint (D72), and
+			// the public page's own code finds that certificate in the signed
+			// file, in the manifest the reader calls active.
+			const fingerprint = (await certificateInfo(w.cert!.certificate))
+				.fingerprint;
+			expect(
+				(data as { signer: { certificateSha256: string } }).signer
+					.certificateSha256,
+			).toBe(fingerprint);
+			expect(
+				await signingCertificate(
+					new Blob([readFileSync(path.join(w.media, r.path))]),
+				),
+			).toEqual({
+				label: JSON.parse(s.report as string).active_manifest,
+				sha256: fingerprint,
+			});
 			expect(data).toMatchObject({
-				formatVersion: 2,
+				formatVersion: 3,
 				file: { status: "matches", hashVerified: true },
 				signer: { status: "unrecognised_issuer" },
 				identity: null,

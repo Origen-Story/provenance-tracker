@@ -37,6 +37,9 @@ import {
 	copyVerdict,
 	readCopyCredentials,
 	credentialVerdict,
+	recordedCertificate,
+	shouldCompareCertificate,
+	compareCertificate,
 	TONE_WORDS,
 	RECORD_TONE_WORDS,
 	RECORD_NOTE,
@@ -53,6 +56,7 @@ import {
 } from "./model.js";
 import { videoPlayer, youtubePlayer, clockPlayer } from "./players.js";
 import { hashBlob } from "./sha256.js";
+import { signingCertificate, NotSure } from "./certificate.js";
 
 let checks = 0;
 
@@ -1230,6 +1234,16 @@ class Viewer {
 							? "none"
 							: `${s.commonName || "unnamed"}${s.issuer ? `, issued by ${s.issuer}` : ""}`,
 					),
+					recordedCertificate(exp)
+						? [
+								h("dt", {}, "Signing certificate"),
+								h(
+									"dd",
+									{ class: "ptv-mono", title: recordedCertificate(exp) },
+									`SHA-256 ${groupHash(recordedCertificate(exp))}`,
+								),
+							]
+						: null,
 					h("dt", {}, "Algorithm"),
 					h("dd", { class: "ptv-mono" }, s.algorithm || "–"),
 					h("dt", {}, "Time stamp"),
@@ -1353,10 +1367,31 @@ class Viewer {
 			try {
 				const report = await read(file);
 				if (mine !== reading) return;
+				const said = readCopyCredentials(report);
+				// The certificate itself, found by this page, when the record
+				// names one and the reader said the signature validated (D72).
+				let found = null;
+				if (shouldCompareCertificate(said, this.exp)) {
+					try {
+						found = await signingCertificate(file);
+					} catch (err) {
+						found = {
+							error:
+								err instanceof NotSure
+									? err.message
+									: "the file could not be read for it",
+						};
+					}
+					if (mine !== reading) return;
+				}
 				inside.replaceChildren(
 					card(
 						"Its Content Credentials",
-						credentialVerdict(readCopyCredentials(report), this.exp),
+						credentialVerdict(
+							said,
+							this.exp,
+							compareCertificate(said, found, this.exp),
+						),
 					),
 				);
 			} catch (err) {

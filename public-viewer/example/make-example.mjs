@@ -341,6 +341,9 @@ const exported = buildPublicExport({
 			.update("provenance-tracker example film")
 			.digest("hex"),
 		signedSize: 412345678,
+		certificateSha256: createHash("sha256")
+			.update("provenance-tracker example certificate")
+			.digest("hex"),
 		statement,
 		report,
 		createdAt: "2026-11-14T09:30:05Z",

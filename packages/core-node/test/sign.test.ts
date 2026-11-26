@@ -25,14 +25,17 @@ import { c2patoolPath } from "../src/extract/c2patool.ts";
 import { createProject, openProject } from "../src/project.ts";
 import { addRoot } from "../src/roots.ts";
 import { scanProject } from "../src/scan.ts";
+import { extractProject } from "../src/extract.ts";
 import { certificateInfo } from "../src/sign/certificates.ts";
 import { signingEngineFor } from "../src/sign/engines/index.ts";
 import {
 	loadLibrary,
 	PINNED_BINARY,
 	readStore,
+	type LoadedLibrary,
 } from "../src/extract/c2pa-library.ts";
 import { interpretReport } from "@provenancetracker/core/manifest/verify.js";
+import { makeObservation } from "@provenancetracker/core/extraction/observation.ts";
 import { readIdentity } from "@provenancetracker/core/manifest/identity.ts";
 import { signAsset } from "../src/sign/sign-asset.ts";
 import { signWithLibrary } from "../src/sign/engines/library.ts";
@@ -54,6 +57,11 @@ import { TOOL } from "../src/tool.ts";
 import { devCertificate, haveOpenssl, OPENSSL } from "./helpers/cert.ts";
 import { memoryHolder } from "./helpers/holder.ts";
 import { machinesForTests } from "./helpers/machine.ts";
+import {
+	libraryReaders,
+	noCredentials,
+	soundReport,
+} from "./helpers/readers.ts";
 
 const { machine, folder, track } = machinesForTests();
 const ME = { kind: "person" as const, name: "Test Person" };
@@ -124,6 +132,9 @@ async function world(opts: { signing?: boolean; statement?: boolean } = {}) {
 	const p = track(openProject(path.join(dir, "Demo"), { machine: m }));
 	addRoot(p, m, { name: "media", folder: media, actor: ME });
 	await scanProject(p, m);
+	// Read, as a project's files are before anything is signed: none of these
+	// carries credentials.
+	await extractProject(p, m, { readers: [noCredentials] });
 	const id = (name: string) =>
 		p.db
 			.prepare(
@@ -150,45 +161,48 @@ async function world(opts: { signing?: boolean; statement?: boolean } = {}) {
 		matchConfidence: 1,
 		...over,
 	});
-	writeTimeline(
-		p.db,
-		{
-			outputAssetId: film.id,
-			contentSha256: film.sha256,
-			format: "xmeml",
-			formatVersion: "4",
-			fileName: "cut.xml",
-			fileSha256: "1".repeat(64),
-			sequence: {
-				name: "Cut",
-				timebase: 25,
-				ntsc: false,
-				fps: 25,
-				durationFrames: 25,
-				width: 2,
-				height: 2,
+	/** The cut's timeline, as an import writes it: again for a re-rendered cut. */
+	const cutTimeline = (contentSha256: string) =>
+		writeTimeline(
+			p.db,
+			{
+				outputAssetId: film.id,
+				contentSha256,
+				format: "xmeml",
+				formatVersion: "4",
+				fileName: "cut.xml",
+				fileSha256: "1".repeat(64),
+				sequence: {
+					name: "Cut",
+					timebase: 25,
+					ntsc: false,
+					fps: 25,
+					durationFrames: 25,
+					width: 2,
+					height: 2,
+				},
+				notes: [],
+				segments: [
+					seg({
+						clipId: "v1",
+						name: "still.png",
+						sourceKey: "f1",
+						sourceName: "still.png",
+						matchedAssetRef: String(id("still.png").id),
+					}),
+					seg({
+						clipId: "a1",
+						name: "tone.wav",
+						trackKind: "audio",
+						sourceKey: "f2",
+						sourceName: "tone.wav",
+						matchedAssetRef: String(id("tone.wav").id),
+					}),
+				],
 			},
-			notes: [],
-			segments: [
-				seg({
-					clipId: "v1",
-					name: "still.png",
-					sourceKey: "f1",
-					sourceName: "still.png",
-					matchedAssetRef: String(id("still.png").id),
-				}),
-				seg({
-					clipId: "a1",
-					name: "tone.wav",
-					trackKind: "audio",
-					sourceKey: "f2",
-					sourceName: "tone.wav",
-					matchedAssetRef: String(id("tone.wav").id),
-				}),
-			],
-		},
-		{ tool: TOOL },
-	);
+			{ tool: TOOL },
+		);
+	cutTimeline(film.sha256);
 	// A person has said what the sources are, as signing a source asset needs.
 	for (const n of ["tone.wav", "still.png"])
 		editRow(
@@ -209,8 +223,103 @@ async function world(opts: { signing?: boolean; statement?: boolean } = {}) {
 				);
 	const cert = opts.signing === false ? null : devCertificate(dir);
 	if (cert) await setSigning(m, p.projectId, cert);
-	return { m, p, dir, media, film, statementId, cert, id };
+	return { m, p, dir, media, film, statementId, cert, id, cutTimeline };
 }
+
+type World = Awaited<ReturnType<typeof world>>;
+
+/** A manifest as a camera app or a generator signs one, naming who made the file. */
+const madeBy = (title: string, author: string) => ({
+	claim_generator_info: [{ name: "example-camera-app", version: "1" }],
+	title,
+	assertions: [
+		{
+			label: "c2pa.actions.v2",
+			data: {
+				actions: [
+					{
+						action: "c2pa.created",
+						digitalSourceType:
+							"http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation",
+					},
+				],
+			},
+		},
+		{
+			label: "stds.schema-org.CreativeWork",
+			data: {
+				"@context": "https://schema.org",
+				"@type": "CreativeWork",
+				author: [{ "@type": "Person", name: author }],
+			},
+		},
+	],
+});
+
+/**
+ * Give a file in the media folder credentials of its own, naming its author,
+ * in the file itself or in a .c2pa sidecar beside it. Nothing is scanned:
+ * the catalog still knows the file as it was.
+ */
+async function giveCredentials(
+	w: World,
+	loaded: LoadedLibrary,
+	name: string,
+	author: string,
+	opts: {
+		sidecar?: boolean;
+		/** More that its credentials say, beside who made it. */
+		assertions?: Array<{ label: string; data: unknown }>;
+	} = {},
+) {
+	const file = path.join(w.media, name);
+	const definition = madeBy(name, author);
+	const made = path.join(
+		mkdtempSync(path.join(w.dir, "made-")),
+		opts.sidecar ? `${path.parse(name).name}.c2pa` : name,
+	);
+	await signWithLibrary(loaded, {
+		inputPath: file,
+		outputPath: made,
+		definition: {
+			...definition,
+			assertions: [...definition.assertions, ...(opts.assertions ?? [])],
+		},
+		ingredients: [],
+		holder: await keyFilesHolder({
+			certificatePath: w.cert!.certificate,
+			privateKeyPath: w.cert!.privateKey,
+		}),
+		sidecar: opts.sidecar,
+	});
+	copyFileSync(
+		made,
+		opts.sidecar ? path.join(w.media, path.basename(made)) : file,
+	);
+}
+
+/** Scan, and read every file with the C2PA library, as a project's files are. */
+async function scanAndRead(w: World, loaded: LoadedLibrary) {
+	await scanProject(w.p, w.m);
+	await extractProject(w.p, w.m, { readers: libraryReaders(loaded) });
+}
+
+/** The content the catalog has live at a path now. */
+const liveAt = (w: World, name: string) =>
+	w.p.db
+		.prepare(
+			`SELECT c.asset_id AS id, c.sha256 FROM contents c JOIN locations l ON l.content_sha256 = c.sha256
+			 WHERE l.path = ? AND l.gone_run_id IS NULL`,
+		)
+		.get(name) as { id: number; sha256: string };
+
+type ReadBack = {
+	active_manifest: string;
+	manifests: Record<
+		string,
+		{ assertions: Array<{ label: string; data: unknown }> }
+	>;
+};
 
 /** A poster image found by a scan and picked as the edit's thumbnail (D52). */
 async function withPoster(w: Awaited<ReturnType<typeof world>>) {
@@ -245,6 +354,9 @@ function stubEngine() {
 		name: "stub",
 		version: "1.0",
 		readEmbedded: async () => null,
+		// A stand-in reads every source as carrying no credentials.
+		read: async () =>
+			makeObservation({ kind: "c2pa", extractor: "stub", status: "absent" }),
 		sign: async (args) => {
 			calls.push(args);
 			copyFileSync(args.inputPath, args.outputPath);
@@ -255,7 +367,7 @@ function stubEngine() {
 					Buffer.from(`signed ${calls.length}`),
 				]),
 			);
-			return { report: null };
+			return { report: soundReport() };
 		},
 	};
 	return { engine, calls };
@@ -997,64 +1109,9 @@ describe("keeping a source's details out of the signed film (D62)", () => {
 			if ("unavailable" in loaded) throw new Error(loaded.unavailable);
 			// still.png gains credentials of its own, naming its author, as a
 			// camera app or a generator would sign it; a rescan sees a re-render.
-			const still = path.join(w.media, "still.png");
-			const signedStill = path.join(w.dir, "still-signed.png");
-			const holder = await keyFilesHolder({
-				certificatePath: w.cert!.certificate,
-				privateKeyPath: w.cert!.privateKey,
-			});
-			await signWithLibrary(loaded, {
-				inputPath: still,
-				outputPath: signedStill,
-				definition: {
-					claim_generator_info: [{ name: "example-camera-app", version: "1" }],
-					title: "still.png",
-					assertions: [
-						{
-							label: "c2pa.actions.v2",
-							data: {
-								actions: [
-									{
-										action: "c2pa.created",
-										digitalSourceType:
-											"http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation",
-									},
-								],
-							},
-						},
-						{
-							label: "stds.schema-org.CreativeWork",
-							data: {
-								"@context": "https://schema.org",
-								"@type": "CreativeWork",
-								author: [{ "@type": "Person", name: "A. Person" }],
-							},
-						},
-					],
-				},
-				ingredients: [],
-				holder,
-			});
-			copyFileSync(signedStill, still);
-			await scanProject(w.p, w.m);
-			// The re-render's content: the one live at that path now.
-			const stillAsset = w.p.db
-				.prepare(
-					`SELECT c.asset_id AS id, c.sha256 FROM contents c JOIN locations l ON l.content_sha256 = c.sha256
-					 WHERE l.path = 'still.png' AND l.gone_run_id IS NULL`,
-				)
-				.get() as { id: number; sha256: string };
-			w.p.db
-				.prepare(
-					`INSERT INTO observations (content_sha256, run_id, kind, extractor, extractor_version, status, data, observed_at)
-					 VALUES (?, 1, 'c2pa', 'c2pa-node', ?, 'ok', ?, ?)`,
-				)
-				.run(
-					stillAsset.sha256,
-					loaded.version,
-					JSON.stringify(await readStore(loaded, still)),
-					new Date().toISOString(),
-				);
+			await giveCredentials(w, loaded, "still.png", "A. Person");
+			await scanAndRead(w, loaded);
+			const stillAsset = liveAt(w, "still.png");
 
 			// The preview says what it would reveal.
 			const preview = previewOutputStatement(w.p, w.m, { assetId: w.film.id });
@@ -1105,7 +1162,7 @@ describe("keeping a source's details out of the signed film (D62)", () => {
 			);
 			expect(
 				previewOutputStatement(w.p, w.m, { assetId: w.film.id }).lastWithheld,
-			).toEqual({ redact: [author.uri], leaveOut: [] });
+			).toMatchObject({ redact: [author.uri], leaveOut: [], notes: [] });
 
 			// Not said: as the last signing, never quietly revealed again.
 			const r2 = await signOutput(w.p, w.m, { assetId: w.film.id, engine });
@@ -1165,6 +1222,581 @@ describe("keeping a source's details out of the signed film (D62)", () => {
 				).rejects.toThrow(/needs the C2PA library/);
 		},
 		180000,
+	);
+});
+
+describe("what a signing remembers, and what it reads first (D63)", () => {
+	const library = async () => {
+		const loaded = await loadLibrary({}, { remoteManifests: false });
+		if ("unavailable" in loaded) throw new Error(loaded.unavailable);
+		return loaded;
+	};
+	const readBack = async (w: World, loaded: LoadedLibrary, rel: string) =>
+		(await readStore(loaded, path.join(w.media, rel))) as ReadBack;
+
+	it.skipIf(!haveOpenssl || !haveLibrary)(
+		"keeps out of a re-rendered cut what the last signing kept out, and says so",
+		async () => {
+			const w = await world();
+			const loaded = await library();
+			const engine = await signingEngineFor(w.m, "library");
+			// The cut carries credentials naming who exported it, as an editor's
+			// export does.
+			await giveCredentials(w, loaded, "export.png", "A. Person");
+			await scanAndRead(w, loaded);
+			w.cutTimeline(liveAt(w, "export.png").sha256);
+			const first = previewOutputStatement(w.p, w.m, { assetId: w.film.id });
+			const author = first.reveals
+				.find((r) => r.parent)!
+				.reveal.items.find((i) => i.kind === "author")!;
+			const r1 = await signOutput(w.p, w.m, {
+				assetId: w.film.id,
+				engine,
+				withhold: { redact: [author.uri], leaveOut: [] },
+			});
+			expect(r1).toMatchObject({
+				withheld: { redacted: 1, leftOut: 0 },
+				notes: [],
+			});
+			expect(JSON.stringify(await readBack(w, loaded, r1.path))).not.toContain(
+				"A. Person",
+			);
+
+			// The cut is rendered again and exported again: new bytes, signed
+			// afresh, so the manifest that names the author has a new label and
+			// the address remembered from the first signing matches nothing.
+			tinyPng(path.join(w.media, "export.png"), [9, 9, 9]);
+			await giveCredentials(w, loaded, "export.png", "A. Person");
+			await scanAndRead(w, loaded);
+			w.cutTimeline(liveAt(w, "export.png").sha256);
+			const second = previewOutputStatement(w.p, w.m, { assetId: w.film.id });
+			const again = second.reveals
+				.find((r) => r.parent)!
+				.reveal.items.find((i) => i.kind === "author")!;
+			expect(again.uri).not.toBe(author.uri);
+			// The page starts from the choice, at its new address, and says why.
+			expect(second.lastWithheld).toMatchObject({
+				redact: [again.uri],
+				redactions: [
+					{ what: "an author's name in export.png", now: [again.uri] },
+				],
+			});
+			expect(second.lastWithheld!.notes).toEqual([
+				expect.stringMatching(
+					/kept out an author's name in export\.png.*kept out of this copy too/,
+				),
+			]);
+
+			// A signing that states no choice (the command line) keeps it out too.
+			const r2 = await signOutput(w.p, w.m, { assetId: w.film.id, engine });
+			expect(r2.withheld).toEqual({ redacted: 1, leftOut: 0 });
+			expect(r2.notes).toEqual(second.lastWithheld!.notes);
+			expect(JSON.stringify(await readBack(w, loaded, r2.path))).not.toContain(
+				"A. Person",
+			);
+			// And it is remembered by source, assertion and kind for the next.
+			const stored = JSON.parse(
+				(
+					w.p.db
+						.prepare("SELECT definition FROM signatures WHERE id = ?")
+						.get(r2.signatureId) as { definition: string }
+				).definition,
+			);
+			expect(stored.redactions_by_source).toEqual([
+				{
+					asset_id: w.film.id,
+					title: "export.png",
+					label: "stds.schema-org.CreativeWork",
+					kind: "author",
+					uri: again.uri,
+				},
+			]);
+
+			// Rendered again with nothing naming anyone: the choice has nothing
+			// left to apply to, and the signing says that it dropped it.
+			tinyPng(path.join(w.media, "export.png"), [7, 7, 7]);
+			await scanAndRead(w, loaded);
+			w.cutTimeline(liveAt(w, "export.png").sha256);
+			const r3 = await signOutput(w.p, w.m, { assetId: w.film.id, engine });
+			expect(r3.withheld).toEqual({ redacted: 0, leftOut: 0 });
+			expect(r3.notes).toEqual([expect.stringMatching(/no longer carries it/)]);
+		},
+		180000,
+	);
+
+	it.skipIf(!haveOpenssl || !haveLibrary)(
+		"refuses a source whose credentials the review never showed, until it has been read",
+		async () => {
+			const w = await world();
+			const loaded = await library();
+			const engine = await signingEngineFor(w.m, "library");
+			// still.png gains credentials and is scanned, but not read.
+			await giveCredentials(w, loaded, "still.png", "A. Person");
+			await scanProject(w.p, w.m);
+			const unread = previewOutputStatement(w.p, w.m, { assetId: w.film.id });
+			expect(unread.reveals).toEqual([]);
+			expect(unread.blockers).toEqual([
+				expect.stringMatching(
+					/^Not read for Content Credentials yet.*still\.png/,
+				),
+			]);
+			await expect(
+				signOutput(w.p, w.m, { assetId: w.film.id, engine }),
+			).rejects.toThrow(/still\.png carries .* is not what the review showed/);
+			expect(existsSync(path.join(w.media, "export.signed.v1.png"))).toBe(
+				false,
+			);
+
+			// Read: the review lists it, and what was listed is what goes in.
+			await extractProject(w.p, w.m, { readers: libraryReaders(loaded) });
+			const read = previewOutputStatement(w.p, w.m, { assetId: w.film.id });
+			expect(read.blockers).toEqual([]);
+			expect(read.reveals.map((r) => r.title)).toEqual(["still.png"]);
+			const r = await signOutput(w.p, w.m, { assetId: w.film.id, engine });
+			expect(JSON.stringify(await readBack(w, loaded, r.path))).toContain(
+				"A. Person",
+			);
+		},
+		180000,
+	);
+
+	it.skipIf(!haveOpenssl)(
+		"refuses a source changed since its scan, before anything is written",
+		async () => {
+			const w = await world();
+			const { engine, calls } = stubEngine();
+			// The same name, other bytes: the catalog knows the file as it was.
+			tinyPng(path.join(w.media, "still.png"), [1, 2, 3]);
+			await expect(
+				signOutput(w.p, w.m, { assetId: w.film.id, engine }),
+			).rejects.toThrow(/still\.png has changed since it was scanned/);
+			expect(calls).toEqual([]);
+			await scanProject(w.p, w.m);
+			await extractProject(w.p, w.m, { readers: [noCredentials] });
+			await signOutput(w.p, w.m, { assetId: w.film.id, engine });
+			expect(calls).toHaveLength(1);
+		},
+		60000,
+	);
+
+	it.skipIf(!haveOpenssl || !haveLibrary)(
+		"uses a .c2pa sidecar only once the catalog knows it, and only with the bytes it knows",
+		async () => {
+			const w = await world();
+			const loaded = await library();
+			const engine = await signingEngineFor(w.m, "library");
+			// A .c2pa lands beside a source after the scan: nobody has seen it.
+			await giveCredentials(w, loaded, "tone.wav", "A. Person", {
+				sidecar: true,
+			});
+			const r1 = await signOutput(w.p, w.m, { assetId: w.film.id, engine });
+			const one = await readBack(w, loaded, r1.path);
+			expect(Object.keys(one.manifests)).toEqual([one.active_manifest]);
+			expect(JSON.stringify(one)).not.toContain("A. Person");
+
+			// Scanned and read: the review lists what it says, and it travels.
+			await scanAndRead(w, loaded);
+			expect(
+				previewOutputStatement(w.p, w.m, {
+					assetId: w.film.id,
+				}).reveals.map((r) => r.title),
+			).toEqual(["tone.wav"]);
+			const r2 = await signOutput(w.p, w.m, { assetId: w.film.id, engine });
+			const two = await readBack(w, loaded, r2.path);
+			expect(Object.keys(two.manifests)).toHaveLength(2);
+			expect(JSON.stringify(two)).toContain("A. Person");
+
+			// Replaced after the scan: refused.
+			writeFileSync(path.join(w.media, "tone.c2pa"), "another sidecar");
+			await expect(
+				signOutput(w.p, w.m, { assetId: w.film.id, engine }),
+			).rejects.toThrow(/tone\.c2pa has changed since it was scanned/);
+		},
+		180000,
+	);
+
+	it.skipIf(!haveOpenssl)(
+		"signs credentials nobody could read only when they are left out, and nothing when nothing can read",
+		async () => {
+			const w = await world();
+			const still = w.id("still.png");
+			const failed = (file: string) =>
+				makeObservation({
+					kind: "c2pa",
+					extractor: "stub",
+					version: "1.0",
+					...(path.basename(file) === "still.png"
+						? { status: "unreadable", error: "a broken manifest" }
+						: { status: "absent" }),
+				});
+			// `extract` could not read still.png's credentials, and neither can signing.
+			await extractProject(w.p, w.m, {
+				again: true,
+				readers: [{ ...noCredentials, read: async (f) => failed(f) }],
+			});
+			const { engine, calls } = stubEngine();
+			// Leaving credentials out is the library engine's to do.
+			const reading = {
+				...engine,
+				name: "c2pa-node",
+				read: async (f: string) => failed(f),
+			};
+			expect(
+				previewOutputStatement(w.p, w.m, { assetId: w.film.id }).reveals,
+			).toMatchObject([
+				{ assetId: still.id, reveal: { unreadable: "a broken manifest" } },
+			]);
+			await expect(
+				signOutput(w.p, w.m, { assetId: w.film.id, engine: reading }),
+			).rejects.toThrow(
+				/still\.png has Content Credentials that could not be read/,
+			);
+			expect(calls).toEqual([]);
+			await signOutput(w.p, w.m, {
+				assetId: w.film.id,
+				engine: reading,
+				withhold: { redact: [], leaveOut: [still.id] },
+			});
+			expect(calls[0].withhold).toEqual({ redact: [], leaveOut: ["ing-1"] });
+
+			// A machine with no reader at all (c2patool without the library).
+			const blind = {
+				...engine,
+				read: async () =>
+					makeObservation({
+						kind: "c2pa",
+						extractor: "stub",
+						status: "unavailable",
+						error: "The C2PA library is not installed.",
+					}),
+			};
+			await expect(
+				signOutput(w.p, w.m, { assetId: w.film.id, engine: blind }),
+			).rejects.toThrow(
+				/first reads what each source carries, and nothing here can read it: The C2PA library is not installed\./,
+			);
+		},
+		60000,
+	);
+});
+
+describe("everything a source says is reviewed, and the signed copy is checked (D64)", () => {
+	const library = async () => {
+		const loaded = await loadLibrary({}, { remoteManifests: false });
+		if ("unavailable" in loaded) throw new Error(loaded.unavailable);
+		return loaded;
+	};
+	const readBack = async (w: World, loaded: LoadedLibrary, rel: string) =>
+		(await readStore(loaded, path.join(w.media, rel))) as ReadBack;
+	const signerOf = (w: World, signatureId: number) =>
+		(
+			publicExport(w.p.db, signatureId, {
+				generatedAt: "2026-11-26T00:00:00.000Z",
+				generator: { name: "provenance-tracker", version: "0" },
+			}).data as {
+				ingredients: Array<{ title: string; signerName: string }>;
+			}
+		).ingredients.find((i) => i.title === "still.png")!.signerName;
+
+	it.skipIf(!haveOpenssl || !haveLibrary)(
+		"lists a location in a C2PA metadata assertion, and takes it out of the film",
+		async () => {
+			const w = await world();
+			const loaded = await library();
+			const engine = await signingEngineFor(w.m, "library");
+			// Where current cameras put a location: the C2PA metadata assertion.
+			await giveCredentials(w, loaded, "still.png", "A. Person", {
+				assertions: [
+					{
+						label: "c2pa.metadata",
+						data: {
+							"@context": { exif: "http://ns.adobe.com/exif/1.0/" },
+							"exif:GPSLatitude": "41,24.2028N",
+							"exif:GPSLongitude": "2,10.4418E",
+						},
+					},
+					{ label: "com.example.note", data: { text: "shot at home" } },
+				],
+			});
+			await scanAndRead(w, loaded);
+			const { reveal } = previewOutputStatement(w.p, w.m, {
+				assetId: w.film.id,
+			}).reveals.find((r) => r.title === "still.png")!;
+			const where = reveal.items.find((i) => i.label === "c2pa.metadata")!;
+			expect(where).toMatchObject({
+				kind: "location",
+				values: ["41,24.2028N", "2,10.4418E"],
+				redactable: true,
+			});
+			// Nothing is only counted that says something: the custom assertion
+			// and the file name the manifest records are listed too.
+			expect(reveal.items.map((i) => [i.kind, i.redactable])).toEqual([
+				["names", false],
+				["author", true],
+				["location", true],
+				["other", true],
+			]);
+			expect(reveal.generators).toEqual(["example-camera-app 1"]);
+
+			const r = await signOutput(w.p, w.m, {
+				assetId: w.film.id,
+				engine,
+				withhold: { redact: [where.uri], leaveOut: [] },
+			});
+			expect(r.withheld).toEqual({ redacted: 1, leftOut: 0 });
+			const film = JSON.stringify(await readBack(w, loaded, r.path));
+			expect(film).not.toContain("41,24.2028N");
+			// What was not chosen stays.
+			expect(film).toContain("shot at home");
+		},
+		180000,
+	);
+
+	it.skipIf(!haveOpenssl || !haveLibrary)(
+		"names no signer, in the statement or the public record, for a source whose credentials are left out",
+		async () => {
+			const w = await world();
+			const loaded = await library();
+			const engine = await signingEngineFor(w.m, "library");
+			await giveCredentials(w, loaded, "still.png", "A. Person");
+			await scanAndRead(w, loaded);
+			const still = liveAt(w, "still.png");
+			// As classify records who signed a source.
+			editRow(
+				w.p.db,
+				"assets",
+				still.id,
+				{ signed_by: "tool", signer_name: "Example Camera Co" },
+				{ actor: ME },
+			);
+			const before = previewOutputStatement(w.p, w.m, { assetId: w.film.id });
+			expect(before.sourceSigners).toEqual([
+				{ assetId: still.id, title: "still.png", signer: "Example Camera Co" },
+			]);
+			const author = before.reveals[0].reveal.items.find(
+				(i) => i.kind === "author",
+			)!;
+
+			// Kept in: the statement and the public record name the signer.
+			const r1 = await signOutput(w.p, w.m, {
+				assetId: w.film.id,
+				engine,
+				withhold: { redact: [], leaveOut: [] },
+			});
+			expect(signerOf(w, r1.signatureId)).toBe("Example Camera Co");
+
+			// Left out, with a redaction inside it that then has nothing to
+			// remove: neither names it, and the film holds no trace of it.
+			const r2 = await signOutput(w.p, w.m, {
+				assetId: w.film.id,
+				engine,
+				withhold: { redact: [author.uri], leaveOut: [still.id] },
+			});
+			expect(r2.withheld).toEqual({ redacted: 0, leftOut: 1 });
+			expect(signerOf(w, r2.signatureId)).toBe("");
+			const film = await readBack(w, loaded, r2.path);
+			expect(JSON.stringify(film)).not.toContain("Example Camera Co");
+			expect(Object.keys(film.manifests)).toEqual([film.active_manifest]);
+			const stored = w.p.db
+				.prepare("SELECT statement, definition FROM signatures WHERE id = ?")
+				.get(r2.signatureId) as { statement: string; definition: string };
+			expect(stored.statement).not.toContain("Example Camera Co");
+			// The choice made inside it is still remembered for the next signing.
+			expect(JSON.parse(stored.definition)).toMatchObject({
+				redactions: [],
+				redactions_by_source: [{ asset_id: still.id, kind: "author" }],
+			});
+
+			// The preview shows the statement as the next signing would write it,
+			// and still says whose name a different choice would bring back.
+			const after = previewOutputStatement(w.p, w.m, { assetId: w.film.id });
+			expect(JSON.stringify(after.statement)).not.toContain(
+				"Example Camera Co",
+			);
+			expect(after.sourceSigners).toEqual(before.sourceSigners);
+			expect(after.lastWithheld).toMatchObject({
+				redact: [author.uri],
+				leaveOut: [still.id],
+			});
+		},
+		180000,
+	);
+
+	it.skipIf(!haveOpenssl)(
+		"does not keep a signed copy that still holds what was to be kept out, or that does not read back sound",
+		async () => {
+			const w = await world();
+			const still = w.id("still.png");
+			const uri =
+				"self#jumbf=/c2pa/urn:c2pa:cam/c2pa.assertions/stds.schema-org.CreativeWork";
+			const carried = {
+				active_manifest: "urn:c2pa:cam",
+				manifests: {
+					"urn:c2pa:cam": {
+						assertions: [
+							{
+								label: "stds.schema-org.CreativeWork",
+								data: { author: [{ name: "A. Person" }] },
+							},
+						],
+					},
+				},
+			};
+			const reading = (file: string) =>
+				makeObservation({
+					kind: "c2pa",
+					extractor: "stub",
+					version: "1.0",
+					...(path.basename(file) === "still.png"
+						? { status: "ok", data: carried }
+						: { status: "absent" }),
+				});
+			await extractProject(w.p, w.m, {
+				again: true,
+				readers: [{ ...noCredentials, read: async (f) => reading(f) }],
+			});
+			const { engine } = stubEngine();
+			const signed = path.join(w.media, "export.signed.v1.png");
+			/** An engine that claims to withhold, and reads back this report. */
+			const reads = (report: Record<string, unknown>) => ({
+				...engine,
+				name: "c2pa-node",
+				read: async (f: string) => reading(f),
+				sign: async (args: Parameters<SigningEngine["sign"]>[0]) => {
+					await engine.sign(args);
+					return { report };
+				},
+			});
+			const sound = soundReport() as { manifests: Record<string, unknown> };
+
+			// The redacted assertion is still listed in the copy.
+			await expect(
+				signOutput(w.p, w.m, {
+					assetId: w.film.id,
+					engine: reads({
+						...sound,
+						manifests: { ...sound.manifests, ...carried.manifests },
+					}),
+					withhold: { redact: [uri], leaveOut: [] },
+				}),
+			).rejects.toThrow(
+				/stds\.schema-org\.CreativeWork is still in the signed copy\. The signed copy was not kept\./,
+			);
+			expect(existsSync(signed)).toBe(false);
+
+			// The left-out source's manifest is still in the copy.
+			await expect(
+				signOutput(w.p, w.m, {
+					assetId: w.film.id,
+					engine: reads({
+						...sound,
+						manifests: { ...sound.manifests, "urn:c2pa:cam": {} },
+					}),
+					withhold: { redact: [], leaveOut: [still.id] },
+				}),
+			).rejects.toThrow(
+				/credentials of a source that was left out are still in the signed copy/,
+			);
+			expect(existsSync(signed)).toBe(false);
+
+			// Nothing withheld, but the copy does not read back as sound.
+			await expect(
+				signOutput(w.p, w.m, {
+					assetId: w.film.id,
+					engine: reads({
+						...sound,
+						validation_results: {
+							activeManifest: {
+								failure: [{ code: "claimSignature.mismatch" }],
+							},
+						},
+					}),
+					withhold: { redact: [], leaveOut: [] },
+				}),
+			).rejects.toThrow(/read back as "Invalid".*was not kept/);
+			expect(existsSync(signed)).toBe(false);
+			expect(
+				w.p.db.prepare("SELECT count(*) AS n FROM signatures").get(),
+			).toEqual({ n: 0 });
+
+			// Gone from the copy: kept and recorded.
+			const r = await signOutput(w.p, w.m, {
+				assetId: w.film.id,
+				engine: reads(sound),
+				withhold: { redact: [uri], leaveOut: [] },
+			});
+			expect(r.withheld).toEqual({ redacted: 1, leftOut: 0 });
+			expect(existsSync(signed)).toBe(true);
+		},
+		60000,
+	);
+
+	it.skipIf(!haveOpenssl)(
+		"shows what the cut and the thumbnail carry in their own metadata",
+		async () => {
+			const w = await world();
+			const poster = await withPoster(w);
+			const tags: Record<string, Record<string, unknown>> = {
+				"export.png": {
+					ImageWidth: 2,
+					WindowsAtomUncProjectPath: "D:\\Work\\Example Client\\cut.prproj",
+					Artist: "A. Person",
+				},
+				"poster.png": { GPSLatitude: 41.4036 },
+			};
+			await extractProject(w.p, w.m, {
+				readers: [
+					noCredentials,
+					{
+						kind: "exif",
+						extractor: "exiftool",
+						version: "13",
+						read: async (file) =>
+							makeObservation({
+								kind: "exif",
+								extractor: "exiftool",
+								version: "13",
+								status: "ok",
+								data: tags[path.basename(file)] ?? {},
+							}),
+					},
+				],
+			});
+			expect(
+				previewOutputStatement(w.p, w.m, { assetId: w.film.id }).filesCarry,
+			).toEqual([
+				{
+					assetId: w.film.id,
+					title: "export.png",
+					role: "cut",
+					read: true,
+					details: [
+						{
+							tag: "WindowsAtomUncProjectPath",
+							value: "D:\\Work\\Example Client\\cut.prproj",
+							kind: "path",
+						},
+						{ tag: "Artist", value: "A. Person", kind: "person" },
+					],
+					more: 0,
+				},
+				{
+					assetId: poster.id,
+					title: "poster.png",
+					role: "thumbnail",
+					read: true,
+					details: [{ tag: "GPSLatitude", value: "41.4036", kind: "location" }],
+					more: 0,
+				},
+			]);
+			// Not read by ExifTool: the review says so, and shows nothing.
+			const bare = await world();
+			expect(
+				previewOutputStatement(bare.p, bare.m, { assetId: bare.film.id })
+					.filesCarry,
+			).toMatchObject([{ role: "cut", read: false, details: [] }]);
+		},
+		60000,
 	);
 });
 

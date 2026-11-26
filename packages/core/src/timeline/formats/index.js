@@ -4,7 +4,8 @@
  *
  * Each module exports `id`, `label`, `detect(xmlText)` and `parse(xmlText,
  * { sequence })` returning the normalised timeline shape documented in
- * ./xmeml.js, and, when a file can hold several sequences, `sequences(xmlText)`. To add a
+ * ./xmeml.js, and, when a file can hold several sequences, `sequences(xmlText)`
+ * (with `open(xmlText)` when it can answer both from one reading). To add a
  * format (FCPXML, EDL): write the module, register it here, commit a small
  * fixture under test/fixtures/timeline and a test.
  */
@@ -31,6 +32,21 @@ function formatOf(text) {
  */
 export function parseTimeline(text, opts = {}) {
 	return formatOf(text).parse(text, opts);
+}
+
+/**
+ * A timeline file read once, for listing its sequences and then parsing the
+ * one chosen: { sequences(), parse(opts) }, answering as listSequences and
+ * parseTimeline do. A format that can read its file once exports
+ * `open(text)`; for any other, each call reads the text again.
+ */
+export function openTimeline(text) {
+	const format = formatOf(text);
+	if (format.open) return format.open(text);
+	return {
+		sequences: () => listSequences(text),
+		parse: (opts = {}) => format.parse(text, opts),
+	};
 }
 
 /**

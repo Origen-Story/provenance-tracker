@@ -246,6 +246,68 @@ Short numbered log of decisions that shape the code. Add a line when one is made
     - the spike, on a copy of the demo film with throwaway certificates: redacting the Premiere export's `cawg.identity` leaves the claim valid, records `c2pa.redacted` and leaves no trace of it; leaving the parent's credentials out leaves only the tracker's own manifest;
     - in tests, with real signing: a source given credentials naming an author is listed, redacted, carried to the next signing, left out, recorded and counted, and wrong choices and the c2patool engine are refused;
     - in the app, on the copy: the Signing tab listed the film's three credentialed sources with the identity's name and links, and a signing through the route redacted the identity. Read back by the library and by c2patool, the copy is valid apart from the throwaway certificate's trust, with no trace of the identity.
+- **D63 (2026-11-26) A choice to keep something out survives a re-render, and signing reads every source before it signs.** A review of D62 found that the review before signing could be wrong in two ways: a choice could be lost without a word, and a source could carry more than the review showed. No catalog change and no new dependency.
+  - _What was wrong._
+    - A redaction was remembered only by its address, which holds the label of the manifest the assertion is in. A file that is rendered and exported again is signed afresh under a new label, so the remembered address matched nothing and was dropped silently: the next signed copy revealed what the last one kept out. D62 promised the opposite.
+    - The review listed only sources with a stored good reading, while the signing engine read every source file itself. A source never read, or changed after its scan, or with a `.c2pa` beside it that nobody had scanned, brought in credentials the review never showed.
+  - _Remembering._ A signature's stored definition keeps each redaction by source, assertion label and kind as well as by address (`redactions_by_source`, beside `redactions`). `carryWithheld` (`packages/core/src/manifest/reveal.ts`, pure) carries the last signing's choices to the sources as they are now:
+    - an address still in its source stays redacted;
+    - an address gone from its source is looked for there by assertion label and by kind, and every redactable match is kept out. When in doubt, more is withheld;
+    - what the sources no longer carry is dropped.
+
+    Whatever was found again or dropped is said in sentences: on the Signing tab before signing, in the signing job's result, and on the command line. The Signing tab starts from the carried choices and still warns when a choice would reveal what the last copy kept out, following each redaction to the address it has now. A record made before this decision has addresses only; it is looked for in every source by label.
+
+  - _Reading first._ Before anything is signed, `signOutput`:
+    - hashes the cut, every source the timeline places and any sidecar it will use, and refuses if one is not the bytes the catalog knows;
+    - reads each source with the reader the engine embeds by (`SigningEngine.read`, the C2PA library), and refuses if what it finds is not what the review showed, naming the files and asking for them to be read again;
+    - refuses credentials that could not be read unless that source's credentials are left out, since nothing in them can be shown.
+
+    The preview says which sources have not been read yet and blocks signing until they are.
+
+  - _Sidecars._ An engine uses the `.c2pa` it is handed and never looks for one itself. `signOutput` hands over a sidecar only when the catalog has it at that place and its hash matches. Signing a source into a sidecar (D42) keeps the library's reading of the new sidecar, so an edit that places that source can be signed without another pass over the project.
+  - _What this costs._
+    - Signing hashes and reads every source first, so it takes longer on a film with large sources.
+    - A machine where the C2PA library cannot load can no longer sign a finished edit with c2patool alone, because nothing there can read the sources (planned-features).
+    - After the library is updated, `extract` has to run again before signing, because the stored readings are the older version's.
+  - _Unchanged._ A new export started from an earlier edit is another asset and inherits no choices (D62 says "the same edit"). The review still lists the five kinds D62 lists; what it leaves unlisted, and a check of the signed copy after signing, are the next change.
+  - _Checked:_ in tests, with real signing:
+    - a cut re-rendered and re-signed between two signings keeps its author's name out of the second, and a third render that names nobody reports the choice as dropped;
+    - a source given credentials and not read is refused until `extract` has run;
+    - a source changed after its scan is refused before anything is written;
+    - a `.c2pa` put beside a source is ignored until it is scanned and read, and refused once its bytes change.
+- **D64 (2026-11-26) The review before signing lists everything, and a signed copy is checked before it is kept.** The second change from the review of D62, on top of D63. No catalog change and no new dependency.
+  - _What was wrong._
+    - The review named five kinds of assertion and counted every other as "saying nothing personal". The C2PA metadata assertion, where current cameras put a location and a maker's name, was one of the others, and so was any custom assertion. What was not listed could not be redacted either.
+    - Leaving a source's credentials out did not stop the tracker naming that source's signer: the creator statement was built before the choice, so the signed statement and the public record still carried the name.
+    - Nothing looked at the signed copy afterwards. A copy was kept whatever its read-back said.
+    - The review said nothing about what the cut carries outside its credentials, though the signed copy is the cut's own bytes.
+  - _The list, inverted_ (`revealOf`, `packages/core/src/manifest/reveal.ts`). Everything a source's credentials say is listed with its values, unless it is known to say nothing about anyone: the hashes that bind the file, thumbnails, ingredient records, a time stamp, a certificate's status, plain actions, and training permissions that use only the standard's own words.
+    - Metadata assertions (EXIF, IPTC, the C2PA metadata assertion, any label ending `.metadata`) are always listed, named for what tells most: a location, then a person, then a device.
+    - An action is listed when it says more than what was done, with what, to which ingredient and when. It still cannot be redacted.
+    - Each manifest's file names (its own title and its ingredients') are listed. They are in the claim, so only leaving the source out removes them.
+    - Anything else is listed as "something else it says", and can be redacted.
+    - The programs that made the manifests are named beside their signers.
+  - _The signer._ `buildCreatorStatement` takes the sources whose credentials are left out and writes no signer and no claimed class for them. That the file had credentials stays, and so does everything the creator said about it. `signOutput` builds the manifest after the choice is known. The preview builds the statement as a signing that states no choice would, and lists every source's signer separately so the page can show what a choice changes.
+  - _The signed copy is checked._ After the engine signs, `signOutput` reads the copy's read-back and deletes the copy, recording nothing, when:
+    - a redacted assertion is still listed in its manifest, or a manifest of a left-out source is still in the file (`stillCarried`);
+    - the credentials do not read back as a sound signature (valid, or valid with an unrecognised issuer), or cannot be read back at all;
+    - the creator's identity reads back as invalid (in the library engine, beside D55's check of what it covers).
+
+    A redaction inside a source whose credentials are also left out is not sent to the engine, which would refuse it as not found; the choice is still remembered (D63).
+
+  - _What the files carry_ (`fileCarries`, `packages/core/src/manifest/file-carries.ts`, pure). The preview lists, from the stored ExifTool reading of the cut and of the thumbnail image, the tags that name a person, a place, a device or a folder on someone's machine: an editor's export commonly holds the project's path and the paths of its sources. The tracker never changes a file, so the page says to change the export settings and export again.
+  - _What the tracker writes, in full._ The Signing tab lists every source file name, public title and note, the sequence's name and the names of clips with no tracked file, where it used to give a count and the first three names.
+  - _Found by running the library_ (0.12.1, throwaway certificates): every kind tried can be redacted except an action; asked to redact an address that is not there, the library refuses and writes nothing; a redacted assertion is gone from its manifest's list in the read-back; a left-out source leaves no manifest behind.
+  - _Checked:_
+    - in tests, with real signing: a location in a C2PA metadata assertion is listed, redacted and gone from the film while an unchosen custom assertion stays; a left-out source is named by no signer in the statement or the public record;
+    - in tests, with a stand-in engine: a copy that still holds a redacted assertion, a left-out source's manifest, or an unsound read-back is deleted and not recorded;
+    - the review is rendered to text in a test, the first of a client component.
+- **D65 (2026-11-26) A path a timeline names is opened only inside the project's media folders.** A timeline file says where each source was on the editor's machine, and it may come from someone else. To match a source the tracker did not find by its path, it checked the size and hashed the bytes of whatever file sat at the path the timeline gave, anywhere: another drive, or another computer. On Windows, asking whether a file exists on another computer connects to it and offers it the user's login. The same happened again each time a person matched a source by hand, from the path kept in the catalog.
+  - _The rule_ (`mayOpenSourcePath`, `packages/core/src/timeline/source-paths.ts`, pure). A path from a timeline is opened only when it is a full local path inside one of the project's media folders on this machine, which the person chose and the tracker reads anyway. Any path that starts with two slashes is refused whatever folder it claims: network shares (`\\host\share`, `//host/share`, WebDAV) and the device forms (`\\?\`, `\\.\`). That holds even when a media folder is itself a share: its files are matched by the catalog's own paths, never opened from a timeline's.
+  - _What reads._ `sourceReader` in `packages/core-node/src/timeline-import.ts` is the one place a timeline's path reaches the disk, at import and at a manual match. A path that fails the rule is answered as if no file were there, and nothing is touched. The source is then matched by name, or left for the person.
+  - _What it costs._ A source that was renamed and sits outside the media folders is no longer recognised by its bytes. Put it in a media folder and scan, or match it by hand; a pick for a path outside the folders is recorded as the person's word.
+  - _Also:_ an import read the whole timeline file twice, once to list its sequences and once to parse the one chosen. A format can now answer both from one reading (`open`, `openTimeline`), and xmeml does.
+  - _Checked:_ in tests, with path strings only (no network path is ever opened by a test): every network form a timeline's file address can take is refused by the rule; a stand-in reader records that nothing outside a media folder is asked of the disk; an import matches a renamed copy by its bytes inside the media folder and not beside the project; a manual match for a path outside is recorded as manual.
 - **D66 (2026-11-26) The server stays up when a file cannot be read, and "Host: localhost" counts only from this machine.** Two faults in the server itself. No new dependency.
   - _A stream with no error handler stopped the server._ The file preview piped a file to the response with nothing listening for an error, and the download wrote to disk the same way. In Node an unhandled stream error ends the process, so a file locked by another program, removed between the check and the read, or replaced by a folder of the same name took the server down, and a scan or a signing running at the time with it.
     - `streamFile` (`src/server/api/stream.ts`) opens the file before sending any header, checks that it is a file, and streams from the open handle through `pipeline`. What cannot be opened is answered in words (404 when it is gone or is not a file, 503 when it is there and cannot be read just now), without the file's path. A read that fails part-way cuts that one response short.

@@ -107,6 +107,7 @@ import {
 	createProject,
 	NoCatalogError,
 	openProject,
+	ProjectElsewhereError,
 	type OpenProject,
 } from "@provenancetracker/core-node/project.ts";
 import {
@@ -393,14 +394,38 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 	});
 
 	// Open a project folder: its catalog, recorded in this machine's settings.
+	// A folder holding a project this machine already has elsewhere is
+	// answered 409 with where (`elsewhere`), and opened only when asked again
+	// with take_over (D68).
 	api.post("/projects/open", (req: Request, res: Response) => {
-		const folder = (req.body as { folder?: unknown }).folder;
+		const body = (req.body ?? {}) as Record<string, unknown>;
+		const unknown = Object.keys(body).filter(
+			(k) => k !== "folder" && k !== "take_over",
+		);
+		if (unknown.length)
+			throw new HttpError(
+				400,
+				`Opening a project has no field ${unknown.join(", ")}`,
+			);
+		const folder = body.folder;
 		if (typeof folder !== "string" || !folder.trim())
 			throw new HttpError(400, "Say which folder to open");
+		if (body.take_over !== undefined && typeof body.take_over !== "boolean")
+			throw new HttpError(400, "take_over is true or false");
 		let project: OpenProject;
 		try {
-			project = openProject(folder, { machine });
+			project = openProject(folder, {
+				machine,
+				takeOver: body.take_over === true,
+			});
 		} catch (err) {
+			if (err instanceof ProjectElsewhereError) {
+				res.status(409).json({
+					error: err.message,
+					elsewhere: { folder: err.known },
+				});
+				return;
+			}
 			throw new HttpError(
 				409,
 				err instanceof NoCatalogError

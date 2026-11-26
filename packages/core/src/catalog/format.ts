@@ -87,13 +87,25 @@ export function refusalMessage(state: CatalogState): string | null {
 }
 
 /**
- * Settings every connection to a catalog needs. Foreign keys are off by
- * default in SQLite and per connection. trusted_schema off stops a catalog
- * someone else made from running functions with side effects through its own
- * views and triggers.
+ * Settings every connection to a catalog needs, a read-only one too (D68).
+ * Foreign keys are off by default in SQLite and per connection.
+ * trusted_schema off stops a catalog someone else made from running functions
+ * with side effects through its own views and triggers. Defensive mode stops
+ * any SQL, a trigger's included, from rewriting the schema table, writing to
+ * an index's own tables or switching the journal off.
  */
 export function prepareConnection(db: DatabaseSync): void {
 	db.exec("PRAGMA foreign_keys = ON; PRAGMA trusted_schema = OFF;");
+	const defensive = (
+		db as DatabaseSync & { enableDefensive?: (active: boolean) => void }
+	).enableDefensive;
+	// A safety setting is never skipped quietly: without it the tracker does
+	// not open a catalog at all.
+	if (typeof defensive !== "function")
+		throw new Error(
+			"This version of Node cannot turn on SQLite's defensive mode, which every catalog is opened with. Update Node 24 to its newest release.",
+		);
+	defensive.call(db, true);
 }
 
 let savepoints = 0;

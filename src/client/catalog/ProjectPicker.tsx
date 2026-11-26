@@ -4,7 +4,7 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
-import { projects, type KnownProject } from "./api.ts";
+import { ApiError, projects, type KnownProject } from "./api.ts";
 import PersonForm from "./Person.tsx";
 import {
 	Button,
@@ -131,13 +131,19 @@ function OpenOrCreate() {
 function OpenForm({ done }: { done: Done }) {
 	const [folder, setFolder] = useState("");
 	const open = useMutation({
-		mutationFn: () => projects.open(folder.trim()),
+		mutationFn: (takeOver: boolean) => projects.open(folder.trim(), takeOver),
 		onSuccess: done,
 	});
 	const ready = !!folder.trim() && !open.isPending;
+	// The folder holds a project this machine already has somewhere else.
+	const elsewhere =
+		open.error instanceof ApiError
+			? ((open.error.data as { elsewhere?: { folder: string } } | null)
+					?.elsewhere ?? null)
+			: null;
 	const submit = (e: FormEvent) => {
 		e.preventDefault();
-		if (ready) open.mutate();
+		if (ready) open.mutate(false);
 	};
 	return (
 		<Card>
@@ -157,6 +163,27 @@ function OpenForm({ done }: { done: Done }) {
 					{open.isPending ? "Opening…" : "Open"}
 				</Button>
 				<Problem error={open.error} />
+				{elsewhere && (
+					<div className="space-y-2 text-sm text-text-secondary">
+						<p>
+							If this folder is a copy to look at, leave it. If it is where the
+							project lives now, open it here: this machine's signing
+							certificate, identity and media folders for the project then
+							follow it, and the folder at{" "}
+							<span className="text-text-primary break-all">
+								{elsewhere.folder}
+							</span>{" "}
+							is no longer the one this machine opens.
+						</p>
+						<Button
+							quiet
+							disabled={open.isPending}
+							onClick={() => open.mutate(true)}
+						>
+							This is where the project lives now: open it here
+						</Button>
+					</div>
+				)}
 			</form>
 		</Card>
 	);

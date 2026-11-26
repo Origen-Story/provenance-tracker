@@ -932,6 +932,31 @@ describe.skipIf(!haveOpenssl)("signAsset", () => {
 		).toEqual({ n: 0 });
 	});
 
+	it("moves an earlier sidecar aside only when its bytes are the ones the catalog recorded (D68)", async () => {
+		const w = await world();
+		const tone = w.id("tone.wav");
+		await signAsset(w.p, w.m, {
+			assetId: tone.id,
+			engine: stubEngine().engine,
+		});
+		// The catalog says the .c2pa beside the file is the tracker's own; the
+		// file there is now something else.
+		writeFileSync(sidecarOf(w), "not what the tracker wrote");
+		await expect(
+			signAsset(w.p, w.m, { assetId: tone.id, engine: stubEngine().engine }),
+		).rejects.toThrow(
+			/tone\.c2pa beside this file is not the sidecar the tracker wrote/,
+		);
+		// It was not renamed, and nothing new was recorded.
+		expect(readFileSync(sidecarOf(w), "utf8")).toBe(
+			"not what the tracker wrote",
+		);
+		expect(existsSync(path.join(w.media, "tone.v1.c2pa"))).toBe(false);
+		expect(
+			w.p.db.prepare("SELECT count(*) AS n FROM signatures").get(),
+		).toEqual({ n: 1 });
+	});
+
 	it("puts the earlier sidecar back when signing fails", async () => {
 		const w = await world();
 		const tone = w.id("tone.wav");

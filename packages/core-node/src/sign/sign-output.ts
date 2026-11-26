@@ -26,6 +26,7 @@ import {
 	timelineSegments,
 } from "@provenancetracker/core/catalog/timelines.ts";
 import { c2paSummaryOf } from "@provenancetracker/core/extraction/c2pa-summary.ts";
+import { isHttpsAddress } from "@provenancetracker/core/catalog/edits.ts";
 import { thumbnailOf } from "@provenancetracker/core/catalog/edits.ts";
 import {
 	buildCreatorStatement,
@@ -263,15 +264,24 @@ export function lastWithheld(
 	};
 }
 
-/** The CAWG identity address the project's statements carry, or "". */
-function identityUrlOf(project: OpenProject): string {
-	return (
+/**
+ * The CAWG identity address the project's statements carry, or "". It is
+ * signed into the file as a link, so it is held to the rule it is edited
+ * under (https only) again here: a catalog may come from someone else, and
+ * one written another way could hold anything (D68).
+ */
+export function identityUrlOf(project: OpenProject): string {
+	const url =
 		(
 			project.db
 				.prepare("SELECT value FROM meta WHERE key = 'cawg_identity_url'")
 				.get() as { value: string } | undefined
-		)?.value ?? ""
-	);
+		)?.value ?? "";
+	if (url && !isHttpsAddress(url))
+		throw new NotReadyError(
+			"This project's identity link is not a web address starting https://, so it is not signed into a file. Set it again on the project's Settings page.",
+		);
+	return url;
 }
 
 /** The newest place the catalog knows for a content, here or not: its catalog path. */

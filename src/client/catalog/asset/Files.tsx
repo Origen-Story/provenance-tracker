@@ -117,7 +117,7 @@ function Credentials({ read }: { read: NonNullable<Reading["credentials"]> }) {
 			<p className={sound ? "text-text-secondary" : "text-warning"}>
 				{sound
 					? `Signed by ${who || "an unnamed signer"}: ${read.label.toLowerCase()}.`
-					: `Its credentials name ${who || "no signer"}, and they did not verify: ${read.label.toLowerCase()}. Nobody is named as its signer in a signed film.`}
+					: `Its credentials name ${who || "no signer"}, and they did not verify: ${read.label.toLowerCase()}. A signed film and its public page give the name as unverified, never as who signed.`}
 				{read.generator && ` Made with ${read.generator}.`}
 				{read.contentMatches &&
 					!sound &&

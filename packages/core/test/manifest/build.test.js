@@ -316,9 +316,10 @@ describe("buildCreatorStatement", () => {
 		});
 	});
 
-	it("never repeats a signer's name from credentials that did not verify (D67)", () => {
+	it("carries a name from credentials that did not verify as unverified, never as who signed (D67)", () => {
 		// The catalog keeps the name as "unverified": what the file says. The
-		// statement is signed and published, and says only what holds.
+		// statement says the same, so a page can name the maker and say the
+		// signature could not be verified.
 		const unverified = new Map(assets);
 		unverified.set("ai:21", {
 			...assets.get("ai:21"),
@@ -339,10 +340,9 @@ describe("buildCreatorStatement", () => {
 			// What the creator and the file say about how it was made stays.
 			originClass: "trainedAlgorithmicMedia",
 			fileCredentials: "present",
-			signedBy: "",
-			signerName: "",
+			signedBy: "unverified",
+			signerName: "Gen Tool",
 		});
-		expect(JSON.stringify(said)).not.toContain("unverified");
 		expect(validate(statementSchema, said)).toEqual([]);
 	});
 

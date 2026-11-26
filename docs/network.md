@@ -25,6 +25,8 @@ Nothing runs in the background: the server makes no requests of its own.
 
 Scanning and importing, metadata extraction (ExifTool), reading credentials (the C2PA library, against the pinned trust lists on disk), classification, timeline import and matching, building the manifest, signing itself, and building the public export all run on your machine. The app's pages load no fonts, scripts or images from other sites.
 
+A timeline file names where its sources were on the editor's machine. The tracker opens such a path only inside the project's media folders, and never one on another computer (D65), so importing a timeline connects to nothing.
+
 Where a signed copy is published (the web address of the signed file and of its page, D56) is only recorded. The tracker never fetches either address, not to check it and not to preview it.
 
 ## Not measured yet

@@ -223,6 +223,13 @@ export async function signWithLibrary(
 				`Signing failed: the identity did not cover ${missing.join(", ") || "the record"}. Nothing was kept.`,
 			);
 		}
+		// Nor is a copy kept whose identity does not verify (D64).
+		if (reading.status === "invalid") {
+			await rm(args.outputPath, { force: true }).catch(() => {});
+			throw new Error(
+				`Signing failed: the identity read back as invalid (${reading.failures.map((f) => f.code).join(", ")}). Nothing was kept.`,
+			);
+		}
 	}
 	return { report };
 }

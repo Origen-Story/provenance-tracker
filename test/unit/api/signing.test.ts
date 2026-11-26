@@ -32,6 +32,7 @@ import { updateSettings } from "@provenancetracker/core-node/settings.ts";
 import type { SigningEngine } from "@provenancetracker/core-node/sign/sign-output.ts";
 import { TOOL } from "@provenancetracker/core-node/tool.ts";
 import { devCertificate, haveOpenssl } from "../helpers/cert.ts";
+import { soundReport } from "../../../packages/core-node/test/helpers/readers.ts";
 import { createApp } from "../../../src/server/app.ts";
 import { JobRunner } from "../../../src/server/api/jobs.ts";
 
@@ -61,7 +62,7 @@ const stub: SigningEngine = {
 			outputPath,
 			Buffer.concat([readFileSync(inputPath), Buffer.from(" signed")]),
 		);
-		return { report: null };
+		return { report: soundReport() };
 	},
 };
 

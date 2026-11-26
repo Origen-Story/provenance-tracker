@@ -152,7 +152,10 @@ function SignOutput({
 			{preview.data?.statement && (
 				<details
 					className="border border-border rounded-lg p-3"
-					open={reveals.some((r) => r.reveal.items.length > 0)}
+					open={
+						reveals.length > 0 ||
+						preview.data.filesCarry.some((f) => f.details.length > 0)
+					}
 				>
 					<summary className="text-sm text-text-primary cursor-pointer">
 						What the signed film will reveal
@@ -165,6 +168,8 @@ function SignOutput({
 							identityName={preview.data.identity?.name ?? null}
 							signerName={signing.data?.certificate?.commonName ?? null}
 							reveals={reveals}
+							sourceSigners={preview.data.sourceSigners}
+							filesCarry={preview.data.filesCarry}
 							choice={chosen}
 							onChange={setChoice}
 							disabled={running}

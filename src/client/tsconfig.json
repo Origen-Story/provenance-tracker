@@ -20,5 +20,10 @@
 		"allowJs": true,
 		"checkJs": false
 	},
-	"include": ["**/*.ts", "**/*.tsx"]
+	// And the tests that render a component (the root tsconfig leaves them out).
+	"include": [
+		"**/*.ts",
+		"**/*.tsx",
+		"../../test/unit/client/**/*.render.test.ts"
+	]
 }

@@ -1,5 +1,14 @@
-// Pure: everything the viewer works out from a public export (format v1),
-// with no DOM. Tested in test/unit/public-viewer/model.test.js.
+// Pure: everything the viewer works out from a public export (formats 1 and
+// 2), with no DOM. Tested in test/unit/public-viewer/model.test.js.
+//
+// An export may come from anyone. Its numbers, lists and kinds are checked
+// once, on load (assertViewable); a word is looked up in a table only by a
+// key the table has of its own (`own`); and an address becomes a link only
+// through one of the checks here (safeLink, pageLink, sourceTypeLink).
+
+/** A table's own entry for a key, never one every object inherits ("constructor"). */
+const own = (table, key) =>
+	typeof key === "string" && Object.hasOwn(table, key) ? table[key] : undefined;
 
 export const SPECTRUM = [
 	"captured",
@@ -136,7 +145,7 @@ export function mixSentence(lane, kind = "picture") {
 	const nouns = key
 		.split("+")
 		.sort((a, b) => SPECTRUM.indexOf(a) - SPECTRUM.indexOf(b))
-		.map((p) => NOUN[kind === "audio" ? "audio" : "picture"][p] || p);
+		.map((p) => own(NOUN[kind === "audio" ? "audio" : "picture"], p) || p);
 	return `layers ${nouns.slice(0, -1).join(", ")} with ${nouns.at(-1)}`;
 }
 
@@ -470,7 +479,96 @@ export function safeLink(value) {
 		: null;
 }
 
+/**
+ * A link the page itself passed in (the download, the independent viewer),
+ * or null. A page may build these from its own address bar, so they are
+ * checked like any other: https anywhere, or http on the page's own origin
+ * (a local demo). Never `javascript:` or `data:`. `base` is the page's
+ * address, which a relative link is read against.
+ */
+export function pageLink(value, base) {
+	if (typeof value !== "string" || !value.trim()) return null;
+	let url;
+	let page;
+	try {
+		url = new URL(value, base);
+		page = new URL(base);
+	} catch {
+		return null;
+	}
+	if (!url.hostname || url.username || url.password) return null;
+	// "#" and the like lead back to this page, which is not a file to offer.
+	const bare = (u) => u.href.split("#")[0];
+	if (bare(url) === bare(page)) return null;
+	if (url.protocol === "https:") return url.href;
+	return url.protocol === "http:" && url.origin === page.origin
+		? url.href
+		: null;
+}
+
+/**
+ * An address on the page's own origin, or null. The demo page takes its
+ * export, video and download from its address bar; held to its own origin,
+ * a link to the demo cannot show someone else's record under its address.
+ */
+export function sameOriginAddress(value, page) {
+	if (typeof value !== "string" || !value.trim()) return null;
+	try {
+		const url = new URL(value, page);
+		const here = new URL(page);
+		return (url.protocol === "https:" || url.protocol === "http:") &&
+			url.origin === here.origin &&
+			!url.username &&
+			!url.password
+			? url.href
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+/** A YouTube video id as YouTube writes them, or null. */
+export function youtubeIdOf(value) {
+	return typeof value === "string" && /^[A-Za-z0-9_-]{11}$/.test(value)
+		? value
+		: null;
+}
+
+const IPTC_SOURCE_TYPE =
+	/^https?:\/\/cv\.iptc\.org\/newscodes\/digitalsourcetype\/[A-Za-z]{1,64}$/;
+
+/**
+ * The address a source type links to, or null: only a term of the IPTC
+ * digital source type vocabulary. Those addresses are http, so safeLink
+ * would refuse the genuine ones; anything else is shown as text.
+ */
+export function sourceTypeLink(value) {
+	return typeof value === "string" && IPTC_SOURCE_TYPE.test(value)
+		? value
+		: null;
+}
+
+const PLAIN_NAME = /^[\p{L}\p{N}_][\p{L}\p{N}_ .()-]{0,199}$/u;
+
+/**
+ * The two commands that print a file's SHA-256, for a visitor to paste. The
+ * export's file name goes inside the quotes only when it is plain (letters,
+ * digits, spaces, dots, dashes, brackets): inside double quotes a shell still
+ * runs `$(...)` and expands `%NAME%`. Otherwise the command says where the
+ * name goes. Returns { windows, unix, named }.
+ */
+export function hashCommands(fileName) {
+	const named = typeof fileName === "string" && PLAIN_NAME.test(fileName);
+	const name = named ? `"${fileName}"` : "<the file you downloaded>";
+	return {
+		windows: `certutil -hashfile ${name} SHA256`,
+		unix: `shasum -a 256 ${name}`,
+		named,
+	};
+}
+
 const UNTRUSTED = "signingCredential.untrusted";
+const TRUSTED = "signingCredential.trusted";
 const HASH_MISMATCH =
 	/\.(dataHash|bmffHash|boxesHash|collectionHash)\.mismatch$/;
 
@@ -495,9 +593,11 @@ export function resultsOf(exp) {
 				? "absent"
 				: otherFailures.length || s.status === "invalid"
 					? "invalid"
-					: failures.includes(UNTRUSTED) || s.status === "unrecognised_issuer"
-						? "unrecognised_issuer"
-						: "trusted";
+					: // Trusted only when the record says so itself, never because
+						// no failure happens to be listed.
+						s.issuerRecognised === true && !failures.includes(UNTRUSTED)
+						? "trusted"
+						: "unrecognised_issuer";
 		return {
 			file: {
 				status: changed ? "changed" : s.hashVerified ? "matches" : "unchecked",
@@ -530,36 +630,57 @@ export function resultsOf(exp) {
 	};
 }
 
-/** The word a result's tone is shown with, so it never rests on colour alone. */
+/**
+ * The word a result's tone is shown with, so it never rests on colour alone.
+ * These are for a check the page made itself, on a copy the visitor picked.
+ */
 export const TONE_WORDS = {
 	good: "Checks out",
 	caution: "Note",
 	bad: "Problem",
 };
 
-/** The file's result in plain words: { tone, headline, detail }. */
+/**
+ * The same, for what the record says. The page has not checked the film, so
+ * these never say "checks out": they say what was recorded (D71).
+ */
+export const RECORD_TONE_WORDS = {
+	good: "Recorded as sound",
+	caution: "Note",
+	bad: "Problem recorded",
+};
+
+/** What stands above the three results, so they are read as a record and not as this page's findings. */
+export const RECORD_NOTE =
+	"This is what the record says: what the creator's tool read from the film when it was signed. This page shows the record and has not checked the film. To check a copy you have, see the end of this section.";
+
+/**
+ * The file's result in plain words: { tone, headline, detail }. Like the
+ * signer's and the identity's, it is the record's account, in the past
+ * tense; nothing here was checked by the page.
+ */
 export function fileVerdict(file) {
 	switch (file?.status) {
 		case "matches":
 			return {
 				tone: "good",
-				headline: "The film is as it was signed",
+				headline: "The film matched its signature when it was signed",
 				detail:
-					"When the film was signed, its content was checked against the signature and matched. To check a copy you have, see the end of this section.",
+					"The record says the film's content was checked against the signature then, and matched.",
 			};
 		case "changed":
 			return {
 				tone: "bad",
-				headline: "The film does not match its signature",
+				headline: "The film did not match its signature",
 				detail:
-					"The content changed after it was signed, or the tool that checked it could not read that kind of hash.",
+					"The record says the content had changed after it was signed, or the tool that checked it could not read that kind of hash.",
 			};
 		default:
 			return {
 				tone: "caution",
 				headline: "The film's content was not checked",
 				detail:
-					"The tool that read the signed film back could not check its content against the signature.",
+					"The record says the tool that read the signed film back could not check its content against the signature.",
 			};
 	}
 }
@@ -567,32 +688,34 @@ export function fileVerdict(file) {
 /** The signer's result in plain words: { tone, headline, detail }. */
 export function signerVerdict(signer) {
 	const who = signer?.commonName || "an unnamed certificate";
+	const failures = Array.isArray(signer?.failures) ? signer.failures : [];
 	switch (signer?.status) {
 		case "trusted":
 			return {
 				tone: "good",
-				headline: `Signed by ${who}, a recognised signer`,
+				headline: `The record names ${who}, a recognised signer`,
 				detail:
-					"The signature checks out, and the signing certificate is on the Content Credentials trust list.",
+					"The record says the signature validated, and that the signing certificate was on the Content Credentials trust list.",
 			};
 		case "unrecognised_issuer":
 			return {
 				tone: "caution",
-				headline: `Signed by ${who}; signer not yet on the trust list`,
+				headline: `The record names ${who}; not on the trust list`,
 				detail:
-					"The signature checks out. The certificate is not on the public Content Credentials trust list, so verification tools name the signer as unrecognised.",
+					"The record says the signature validated. The certificate was not on the public Content Credentials trust list, so verification tools call the signer unrecognised, and the name is the certificate's own claim.",
 			};
 		case "invalid":
 			return {
 				tone: "bad",
 				headline: "The signature did not validate",
-				detail: `Failures: ${(signer.failures || []).join(", ") || "unspecified"}.`,
+				detail: `The record lists these failures: ${failures.join(", ") || "unspecified"}.`,
 			};
 		default:
 			return {
 				tone: "bad",
 				headline: "No Content Credentials",
-				detail: "The signed file carried no credentials when it was checked.",
+				detail:
+					"The record says the signed file carried no credentials when it was read.",
 			};
 	}
 }
@@ -643,29 +766,33 @@ const ROLE_WORDS = {
  */
 export function identityVerdict(identity) {
 	if (!identity) return null;
+	const roles = Array.isArray(identity.roles) ? identity.roles : [];
 	const role =
-		ROLE_WORDS[(identity.roles || []).find((r) => ROLE_WORDS[r])] || "Named";
+		own(
+			ROLE_WORDS,
+			roles.find((r) => own(ROLE_WORDS, r)),
+		) || "Named";
 	const name = identity.name || "an unnamed person";
 	switch (identity.status) {
 		case "trusted":
 			return {
 				tone: "good",
-				headline: `${role}: ${name}, verified`,
-				detail: `Their identity is signed into the file with a certificate${identity.issuer ? ` from ${identity.issuer}` : ""} that verification tools trust.`,
+				headline: `${role}: ${name}, recorded as verified`,
+				detail: `The record says their identity was signed into the file with a certificate${identity.issuer ? ` from ${identity.issuer}` : ""} that verification tools trusted.`,
 			};
 		case "unrecognised_issuer":
 			return {
 				tone: "caution",
 				headline: `${role}: ${name}, self-declared`,
 				detail:
-					"Their identity is signed into the file, apart from the signature, and checks out, but no issuer that verification tools recognise vouches for it. Read the name as the creator's own statement.",
+					"The record says their identity was signed into the file, apart from the signature, and validated, but no issuer that verification tools recognise vouched for it. Read the name as the creator's own statement.",
 			};
 		default:
 			return {
 				tone: "bad",
 				headline: "The creator's identity did not validate",
 				detail:
-					"An identity was signed into the file, but it does not check out.",
+					"The record says an identity was signed into the file, and that it did not validate.",
 			};
 	}
 }
@@ -702,7 +829,10 @@ const CONTENT_MATCH =
  * its own (packages/core/src/manifest/verify.js): the content hash first, then
  * the claim signature, then trust. The creator's identity (cawg.*) never
  * changes this result. Returns { status, signer, issuer, contentChecked }:
- * status is none, changed, invalid, trusted or unrecognised_issuer.
+ * status is none, changed, invalid, trusted, unrecognised_issuer or
+ * unchecked. Trusted needs the reader's own word for it (the
+ * signingCredential.trusted code); a report that says nothing either way
+ * about the certificate is "unchecked", never trusted by default.
  */
 export function readCopyCredentials(report) {
 	if (!report?.active_manifest || !report.manifests)
@@ -717,13 +847,19 @@ export function readCopyCredentials(report) {
 	const codes = (list) => (list || []).map((c) => String(c.code || ""));
 	const failures = codes(results.failure).filter((c) => !c.startsWith("cawg."));
 	const blocking = failures.filter((c) => c !== UNTRUSTED);
+	const everything = [
+		...codes(results.success),
+		...codes(results.informational),
+	];
 	const status = blocking.some((c) => HASH_MISMATCH.test(c))
 		? "changed"
 		: blocking.length
 			? "invalid"
 			: failures.includes(UNTRUSTED)
 				? "unrecognised_issuer"
-				: "trusted";
+				: everything.includes(TRUSTED)
+					? "trusted"
+					: "unchecked";
 	return {
 		status,
 		signer: active.signature_info?.common_name || "",
@@ -740,10 +876,14 @@ export function credentialVerdict(reading, exp) {
 			? exp?.signature?.signer?.commonName
 			: exp?.signer?.commonName;
 	const who = reading.signer || "an unnamed certificate";
+	// Names are compared, and a name can be copied into any certificate. Only
+	// a certificate on the trust list has someone vouching for its name.
 	const same =
 		recorded && reading.signer
 			? reading.signer === recorded
-				? ` That is the signer this record names.`
+				? reading.status === "trusted"
+					? ` That is the name this record gives for the signer.`
+					: ` That is the name this record gives for the signer. A name alone does not show it is the same signer: anyone can make a certificate with any name, and no one on the trust list vouches for this one.`
 				: ` This record names ${recorded}, not ${reading.signer}.`
 			: "";
 	// "Unchanged" only when the reader said the content matched what was signed.
@@ -777,6 +917,12 @@ export function credentialVerdict(reading, exp) {
 				headline: `Signed by ${who}, a recognised signer${unchanged}`,
 				detail: `${content} The certificate is on the Content Credentials trust list.${same}`,
 			};
+		case "unchecked":
+			return {
+				tone: "caution",
+				headline: `Signed by ${who}${unchanged}; certificate not checked`,
+				detail: `${content} The reader did not say whether the certificate is on the Content Credentials trust list.${same}`,
+			};
 		default:
 			return {
 				tone: "caution",
@@ -798,7 +944,7 @@ export function withheldSentence(withheld) {
 		parts.push(
 			`${n(fromFile)} from its sources' credentials in the signed film`,
 		);
-	return `The creator chose to leave out ${parts.join(" and ")}. What was left out is not shown; the signed film says where something was removed.`;
+	return `The creator chose to leave out ${parts.join(" and ")}. What was left out is not shown.${fromFile ? " Where a detail was removed from inside a source's credentials, the signed film records that something was removed there; credentials left out whole leave no mark." : ""}`;
 }
 
 /** "a1b2 c3d4 ..." for reading a hash aloud or by eye. */
@@ -817,15 +963,155 @@ export function formatBytes(n) {
 	return `${Math.max(1, Math.round(n / 1e3))} KB`;
 }
 
-/** Checks the parts of the export the viewer relies on; throws a readable error. */
+// The longest film, and the longest list, the viewer will draw. The timeline
+// is built by counting through both, so a larger number is a mistake or an
+// attempt to hang the page ("1e999" parses to Infinity).
+const MAX_SECONDS = 100 * 3600;
+const MAX_ITEMS = 20000;
+
+const isObject = (v) =>
+	v !== null && typeof v === "object" && !Array.isArray(v);
+const isSeconds = (v) =>
+	typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= MAX_SECONDS;
+const isText = (v) => typeof v === "string";
+const isPosition = (v) => SPECTRUM.includes(v);
+const missing = (v) => v === null || v === undefined;
+const listOf = (v, test) =>
+	Array.isArray(v) && v.length <= MAX_ITEMS && v.every(test);
+
+function assertLane(lane, name) {
+	const bad = (what) =>
+		new Error(
+			`The export's ${name} timeline is not one this viewer can show: ${what}.`,
+		);
+	if (!isObject(lane) || !Array.isArray(lane.intervals))
+		throw bad("it has no list of sections");
+	if (lane.intervals.length > MAX_ITEMS) throw bad("it has too many sections");
+	for (const s of lane.intervals) {
+		if (
+			!isObject(s) ||
+			!isSeconds(s.start) ||
+			!isSeconds(s.end) ||
+			s.end < s.start
+		)
+			throw bad("a section's times are not numbers in order");
+		if (!listOf(s.positions, isPosition))
+			throw bad("a section names a kind of material this viewer does not know");
+		if (!missing(s.refs) && !listOf(s.refs, isText))
+			throw bad("a section's sources are not a list of names");
+	}
+	if (!missing(lane.mixed) && !isObject(lane.mixed))
+		throw bad("its mixed time is not a record");
+	const combos = lane.mixed?.combos;
+	if (!missing(combos)) {
+		if (!isObject(combos)) throw bad("its mixes are not a record");
+		for (const [key, combo] of Object.entries(combos))
+			if (
+				!key.split("+").every(isPosition) ||
+				!isObject(combo) ||
+				!(missing(combo.seconds) || isSeconds(combo.seconds))
+			)
+				throw bad("a mix names a kind of material this viewer does not know");
+	}
+}
+
+/**
+ * Checks the parts of the export the viewer relies on, by kind and by size,
+ * and throws a readable error. Everything that reaches a style, a class
+ * name or a loop is checked here, once: times are finite numbers in order,
+ * a kind of material is one of the six the viewer draws, and lists are
+ * lists. Text is only ever shown as text, so it is checked for being text.
+ */
 export function assertViewable(exp) {
-	if (!exp || exp.format !== "provenance-tracker.public-export")
+	if (!isObject(exp) || exp.format !== "provenance-tracker.public-export")
 		throw new Error("This is not a provenance tracker public export.");
 	if (exp.formatVersion !== 1 && exp.formatVersion !== 2)
 		throw new Error(
 			`This viewer reads export formats 1 and 2, not ${exp.formatVersion}. A newer viewer may read it.`,
 		);
-	if (!exp.composition?.picture?.intervals)
+	const bad = (what) =>
+		new Error(`The export is not one this viewer can show: ${what}.`);
+
+	if (!isObject(exp.film)) throw bad("it does not describe a film");
+	if (
+		!missing(exp.film.durationSeconds) &&
+		!isSeconds(exp.film.durationSeconds)
+	)
+		throw bad("the film's length is not a number of seconds it can draw");
+	if (!missing(exp.film.position) && !isPosition(exp.film.position))
+		throw bad("the film is of a kind this viewer does not know");
+	if (!isObject(exp.statement)) throw bad("it has no creator statement");
+
+	if (!isObject(exp.composition) || !exp.composition.picture?.intervals)
 		throw new Error("The export has no picture timeline.");
+	assertLane(exp.composition.picture, "picture");
+	if (!missing(exp.composition.audio))
+		assertLane(exp.composition.audio, "sound");
+
+	if (
+		!listOf(
+			exp.ingredients,
+			(i) =>
+				isObject(i) &&
+				(missing(i.position) || isPosition(i.position)) &&
+				(missing(i.pictureSeconds) || isSeconds(i.pictureSeconds)) &&
+				(missing(i.audioSeconds) || isSeconds(i.audioSeconds)),
+		)
+	)
+		throw bad("its list of sources is not a list this viewer can read");
+	if (
+		!missing(exp.untracked) &&
+		!listOf(
+			exp.untracked,
+			(u) =>
+				isObject(u) &&
+				(missing(u.position) || isPosition(u.position)) &&
+				(missing(u.startSeconds) || isSeconds(u.startSeconds)) &&
+				(missing(u.endSeconds) || isSeconds(u.endSeconds)),
+		)
+	)
+		throw bad("its list of untracked clips is not one this viewer can read");
+
+	if (
+		!isObject(exp.vocabulary) ||
+		!listOf(exp.vocabulary.positions, (k) => isObject(k) && isPosition(k.id)) ||
+		!isObject(exp.vocabulary.classes) ||
+		!Object.values(exp.vocabulary.classes).every(
+			(c) => isObject(c) && (missing(c.position) || isPosition(c.position)),
+		)
+	)
+		throw bad(
+			"its vocabulary names a kind of material this viewer does not know",
+		);
+
+	const f = exp.signedFile;
+	if (
+		!isObject(f) ||
+		!isText(f.fileName) ||
+		!isText(f.sha256) ||
+		!/^[0-9a-f]{0,128}$/i.test(f.sha256) ||
+		!(missing(f.bytes) || (Number.isSafeInteger(f.bytes) && f.bytes >= 0))
+	)
+		throw bad("what it says of the signed file is not readable");
+
+	const signer = exp.formatVersion === 1 ? exp.signature : exp.signer;
+	if (
+		!isObject(signer) ||
+		!(missing(signer.failures) || listOf(signer.failures, isText))
+	)
+		throw bad("what it says of the signature is not readable");
+	if (exp.formatVersion === 2) {
+		if (!isObject(exp.file)) throw bad("it does not say what was checked");
+		if (!listOf(signer.failures, isText))
+			throw bad("what it says of the signature is not readable");
+		if (
+			!missing(exp.identity) &&
+			!(
+				isObject(exp.identity) &&
+				(missing(exp.identity.roles) || listOf(exp.identity.roles, isText))
+			)
+		)
+			throw bad("what it says of the creator's identity is not readable");
+	}
 	return exp;
 }

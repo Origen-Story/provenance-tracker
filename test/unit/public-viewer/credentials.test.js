@@ -48,11 +48,33 @@ describe("readCopyCredentials", () => {
 		expect(
 			readCopyCredentials(
 				report({
-					success: ["assertion.bmffHash.match"],
+					success: ["assertion.bmffHash.match", "signingCredential.trusted"],
 					failure: ["cawg.x509.credential.untrusted"],
 				}),
 			).status,
 		).toBe("trusted");
+	});
+
+	it("calls a signer trusted only when the reader said so, never because no failure is listed (D71)", () => {
+		const silent = readCopyCredentials(
+			report({
+				success: ["claimSignature.validated", "assertion.bmffHash.match"],
+			}),
+		);
+		expect(silent.status).toBe("unchecked");
+		expect(credentialVerdict(silent, record)).toMatchObject({
+			tone: "caution",
+			headline:
+				"Signed by Example Studio, and unchanged; certificate not checked",
+		});
+		// A report with no results at all says nothing about trust either.
+		expect(readCopyCredentials(report()).status).toBe("unchecked");
+		expect(
+			readCopyCredentials({
+				active_manifest: "urn:c2pa:film",
+				manifests: { "urn:c2pa:film": {} },
+			}).status,
+		).toBe("unchecked");
 	});
 
 	it("tells a changed copy from a broken signature, and a copy with none", () => {
@@ -93,10 +115,22 @@ describe("credentialVerdict", () => {
 			headline:
 				"Signed by Example Studio, and unchanged; signer not on the trust list",
 		});
-		expect(checked.detail).toMatch(/That is the signer this record names\.$/);
+		// Names are compared, and for a signer no one vouches for, a name shows nothing.
+		expect(checked.detail).toMatch(
+			/That is the name this record gives for the signer\. A name alone does not show it is the same signer/,
+		);
+		expect(checked.detail).not.toMatch(/That is the signer/);
 		const unchecked = credentialVerdict(
-			readCopyCredentials(report({ success: ["claimSignature.validated"] })),
+			readCopyCredentials(
+				report({
+					success: ["claimSignature.validated", "signingCredential.trusted"],
+				}),
+			),
 			record,
+		);
+		// On the trust list, someone vouches for the name: no caveat.
+		expect(unchecked.detail).toMatch(
+			/That is the name this record gives for the signer\.$/,
 		);
 		expect(unchecked.headline).toBe(
 			"Signed by Example Studio, a recognised signer",
@@ -109,7 +143,7 @@ describe("credentialVerdict", () => {
 		const v = credentialVerdict(
 			readCopyCredentials(
 				report({
-					success: ["assertion.bmffHash.match"],
+					success: ["assertion.bmffHash.match", "signingCredential.trusted"],
 					signer: "Someone Else",
 				}),
 			),

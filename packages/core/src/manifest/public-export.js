@@ -19,6 +19,7 @@ import { readIdentity } from "./identity.ts";
 import { fileNameOf } from "./build.js";
 import {
 	POSITIONS,
+	knownSourceTypeUri,
 	originClassDef,
 	sourceTypeUri,
 	spectrumPosition,
@@ -102,8 +103,11 @@ export function buildPublicExportV1({ signature, generatedAt, generator }) {
 			title: i.publicTitle || i.title,
 			fileName: i.title,
 			originClass: i.originClass,
+			// A page links this, so only a vocabulary address is written.
 			digitalSourceType:
-				i.digitalSourceType || sourceTypeUri(i.originClass) || null,
+				knownSourceTypeUri(i.digitalSourceType) ||
+				sourceTypeUri(i.originClass) ||
+				null,
 			position:
 				i.position ||
 				spectrumPosition(i.originClass, { aiAssisted: !!i.aiAssisted }),
@@ -142,7 +146,7 @@ export function buildPublicExportV1({ signature, generatedAt, generator }) {
 			durationSeconds: film.durationSeconds ?? null,
 			fps: film.fps ?? null,
 			originClass: film.originClass || "unknown",
-			digitalSourceType: film.digitalSourceType || null,
+			digitalSourceType: knownSourceTypeUri(film.digitalSourceType),
 			position: filmPosition,
 		},
 		statement: {

@@ -255,6 +255,27 @@ export function sourceTypeUri(code) {
 	return BY_CODE.has(code) && code !== "unknown" ? `${IPTC_BASE}${code}` : null;
 }
 
+const C2PA_SOURCE_TYPE_BASE = "http://c2pa.org/digitalsourcetype/";
+
+/**
+ * A source type address as a record may carry it, or null: a term of the
+ * IPTC digital source type vocabulary, or one of C2PA's own. A stored value
+ * is text from a catalog, which may be someone else's; a page turns this
+ * field into a link, so anything else is left out.
+ */
+export function knownSourceTypeUri(value) {
+	if (typeof value !== "string") return null;
+	if (
+		value.startsWith(IPTC_BASE) &&
+		/^[A-Za-z]{1,64}$/.test(value.slice(IPTC_BASE.length))
+	)
+		return value;
+	return value.startsWith(C2PA_SOURCE_TYPE_BASE) &&
+		C2PA_SOURCE_TYPES.includes(value.slice(C2PA_SOURCE_TYPE_BASE.length))
+		? value
+		: null;
+}
+
 /**
  * Where an asset sits on the spectrum. The AI-assisted flag moves digital
  * work with no AI in its pixels to the AI-assisted position; it changes

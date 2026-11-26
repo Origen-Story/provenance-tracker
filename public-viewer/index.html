@@ -47,23 +47,37 @@
 				invented.</span
 			>
 			Try <a href="?theme=light">the light theme</a>,
-			<code>?youtube=&lt;id&gt;</code>, <code>?src=&lt;video url&gt;</code> or
+			<code>?youtube=&lt;id&gt;</code>, or a video or an export served from this
+			same address: <code>?src=&lt;video file&gt;</code>,
 			<code>?export=&lt;export json&gt;</code>.
 		</footer>
 		<script type="module">
+			// A local demo. What the address bar asks for is taken only from this
+			// page's own origin, so a link to the demo cannot show someone else's
+			// record, video or download under this address.
 			import { mountViewer } from "./src/viewer.js";
+			import { sameOriginAddress, youtubeIdOf } from "./src/model.js";
 			const q = new URLSearchParams(location.search);
-			if (q.get("export"))
-				document.getElementById("demo-film").textContent =
-					"Showing an export you chose.";
+			const own = (name) => sameOriginAddress(q.get(name), location.href);
+			const refused = ["export", "src", "download"].filter(
+				(name) => q.get(name) && !own(name),
+			);
+			if (q.get("youtube") && !youtubeIdOf(q.get("youtube")))
+				refused.push("youtube");
+			const note = document.getElementById("demo-film");
+			if (refused.length)
+				note.textContent = `Left out, because this demo only takes files from its own address: ${refused.join(", ")}. `;
+			else if (own("export") || own("src") || q.get("youtube"))
+				note.textContent =
+					"Showing what the link you followed chose, not the demo film. ";
 			mountViewer(document.getElementById("film"), {
-				exportUrl: q.get("export") || "./example/example.provenance.json",
-				video: q.get("youtube")
+				exportUrl: own("export") || "./example/example.provenance.json",
+				video: youtubeIdOf(q.get("youtube"))
 					? { youtubeId: q.get("youtube") }
-					: q.get("src")
-						? { src: q.get("src") }
+					: own("src")
+						? { src: own("src") }
 						: null,
-				download: { url: q.get("download") || "#" },
+				download: own("download") ? { url: own("download") } : undefined,
 				theme: q.get("theme") === "light" ? "light" : "dark",
 				appName: "Origen Story Provenance Tracker",
 			});

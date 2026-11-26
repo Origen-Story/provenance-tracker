@@ -1594,7 +1594,7 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 	// pictures, video and sound only. The path comes from the catalog, never the request.
 	api.get(
 		"/projects/:projectId/contents/:sha256/file",
-		(req: Request, res: Response) => {
+		async (req: Request, res: Response) => {
 			const sha = String(req.params.sha256);
 			if (!/^[0-9a-f]{64}$/.test(sha))
 				throw new HttpError(404, "There is no such file");
@@ -1624,7 +1624,7 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 			if (!file) throw new HttpError(404, "That file is not on this machine");
 			if (!showable(file))
 				throw new HttpError(415, "Only pictures, video and sound are shown");
-			streamFile(req, res, file);
+			await streamFile(req, res, file);
 		},
 	);
 

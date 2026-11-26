@@ -529,13 +529,20 @@ export interface Timeline {
 	clips: TimelineClip[];
 }
 
-/** An assertion in a source's own credentials that says something about a person, a place or a device (D62). */
+/** Something a source's own credentials say: everything is listed, except what is known to be harmless (D62, D64). */
 export interface RevealItem {
 	uri: string;
 	manifest: string;
 	label: string;
 	kind:
-		"identity" | "metadata" | "author" | "location" | "device" | "generation";
+		| "identity"
+		| "metadata"
+		| "author"
+		| "location"
+		| "device"
+		| "generation"
+		| "names"
+		| "other";
 	what: string;
 	values: string[];
 	redactable: boolean;
@@ -549,11 +556,29 @@ export interface SourceReveal {
 	reveal: {
 		manifests: number;
 		signers: string[];
+		/** The programs that made its manifests, as each names its own. */
+		generators: string[];
 		items: RevealItem[];
+		/** Assertions known to say nothing about anyone: hashes, thumbnails, time stamps, plain actions. */
 		otherAssertions: number;
 		/** Why its credentials could not be read; they can then only be left out. */
 		unreadable?: string;
 	};
+}
+
+/** What a file that goes into the signed film says in its own metadata, outside any credentials (D64). */
+export interface FileCarries {
+	assetId: number;
+	title: string;
+	role: "cut" | "thumbnail";
+	/** False when ExifTool has not read it yet. */
+	read: boolean;
+	details: Array<{
+		tag: string;
+		value: string;
+		kind: "path" | "location" | "person" | "device" | "text";
+	}>;
+	more: number;
 }
 
 /** What the last signing of an edit kept out, as it applies to the sources now (D63). */
@@ -726,6 +751,10 @@ export const outputs = {
 			reveals: SourceReveal[];
 			/** What the newest signing of this edit kept out; null before the first. */
 			lastWithheld: WithheldBefore | null;
+			/** Who signed each source that names a signer; the statement leaves out those the last signing left out. */
+			sourceSigners: Array<{ assetId: number; title: string; signer: string }>;
+			/** What the cut and the thumbnail carry in their own metadata (D64). */
+			filesCarry: FileCarries[];
 		}>("GET", `/projects/${projectId}/assets/${assetId}/statement-preview`),
 	signing: (projectId: string) =>
 		api<SigningStatus>("GET", `/projects/${projectId}/signing`),

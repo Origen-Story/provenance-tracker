@@ -275,3 +275,30 @@ Short numbered log of decisions that shape the code. Add a line when one is made
     - a source given credentials and not read is refused until `extract` has run;
     - a source changed after its scan is refused before anything is written;
     - a `.c2pa` put beside a source is ignored until it is scanned and read, and refused once its bytes change.
+- **D64 (2026-11-26) The review before signing lists everything, and a signed copy is checked before it is kept.** The second change from the review of D62, on top of D63. No catalog change and no new dependency.
+  - _What was wrong._
+    - The review named five kinds of assertion and counted every other as "saying nothing personal". The C2PA metadata assertion, where current cameras put a location and a maker's name, was one of the others, and so was any custom assertion. What was not listed could not be redacted either.
+    - Leaving a source's credentials out did not stop the tracker naming that source's signer: the creator statement was built before the choice, so the signed statement and the public record still carried the name.
+    - Nothing looked at the signed copy afterwards. A copy was kept whatever its read-back said.
+    - The review said nothing about what the cut carries outside its credentials, though the signed copy is the cut's own bytes.
+  - _The list, inverted_ (`revealOf`, `packages/core/src/manifest/reveal.ts`). Everything a source's credentials say is listed with its values, unless it is known to say nothing about anyone: the hashes that bind the file, thumbnails, ingredient records, a time stamp, a certificate's status, plain actions, and training permissions that use only the standard's own words.
+    - Metadata assertions (EXIF, IPTC, the C2PA metadata assertion, any label ending `.metadata`) are always listed, named for what tells most: a location, then a person, then a device.
+    - An action is listed when it says more than what was done, with what, to which ingredient and when. It still cannot be redacted.
+    - Each manifest's file names (its own title and its ingredients') are listed. They are in the claim, so only leaving the source out removes them.
+    - Anything else is listed as "something else it says", and can be redacted.
+    - The programs that made the manifests are named beside their signers.
+  - _The signer._ `buildCreatorStatement` takes the sources whose credentials are left out and writes no signer and no claimed class for them. That the file had credentials stays, and so does everything the creator said about it. `signOutput` builds the manifest after the choice is known. The preview builds the statement as a signing that states no choice would, and lists every source's signer separately so the page can show what a choice changes.
+  - _The signed copy is checked._ After the engine signs, `signOutput` reads the copy's read-back and deletes the copy, recording nothing, when:
+    - a redacted assertion is still listed in its manifest, or a manifest of a left-out source is still in the file (`stillCarried`);
+    - the credentials do not read back as a sound signature (valid, or valid with an unrecognised issuer), or cannot be read back at all;
+    - the creator's identity reads back as invalid (in the library engine, beside D55's check of what it covers).
+
+    A redaction inside a source whose credentials are also left out is not sent to the engine, which would refuse it as not found; the choice is still remembered (D63).
+
+  - _What the files carry_ (`fileCarries`, `packages/core/src/manifest/file-carries.ts`, pure). The preview lists, from the stored ExifTool reading of the cut and of the thumbnail image, the tags that name a person, a place, a device or a folder on someone's machine: an editor's export commonly holds the project's path and the paths of its sources. The tracker never changes a file, so the page says to change the export settings and export again.
+  - _What the tracker writes, in full._ The Signing tab lists every source file name, public title and note, the sequence's name and the names of clips with no tracked file, where it used to give a count and the first three names.
+  - _Found by running the library_ (0.12.1, throwaway certificates): every kind tried can be redacted except an action; asked to redact an address that is not there, the library refuses and writes nothing; a redacted assertion is gone from its manifest's list in the read-back; a left-out source leaves no manifest behind.
+  - _Checked:_
+    - in tests, with real signing: a location in a C2PA metadata assertion is listed, redacted and gone from the film while an unchosen custom assertion stays; a left-out source is named by no signer in the statement or the public record;
+    - in tests, with a stand-in engine: a copy that still holds a redacted assertion, a left-out source's manifest, or an unsound read-back is deleted and not recorded;
+    - the review is rendered to text in a test, the first of a client component.

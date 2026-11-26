@@ -34,6 +34,7 @@ const source = (
 	reveal: {
 		manifests: unreadable ? 0 : 1,
 		signers: [],
+		generators: [],
 		items: uris.map((u) => item(u)),
 		otherAssertions: 0,
 		...(unreadable ? { unreadable } : {}),

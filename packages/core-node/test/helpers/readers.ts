@@ -39,3 +39,19 @@ export function libraryReaders(loaded: LoadedLibrary): Reader[] {
 			readC2paWithLibrary(reader, file, sidecar),
 	}));
 }
+
+/**
+ * What a stand-in engine reads back from the copy it "signed": a signature
+ * that verifies, by a signer no trust list knows. Signing keeps a copy only
+ * when its read-back is sound.
+ */
+export const soundReport = (): Record<string, unknown> => ({
+	active_manifest: "urn:c2pa:stub",
+	manifests: { "urn:c2pa:stub": { assertions: [] } },
+	validation_results: {
+		activeManifest: {
+			success: [{ code: "claimSignature.validated" }],
+			failure: [{ code: "signingCredential.untrusted" }],
+		},
+	},
+});

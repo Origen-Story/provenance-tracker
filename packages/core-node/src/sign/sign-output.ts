@@ -9,6 +9,7 @@ import {
 	openSync,
 	readFileSync,
 	readSync,
+	rmSync,
 	statSync,
 } from "node:fs";
 import path from "node:path";
@@ -42,12 +43,18 @@ import {
 	rememberRedactions,
 	revealOf,
 	sameReveal,
+	stillCarried,
 	type CarriedItem,
 	type Remembered,
 	type RememberedRedaction,
 	type Reveal,
 	type Withhold,
 } from "@provenancetracker/core/manifest/reveal.ts";
+import {
+	fileCarries,
+	type FileDetail,
+} from "@provenancetracker/core/manifest/file-carries.ts";
+import { interpretReport } from "@provenancetracker/core/manifest/verify.js";
 import { LIBRARY_ENGINE } from "./engines/library.ts";
 import { sha256OfFile } from "../hash.ts";
 import type { Machine } from "../machine.ts";
@@ -403,10 +410,13 @@ export function lastWithheld(
 				kind: isRevealKind(r.kind) ? r.kind : null,
 				uri: r.uri,
 			});
+	// Every choice is remembered by source (D63), also one made inside a source
+	// whose credentials were then left out, which `redactions` (what was
+	// removed from the file) does not hold. An older record has addresses only.
 	return {
-		redact: uris.map(
-			(uri) => known.get(uri) ?? rememberRedactions([uri], [])[0],
-		),
+		redact: known.size
+			? [...known.values()]
+			: uris.map((uri) => rememberRedactions([uri], [])[0]),
 		leaveOut: (
 			list(d.credentials_left_out) as Array<{ asset_id?: unknown } | null>
 		)
@@ -577,6 +587,53 @@ export interface StatementPreview {
 	 * sources now, so the next starts from it; null before the first.
 	 */
 	lastWithheld: WithheldBefore | null;
+	/**
+	 * Who signed each source that names a signer, as the statement would say
+	 * it. The statement above leaves out those of the sources the last signing
+	 * left out; this lists them all, so the page can show what a choice changes.
+	 */
+	sourceSigners: Array<{ assetId: number; title: string; signer: string }>;
+	/** What the cut and the thumbnail carry in their own metadata, outside any credentials (D64). */
+	filesCarry: FileCarries[];
+}
+
+/** What one file that goes into the signed film says in its own metadata. */
+export interface FileCarries {
+	assetId: number;
+	title: string;
+	/** The cut, whose bytes the signed copy is; or the image embedded as its thumbnail. */
+	role: "cut" | "thumbnail";
+	/** False when ExifTool has not read it yet: nothing can be shown. */
+	read: boolean;
+	details: FileDetail[];
+	/** How many more there are than the review lists. */
+	more: number;
+}
+
+/** What a content says in its own metadata, from its stored ExifTool reading. */
+function carriedBy(
+	project: OpenProject,
+	assetId: number,
+	sha256: string,
+	role: FileCarries["role"],
+): FileCarries {
+	const row = project.db
+		.prepare(
+			`SELECT status, data FROM observations
+			 WHERE content_sha256 = ? AND kind = 'exif' AND status <> 'unavailable'
+			 ORDER BY id DESC LIMIT 1`,
+		)
+		.get(sha256) as { status: string; data: string | null } | undefined;
+	const known = lastKnownPath(project, sha256);
+	return {
+		assetId,
+		title: known ? known.split("/").pop()! : `asset ${assetId}`,
+		role,
+		read: !!row,
+		...fileCarries(
+			row?.status === "ok" && row.data ? JSON.parse(row.data) : {},
+		),
+	};
 }
 
 export interface IdentityPreview {
@@ -687,6 +744,8 @@ export function previewOutputStatement(
 			identity: null,
 			reveals: [],
 			lastWithheld: withheldBefore(lastWithheld(project, opts.assetId), []),
+			sourceSigners: [],
+			filesCarry: [],
 		};
 	}
 	const saved = db
@@ -723,6 +782,15 @@ export function previewOutputStatement(
 		String(saved?.author ?? ""),
 	);
 	if (identity.problem) blockers.push(identity.problem);
+	const ingredientAssetIds = (
+		placedAssetRefs(segments, outputRef) as string[]
+	).map(Number);
+	const { all, unread } = revealsOf(
+		project,
+		sourcesOf(project, machine, places, opts.assetId, cut, ingredientAssetIds),
+	);
+	if (unread.length) blockers.push(notRead(unread));
+	const before = withheldBefore(lastWithheld(project, opts.assetId), all);
 	const statement = buildCreatorStatement({
 		output: {
 			ref: outputRef,
@@ -747,15 +815,28 @@ export function previewOutputStatement(
 			identityUrl: identityUrlOf(project),
 		},
 		statedAt: now(),
+		// As a signing that states no choice would write it.
+		credentialsLeftOut: (before?.leaveOut ?? []).map(String),
 	}) as Record<string, unknown>;
-	const ingredientAssetIds = (
-		placedAssetRefs(segments, outputRef) as string[]
-	).map(Number);
-	const { all, unread } = revealsOf(
-		project,
-		sourcesOf(project, machine, places, opts.assetId, cut, ingredientAssetIds),
-	);
-	if (unread.length) blockers.push(notRead(unread));
+	const sourceSigners = ingredientAssetIds.flatMap((id) => {
+		const a = assets.get(String(id));
+		const signer = String(a?.signerName || a?.signedBy || "");
+		const file = String(a?.filePath ?? "");
+		return signer
+			? [{ assetId: id, title: file.split(/[\\/]/).pop() ?? "", signer }]
+			: [];
+	});
+	const filesCarry: FileCarries[] = [];
+	if (cut) filesCarry.push(carriedBy(project, opts.assetId, cut, "cut"));
+	if (thumb.thumbnail)
+		filesCarry.push(
+			carriedBy(
+				project,
+				thumb.thumbnail.assetId,
+				thumb.thumbnail.sha256,
+				"thumbnail",
+			),
+		);
 	return {
 		statement,
 		blockers,
@@ -763,7 +844,9 @@ export function previewOutputStatement(
 		thumbnailAssetId: thumb.thumbnail?.assetId ?? null,
 		identity: identity.preview,
 		reveals: all.filter(carries),
-		lastWithheld: withheldBefore(lastWithheld(project, opts.assetId), all),
+		lastWithheld: before,
+		sourceSigners,
+		filesCarry,
 	};
 }
 
@@ -877,40 +960,6 @@ export async function signOutput(
 	const thumb = thumbnailHere(project, places, opts.assetId);
 	if (thumb.problem) throw new NotReadyError(thumb.problem);
 
-	const identityUrl = identityUrlOf(project);
-	const {
-		definition,
-		ingredients,
-		resources,
-		statement: signedStatement,
-	} = buildOutputManifest({
-		output: {
-			ref: outputRef,
-			filePath: cutPlace.file,
-			originClass: asset.origin_class,
-			originClassConfirmed: asset.origin_class_confirmed === 1,
-			publicTitle: asset.public_title,
-		},
-		timeline: {
-			sequenceName: timeline.sequence_name,
-			fps: timeline.fps,
-			durationFrames: timeline.duration_frames,
-		},
-		composition: breakdown.composition,
-		segments,
-		assets,
-		statement: {
-			text: statement.text,
-			authorName: statement.author,
-			organization: statement.organization,
-			softwareAgent: statement.edited_with,
-			identityUrl,
-		},
-		statedAt: now(),
-		generator: GENERATOR,
-		thumbnail: thumb.thumbnail,
-	});
-
 	// Every file signing reads must be the bytes the catalog knows: the cut,
 	// each source the timeline places, and a sidecar used for one. A file
 	// changed or swapped since its scan would otherwise be signed in under
@@ -999,11 +1048,54 @@ export async function signOutput(
 		};
 	const problems = checkWithhold(withhold, read);
 	if (problems.length) throw new NotReadyError(`${problems.join(". ")}.`);
+	// A redaction inside a source whose credentials are left out has nothing
+	// to remove: the manifest it names is not in the file at all.
+	const kept = read.filter((s) => !withhold.leaveOut.includes(s.assetId));
+	const redact = withhold.redact.filter((uri) =>
+		kept.some((s) => s.reveal.items.some((i) => i.uri === uri)),
+	);
 	const withholding = withhold.redact.length + withhold.leaveOut.length > 0;
 	if (withholding && engine.name !== LIBRARY_ENGINE)
 		throw new NotReadyError(
 			"Keeping details out of the signed file needs the C2PA library; this machine signs with c2patool. Switch with: npm run cli -- settings signing-engine library",
 		);
+	// The manifest is built once the choice is known: a source whose
+	// credentials are left out is not named by its signer in the statement
+	// either (D64).
+	const identityUrl = identityUrlOf(project);
+	const {
+		definition,
+		ingredients,
+		resources,
+		statement: signedStatement,
+	} = buildOutputManifest({
+		output: {
+			ref: outputRef,
+			filePath: cutPlace.file,
+			originClass: asset.origin_class,
+			originClassConfirmed: asset.origin_class_confirmed === 1,
+			publicTitle: asset.public_title,
+		},
+		timeline: {
+			sequenceName: timeline.sequence_name,
+			fps: timeline.fps,
+			durationFrames: timeline.duration_frames,
+		},
+		composition: breakdown.composition,
+		segments,
+		assets,
+		statement: {
+			text: statement.text,
+			authorName: statement.author,
+			organization: statement.organization,
+			softwareAgent: statement.edited_with,
+			identityUrl,
+		},
+		statedAt: now(),
+		generator: GENERATOR,
+		thumbnail: thumb.thumbnail,
+		credentialsLeftOut: withhold.leaveOut.map(String),
+	});
 	// The label each source has in the definition: the cut is the parent.
 	const labelOf = (assetId: number) =>
 		assetId === opts.assetId
@@ -1039,12 +1131,45 @@ export async function signOutput(
 		...(withholding
 			? {
 					withhold: {
-						redact: withhold.redact,
+						redact,
 						leaveOut: withhold.leaveOut.map(labelOf),
 					},
 				}
 			: {}),
 	});
+	// The signed copy is kept only if its read-back is sound and nothing that
+	// was to be kept out is still in it (D64): each redacted assertion gone
+	// from its manifest, and no manifest left of a source that was left out.
+	const staying = new Set(kept.flatMap((s) => s.reveal.manifestLabels));
+	const failed = [
+		...(withholding
+			? stillCarried(report as never, {
+					redact,
+					manifests: read
+						.filter((s) => withhold.leaveOut.includes(s.assetId))
+						.flatMap((s) => s.reveal.manifestLabels)
+						.filter((label) => !staying.has(label)),
+				})
+			: []),
+	];
+	const readBack = interpretReport(report) as {
+		status: string;
+		label: string;
+		failures: Array<{ code: string }>;
+	};
+	if (!["valid", "unrecognised_issuer"].includes(readBack.status)) {
+		const codes = readBack.failures.map((f) => f.code).join(", ");
+		failed.push(
+			`its credentials read back as "${readBack.label}"${codes ? ` (${codes})` : ""}, not as a sound signature`,
+		);
+	}
+	if (failed.length) {
+		// A file this signing wrote, at a name that did not exist before it.
+		rmSync(outputPath, { force: true });
+		throw new Error(
+			`Signing failed: ${[...new Set(failed)].join("; ")}. The signed copy was not kept.`,
+		);
+	}
 	const rel = toCatalogPath(cutPlace.rootFolder, outputPath, machine.platform);
 	if (!rel) throw new Error(`${outputPath} is not inside its root`);
 	const stats = statSync(outputPath);
@@ -1070,9 +1195,10 @@ export async function signOutput(
 				...storableDefinition(definition as Record<string, unknown>),
 				...(withholding
 					? {
-							redactions: withhold.redact,
-							// By source, assertion and kind as well: an address does
-							// not survive a re-render (D63).
+							// What was removed from the file; and every choice, by
+							// source, assertion and kind as well: an address does not
+							// survive a re-render (D63).
+							redactions: redact,
 							redactions_by_source: rememberRedactions(
 								withhold.redact,
 								read,
@@ -1111,7 +1237,7 @@ export async function signOutput(
 		path: rel,
 		status,
 		withheld: {
-			redacted: withhold.redact.length,
+			redacted: redact.length,
 			leftOut: withhold.leaveOut.length,
 		},
 		notes,

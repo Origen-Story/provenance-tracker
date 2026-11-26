@@ -6,6 +6,7 @@ import {
 	rememberRedactions,
 	revealOf,
 	sameReveal,
+	stillCarried,
 } from "../../src/manifest/reveal.ts";
 
 // A source's manifest store in the shape the C2PA library reads (made up):
@@ -79,7 +80,11 @@ describe("revealOf (D62)", () => {
 			["stds.schema-org.CreativeWork", "author", true],
 			["stds.exif", "location", true],
 			["stds.exif__1", "device", true],
+			// A make alone is listed too: everything is, unless known to be harmless.
+			["stds.exif__2", "device", true],
 		]);
+		// What tells most comes first: the place, then the device.
+		expect(r.items[3].values).toEqual(["41.40", "Example"]);
 		expect(r.items[1].values).toEqual([
 			"A. Person",
 			"aperson",
@@ -91,17 +96,193 @@ describe("revealOf (D62)", () => {
 		expect(r.items[3].uri).toBe(
 			"self#jumbf=/c2pa/urn:c2pa:gen/c2pa.assertions/stds.exif",
 		);
-		// The hash, a plain exif and the inner manifest's plain action say nothing personal.
-		expect(r.otherAssertions).toBe(3);
+		// The hash and the inner manifest's plain action are known to be harmless.
+		expect(r.otherAssertions).toBe(2);
+		expect(r.manifestLabels).toEqual(["urn:c2pa:gen", "urn:c2pa:inner"]);
 	});
 
 	it("finds nothing in a file without credentials", () => {
 		expect(revealOf(null)).toEqual({
 			manifests: 0,
+			manifestLabels: [],
 			signers: [],
+			generators: [],
 			items: [],
 			otherAssertions: 0,
 		});
+	});
+});
+
+describe("everything is listed unless it is known to be harmless (D64)", () => {
+	const camera = {
+		manifests: {
+			"urn:c2pa:cam": {
+				title: "IMG_0042.jpg",
+				claim_generator_info: [{ name: "Example Camera", version: "2.1" }],
+				ingredients: [{ title: "My Private Project.psd" }, { title: "" }],
+				signature_info: { common_name: "Example Camera Co" },
+				assertions: [
+					{ label: "c2pa.hash.data", data: { hash: "abc" } },
+					{ label: "c2pa.thumbnail.claim.jpeg", data: {} },
+					{ label: "c2pa.ingredient.v3", data: { title: "listed above" } },
+					{ label: "c2pa.time-stamp", data: {} },
+					{
+						label: "c2pa.training-mining",
+						data: { entries: { "c2pa.ai_training": { use: "notAllowed" } } },
+					},
+					// Where current cameras put a location and a maker's name.
+					{
+						label: "c2pa.metadata",
+						data: {
+							"@context": { exif: "http://ns.adobe.com/exif/1.0/" },
+							"exif:GPSLatitude": 41.4036,
+							"exif:GPSLongitude": "2,10.4418E",
+							"dc:creator": ["A. Person"],
+							"exif:FNumber": "2.8",
+						},
+					},
+					{
+						label: "stds.iptc",
+						data: { "Iptc4xmpExt:DigitalSourceType": "x" },
+					},
+					{ label: "com.example.note", data: { text: "shot at home" } },
+					{
+						label: "c2pa.actions.v2",
+						data: {
+							actions: [
+								{
+									action: "c2pa.edited",
+									softwareAgent: { name: "Example Editor" },
+									parameters: {
+										ingredientIds: ["ing-1"],
+										"com.example.layer": "Sky replacement",
+									},
+									changes: [
+										{
+											region: [
+												{ type: "temporal", time: { start: "0", end: "1" } },
+												{ type: "spatial", name: "A. Person's face" },
+											],
+										},
+									],
+								},
+							],
+						},
+					},
+					{
+						label: "cawg.training-mining",
+						data: {
+							entries: {
+								"cawg.ai_training": {
+									use: "constrained",
+									constraint_info: "ask a.person@example.org",
+								},
+							},
+						},
+					},
+				],
+			},
+		},
+	};
+	const r = revealOf(camera);
+	const item = (label: string) => r.items.find((i) => i.label === label)!;
+
+	it("lists a location in a C2PA metadata assertion, and it can be redacted", () => {
+		expect(item("c2pa.metadata")).toMatchObject({
+			kind: "location",
+			what: "Where it was made (location)",
+			redactable: true,
+			uri: assertionUri("urn:c2pa:cam", "c2pa.metadata"),
+		});
+		// A latitude written as a number counts; the place first, then who, then the rest.
+		expect(item("c2pa.metadata").values).toEqual([
+			"41.4036",
+			"2,10.4418E",
+			"A. Person",
+			"2.8",
+		]);
+	});
+
+	it("lists metadata that names nobody, a custom assertion, and what an action says beyond the plain", () => {
+		expect(item("stds.iptc")).toMatchObject({
+			kind: "metadata",
+			values: ["x"],
+		});
+		expect(item("com.example.note")).toMatchObject({
+			kind: "other",
+			what: "Something else it says (com.example.note)",
+			values: ["shot at home"],
+			redactable: true,
+		});
+		// Not the software, the ingredient or the time range; the layer's name and the region's.
+		expect(item("c2pa.actions.v2")).toMatchObject({
+			kind: "other",
+			values: ["Sky replacement", "A. Person's face"],
+			redactable: false,
+		});
+		expect(item("cawg.training-mining")).toMatchObject({
+			kind: "other",
+			values: ["ask a.person@example.org"],
+		});
+	});
+
+	it("lists the file names a manifest records, which only leaving the source out removes", () => {
+		expect(r.items[0]).toEqual({
+			uri: "self#jumbf=/c2pa/urn:c2pa:cam",
+			manifest: "urn:c2pa:cam",
+			label: "",
+			kind: "names",
+			what: "File names it records: its own, and those of the files it was made from",
+			values: ["IMG_0042.jpg", "My Private Project.psd"],
+			redactable: false,
+		});
+		expect(r.generators).toEqual(["Example Camera 2.1"]);
+	});
+
+	it("counts only what is known to say nothing: hashes, thumbnails, ingredient records, a time stamp, plain permissions", () => {
+		expect(r.otherAssertions).toBe(5);
+		expect(r.items.map((i) => i.label)).toEqual([
+			"",
+			"c2pa.metadata",
+			"stds.iptc",
+			"com.example.note",
+			"c2pa.actions.v2",
+			"cawg.training-mining",
+		]);
+	});
+});
+
+describe("what a signed copy still holds of what was to be kept out (D64)", () => {
+	const gone = assertionUri("urn:c2pa:gen", "cawg.identity");
+	const report = {
+		manifests: {
+			"urn:c2pa:film": { assertions: [{ label: "c2pa.actions.v2" }] },
+			"urn:c2pa:gen": { assertions: [{ label: "c2pa.hash.data" }] },
+		},
+	};
+	it("finds nothing when each redacted assertion and each left-out manifest is gone", () => {
+		expect(
+			stillCarried(report, { redact: [gone], manifests: ["urn:c2pa:inner"] }),
+		).toEqual([]);
+	});
+	it("names an assertion still listed, and a left-out source's manifest still there", () => {
+		expect(
+			stillCarried(report, {
+				redact: [assertionUri("urn:c2pa:gen", "c2pa.hash.data")],
+				manifests: ["urn:c2pa:gen"],
+			}),
+		).toEqual([
+			"c2pa.hash.data is still in the signed copy",
+			"the credentials of a source that was left out are still in the signed copy",
+		]);
+	});
+	it("does not pass a copy that could not be read back, or an address that is not one", () => {
+		expect(stillCarried(null, { redact: [gone], manifests: [] })).toEqual([
+			"the signed copy's credentials could not be read back",
+		]);
+		expect(
+			stillCarried(report, { redact: ["not-an-address"], manifests: [] }),
+		).toEqual(["not-an-address is not an assertion's address"]);
 	});
 });
 

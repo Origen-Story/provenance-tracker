@@ -10,6 +10,7 @@ import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { EDITABLE, EDITABLE_META } from "./fields.ts";
 import { ORIGIN_CLASS_DEFS, POSITIONS } from "../origin-vocabulary.js";
 import { readIdentity } from "../manifest/identity.ts";
+import { interpretReport } from "../manifest/verify.js";
 import { publicationOf } from "./publications.ts";
 
 /** The identity a stored reading shows, by name and verdict (D55). */
@@ -302,6 +303,58 @@ export function listAssets(
 	};
 }
 
+/**
+ * What a reading of a file's Content Credentials comes to, for a person: who
+ * the credentials name, whether the reader could verify that, and if not,
+ * why, in the reader's own words. The name is what the file says; only
+ * `verdict` says whether anything stands behind it (D67).
+ */
+export interface CredentialsRead {
+	signer: string;
+	issuer: string;
+	/** The program the credentials say made them. */
+	generator: string;
+	/** "valid", "unrecognised_issuer", "hash_mismatch" or "invalid" (manifest/verify.js). */
+	verdict: string;
+	label: string;
+	/** Whether the file is still the bytes that were signed. */
+	contentMatches: boolean;
+	failures: Array<{ code: string; explanation: string }>;
+}
+
+function credentialsRead(data: string | null): CredentialsRead | undefined {
+	if (!data) return undefined;
+	let store: Record<string, unknown>;
+	try {
+		store = JSON.parse(data) as Record<string, unknown>;
+	} catch {
+		return undefined;
+	}
+	const v = interpretReport(store) as {
+		status: string;
+		label: string;
+		hashVerified: boolean;
+		failures: Array<{ code: string; explanation: string }>;
+		signer: { commonName: string; issuer: string } | null;
+	};
+	if (v.status === "absent") return undefined;
+	const active = (
+		store.manifests as Record<string, Record<string, unknown>> | undefined
+	)?.[String(store.active_manifest)];
+	const info = (
+		active?.claim_generator_info as Array<{ name?: string }> | undefined
+	)?.[0];
+	return {
+		signer: v.signer?.commonName ?? "",
+		issuer: v.signer?.issuer ?? "",
+		generator: String(info?.name ?? active?.claim_generator ?? ""),
+		verdict: v.status,
+		label: v.label,
+		contentMatches: v.hashVerified,
+		failures: v.failures,
+	};
+}
+
 export interface AssetRecord {
 	id: number;
 	/** The asset's editable fields (catalog/fields.ts), as their logical values. */
@@ -326,6 +379,8 @@ export interface AssetRecord {
 			status: string;
 			observedAt: string;
 			fromSidecar: boolean;
+			/** For a reading of Content Credentials that found some: what it comes to. */
+			credentials?: CredentialsRead;
 		}>;
 	}>;
 	credits: Array<Record<string, unknown> & { id: number }>;
@@ -412,7 +467,8 @@ export function assetRecord(
 	);
 	const readings = db.prepare(
 		`SELECT o.id, o.kind, o.extractor, o.extractor_version AS version, o.status,
-		        o.observed_at AS observedAt, o.source_sha256 IS NOT NULL AS fromSidecar
+		        o.observed_at AS observedAt, o.source_sha256 IS NOT NULL AS fromSidecar,
+		        CASE WHEN o.kind IN ('c2pa', 'c2pa-sidecar') AND o.status = 'ok' THEN o.data END AS credentials
 		 FROM observations o
 		 WHERE o.content_sha256 = ? AND o.id = (SELECT max(x.id) FROM observations x
 		   WHERE x.content_sha256 = o.content_sha256 AND x.kind = o.kind)
@@ -443,6 +499,9 @@ export function assetRecord(
 			status: r.status as string,
 			observedAt: r.observedAt as string,
 			fromSidecar: bool(r.fromSidecar),
+			...(r.credentials
+				? { credentials: credentialsRead(r.credentials as string) }
+				: {}),
 		})),
 	}));
 	const generation = db

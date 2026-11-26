@@ -1,4 +1,9 @@
-import { originInfo, pillStyle, SIGNED_BY_LABELS } from "./originClasses.js";
+import {
+	originInfo,
+	pillStyle,
+	SIGNED_BY_LABELS,
+	UNVERIFIED_SIGNER,
+} from "./originClasses.js";
 
 /**
  * Small pill for an asset's origin: the class, coloured by its spectrum
@@ -7,6 +12,7 @@ import { originInfo, pillStyle, SIGNED_BY_LABELS } from "./originClasses.js";
  * fields one by one.
  *
  *   ✓  the file's credentials are signed (hover says by whom)
+ *   ✗  the file's credentials name a signer and did not verify (hover says whom)
  *   ?  the class is a proposal the user has not confirmed
  *   ✎  the user left a reason
  */
@@ -28,6 +34,8 @@ export default function OriginBadge({
 	const reason = note ?? a.originClassNote ?? "";
 	const signed = signedBy ?? a.signedBy ?? "";
 	const signer = signerName ?? a.signerName ?? "";
+	// Credentials that name a signer and did not verify are not a signature.
+	const unverified = signed === UNVERIFIED_SIGNER;
 	const fromArchive = archive ?? (type || a.type) === "archival";
 	const info = originInfo({
 		originClass: cls,
@@ -37,9 +45,11 @@ export default function OriginBadge({
 	const title = [
 		`${info.label}${isConfirmed ? " (confirmed)" : " (proposed from metadata, not confirmed)"}`,
 		`${info.positionLabel}${info.code !== "unknown" ? ` · IPTC ${info.code}` : ""}`,
-		signed
-			? `Signed by ${SIGNED_BY_LABELS[signed] || signed}${signer ? `: ${signer}` : ""}`
-			: "",
+		unverified
+			? `Its credentials name ${signer || "a signer"}, but the signature did not verify`
+			: signed
+				? `Signed by ${SIGNED_BY_LABELS[signed] || signed}${signer ? `: ${signer}` : ""}`
+				: "",
 		fromArchive ? "From an archive" : "",
 		reason ? `Note: ${reason}` : "",
 	]
@@ -55,7 +65,15 @@ export default function OriginBadge({
 			title={title}
 		>
 			{info.short}
-			{signed && <span aria-label="signed">✓</span>}
+			{signed && !unverified && <span aria-label="signed">✓</span>}
+			{unverified && (
+				<span
+					className="opacity-80"
+					aria-label="credentials that did not verify"
+				>
+					✗
+				</span>
+			)}
 			{fromArchive && <span className="opacity-80 font-normal">· archive</span>}
 			{!isConfirmed && <span className="opacity-80">?</span>}
 			{reason && (

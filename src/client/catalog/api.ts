@@ -177,6 +177,17 @@ export interface Reading {
 	status: string;
 	observedAt: string;
 	fromSidecar: boolean;
+	/** For a reading of Content Credentials that found some: what it comes to (D67). */
+	credentials?: {
+		/** Who the credentials name. Only `verdict` says whether anything stands behind the name. */
+		signer: string;
+		issuer: string;
+		generator: string;
+		verdict: string;
+		label: string;
+		contentMatches: boolean;
+		failures: Array<{ code: string; explanation: string }>;
+	};
 }
 
 export interface Credit {
@@ -751,8 +762,13 @@ export const outputs = {
 			reveals: SourceReveal[];
 			/** What the newest signing of this edit kept out; null before the first. */
 			lastWithheld: WithheldBefore | null;
-			/** Who signed each source that names a signer; the statement leaves out those the last signing left out. */
-			sourceSigners: Array<{ assetId: number; title: string; signer: string }>;
+			/** The signer each source's credentials name, and whether that signature verified; the statement leaves out those the last signing left out. */
+			sourceSigners: Array<{
+				assetId: number;
+				title: string;
+				signer: string;
+				verified: boolean;
+			}>;
 			/** What the cut and the thumbnail carry in their own metadata (D64). */
 			filesCarry: FileCarries[];
 		}>("GET", `/projects/${projectId}/assets/${assetId}/statement-preview`),

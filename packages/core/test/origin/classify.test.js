@@ -9,6 +9,19 @@ import {
 
 const IPTC = "http://cv.iptc.org/newscodes/digitalsourcetype/";
 
+// What the reading's codes came to (manifest/verify.js), as the summary
+// carries it: the signer is on the trust list, or the claim only verified,
+// or it did not.
+const trusted = (summary) => ({ ...summary, validation: { verdict: "valid" } });
+const unrecognised = (summary) => ({
+	...summary,
+	validation: { verdict: "unrecognised_issuer" },
+});
+const broken = (summary, verdict = "invalid") => ({
+	...summary,
+	validation: { verdict },
+});
+
 // Summaries shaped like the C2PA reader's summary (the old app's buildSummary()),
 // taken from real files: a Pixel 10 Pro clip, a Firefly clip, an ElevenLabs
 // voice line, and a Premiere 2026 export with placed ingredients.
@@ -188,26 +201,15 @@ describe("c2paSignals", () => {
 	});
 });
 
-describe("signerOf", () => {
-	it("tells device, tool and creator apart", () => {
-		expect(signerOf(c2paSignals(pixel))).toEqual({
+describe("signerOf (D67)", () => {
+	it("tells device and tool apart, and says nothing without a manifest", () => {
+		expect(signerOf(c2paSignals(trusted(pixel)))).toEqual({
 			signedBy: "device",
 			signerName: "Pixel Camera",
 		});
-		expect(signerOf(c2paSignals(elevenlabs))).toEqual({
+		expect(signerOf(c2paSignals(unrecognised(elevenlabs)))).toEqual({
 			signedBy: "tool",
 			signerName: "Eleven Labs Inc.",
-		});
-		const ingest = created("digitalCapture", {
-			claimGenerator: "c2patool/0.27.1",
-			signatureInfo: {
-				issuer: "A Studio",
-				commonName: "A Studio Signing Cert",
-			},
-		});
-		expect(signerOf(c2paSignals(ingest))).toEqual({
-			signedBy: "creator",
-			signerName: "A Studio Signing Cert",
 		});
 		expect(signerOf(c2paSignals(null))).toEqual({
 			signedBy: "",
@@ -215,32 +217,57 @@ describe("signerOf", () => {
 		});
 	});
 
-	it("recognises the project's own certificate by its name and issuer together", () => {
-		const byOwnCert = created("digitalCapture", {
-			claimGenerator: "Some Editor 3.1",
-			signatureInfo: { issuer: "Studio Dev Root CA", commonName: "A. Creator" },
+	it("calls a file device-signed only when its signer is on the trust list", () => {
+		// The same words under a certificate no list knows: anyone can make one.
+		expect(signerOf(c2paSignals(unrecognised(pixel)))).toEqual({
+			signedBy: "tool",
+			signerName: "Pixel Camera",
 		});
-		const own = [{ commonName: "a. creator", issuer: "STUDIO DEV ROOT CA" }];
-		expect(signerOf(c2paSignals(byOwnCert), own)).toEqual({
-			signedBy: "creator",
-			signerName: "A. Creator",
+		// A summary that carries no verdict says nothing about trust.
+		expect(signerOf(c2paSignals(pixel)).signedBy).toBe("tool");
+		// Words in the claim generator count for nothing, trusted or not.
+		const says = created("trainedAlgorithmicMedia", {
+			claimGenerator: "Sony Pixel Camera Leica",
+			signatureInfo: { issuer: "Example AI Inc.", commonName: "Example AI" },
 		});
-		// The same name from another issuer is someone else's certificate.
-		const lookalike = created("digitalCapture", {
-			claimGenerator: "Some Editor 3.1",
-			signatureInfo: { issuer: "Anyone's CA", commonName: "A. Creator" },
+		expect(signerOf(c2paSignals(trusted(says))).signedBy).toBe("tool");
+		// A device maker's trusted certificate on something its software
+		// generated is not a capture.
+		const generated = created("trainedAlgorithmicMedia", {
+			signatureInfo: { issuer: "Samsung", commonName: "Samsung Galaxy" },
 		});
-		expect(signerOf(c2paSignals(lookalike), own).signedBy).toBe("tool");
-		// Another certificate the same authority issued is not the creator's.
-		const sibling = created("digitalCapture", {
-			claimGenerator: "Some Editor 3.1",
-			signatureInfo: { issuer: "Studio Dev Root CA", commonName: "B. Other" },
-		});
-		expect(signerOf(c2paSignals(sibling), own).signedBy).toBe("tool");
+		expect(signerOf(c2paSignals(trusted(generated))).signedBy).toBe("tool");
+	});
+
+	it("keeps the name from a claim that did not verify as what the file says, never as who signed", () => {
+		// The signature does not verify, or the file is not the one it signed:
+		// nobody vouches for it. The name is still worth knowing in the tracker.
+		for (const verdict of ["invalid", "hash_mismatch"])
+			expect(signerOf(c2paSignals(broken(pixel, verdict)))).toEqual({
+				signedBy: "unverified",
+				signerName: "Pixel Camera",
+			});
+		// Not a device, and not the creator's, whatever else is known.
 		expect(
-			signerOf(c2paSignals(elevenlabs), [{ commonName: "", issuer: "" }])
-				.signedBy,
-		).toBe("tool");
+			signerOf(c2paSignals(broken(pixel)), { signedHere: true }).signedBy,
+		).toBe("unverified");
+	});
+
+	it("calls a file the creator's only on the caller's word, never for a name in it", () => {
+		const ingest = created("digitalCapture", {
+			claimGenerator: "c2patool/0.27.1 provenance-tracker",
+			signatureInfo: {
+				issuer: "A Studio",
+				commonName: "A Studio Signing Cert",
+			},
+		});
+		expect(signerOf(c2paSignals(unrecognised(ingest)))).toEqual({
+			signedBy: "tool",
+			signerName: "A Studio Signing Cert",
+		});
+		expect(
+			signerOf(c2paSignals(unrecognised(ingest)), { signedHere: true }),
+		).toEqual({ signedBy: "creator", signerName: "A Studio Signing Cert" });
 	});
 });
 
@@ -254,7 +281,7 @@ describe("proposeOriginClass", () => {
 
 	it("keeps the term a signed capture declares, whichever table it is in", () => {
 		expect(
-			proposeOriginClass({ table: "produced", c2paSummary: pixel }),
+			proposeOriginClass({ table: "produced", c2paSummary: trusted(pixel) }),
 		).toEqual({
 			originClass: "computationalCapture",
 			source: "c2pa_capture_action",
@@ -267,6 +294,19 @@ describe("proposeOriginClass", () => {
 		).toBe("computationalCapture");
 	});
 
+	it("still proposes the class a broken manifest declares, as a proposal, but vouches for nothing (D67)", () => {
+		// A manifest with the right words and a signature that does not verify.
+		expect(
+			proposeOriginClass({ table: "produced", c2paSummary: broken(pixel) }),
+		).toEqual({
+			originClass: "computationalCapture",
+			source: "c2pa_capture_action",
+			signedBy: "unverified",
+			signerName: "Pixel Camera",
+			captureSigned: false,
+		});
+	});
+
 	it("a known capture device signer counts when no source type is written", () => {
 		const leica = {
 			claimGenerator: "Leica M11-P",
@@ -275,11 +315,24 @@ describe("proposeOriginClass", () => {
 			signatureInfo: { issuer: "Leica Camera AG", commonName: "Leica" },
 		};
 		expect(
-			proposeOriginClass({ table: "produced", c2paSummary: leica }),
+			proposeOriginClass({ table: "produced", c2paSummary: trusted(leica) }),
 		).toMatchObject({
 			originClass: "digitalCapture",
 			source: "c2pa_capture_device",
 			signedBy: "device",
+		});
+		// The maker's name on a certificate no list knows proves nothing: the
+		// file is not called a capture for it.
+		expect(
+			proposeOriginClass({
+				table: undefined,
+				c2paSummary: unrecognised(leica),
+			}),
+		).toMatchObject({
+			originClass: "unknown",
+			source: "no_signal",
+			signedBy: "tool",
+			captureSigned: false,
 		});
 	});
 
@@ -325,9 +378,17 @@ describe("proposeOriginClass", () => {
 		).toMatchObject({
 			originClass: "digitalCapture",
 			source: "c2pa_capture_action",
-			signedBy: "creator",
+			// "c2patool" in the claim generator is anyone's to write.
+			signedBy: "tool",
 			captureSigned: false,
 		});
+		expect(
+			proposeOriginClass({
+				table: "produced",
+				c2paSummary: resigned,
+				signedHere: true,
+			}).signedBy,
+		).toBe("creator");
 	});
 
 	it("an empty canvas filled by a generative model is AI-generated", () => {
@@ -563,7 +624,8 @@ describe("a re-signed edit (the tracker's own output)", () => {
 		).toMatchObject({
 			originClass: "compositeCapture",
 			source: "c2pa_ingredients",
-			signedBy: "creator",
+			// Naming the tracker as its generator does not make it the creator's.
+			signedBy: "tool",
 		});
 	});
 });

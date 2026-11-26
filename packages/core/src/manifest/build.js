@@ -436,6 +436,9 @@ export function buildCreatorStatement({
 			classSetBy: a.originClassConfirmed ? "creator" : "proposal",
 			fileCredentials: claimed.credentials,
 			classClaimedByFile: leftOut.has(k) ? null : claimed.originClass,
+			// "unverified" (origin-vocabulary.js) is carried as it is: the
+			// credentials name this signer and the signature did not verify.
+			// A reader of the statement must say it that way, never "signed by".
 			signedBy: leftOut.has(k) ? "" : a.signedBy || "",
 			signerName: leftOut.has(k) ? "" : a.signerName || "",
 			aiAssisted: !!a.aiAssisted,

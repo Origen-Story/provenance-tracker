@@ -19,6 +19,14 @@
 // talks to Vite on 5173, whose proxy is configured to forward /api with the
 // Host header unchanged (vite.config.js, changeOrigin: false), so Host and
 // Origin still agree and no port list is needed.
+//
+// A Host header is the caller's word, and any client can write "Host:
+// localhost". So a loopback name counts as this machine only when the
+// connection also came from this machine (D66). That matters when HOST makes
+// the server listen beyond loopback: without it, every device that can reach
+// the port would have the whole API by naming localhost. A host listed in
+// ALLOWED_HOSTS is accepted from anywhere, which is why a login has to sit in
+// front of it; listing a name is not authentication.
 
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1"]);
 const WILDCARD = new Set(["0.0.0.0", "::"]);
@@ -42,16 +50,35 @@ export function isLoopbackHost(host) {
 }
 
 /**
- * Host names accepted beside the loopback ones: a specific HOST address, plus
- * the comma-separated ALLOWED_HOSTS (for a reverse proxy that adds its own
- * login). A wildcard HOST adds nothing, so listening on every interface
- * without naming a host still refuses every non-local request.
+ * True for the address of a connection from this machine itself: 127.0.0.0/8
+ * or ::1, also when IPv4 is written inside IPv6 ("::ffff:127.0.0.1", as a
+ * socket listening on both reports it).
+ */
+export function isLoopbackAddress(address) {
+	const a = clean(address).replace(/^::ffff:/, "");
+	if (a === "::1") return true;
+	const parts = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(a);
+	return !!parts && parts[1] === "127" && parts.slice(1).every((n) => n <= 255);
+}
+
+/**
+ * Host names accepted from any address: a specific HOST address, plus the
+ * comma-separated ALLOWED_HOSTS (for a reverse proxy that adds its own
+ * login). An entry may be written with a port ("tracker.example.net:8443");
+ * the name is what is compared. A wildcard HOST adds nothing, so listening on
+ * every interface without naming a host still refuses every request that
+ * does not come from this machine. A loopback name is never taken from the
+ * list: "localhost" from another machine is always a lie.
  */
 export function allowedHostnames(env = {}) {
 	const names = String(env.ALLOWED_HOSTS || "")
 		.split(",")
-		.map(clean)
-		.filter(Boolean);
+		.map(
+			(entry) =>
+				// A bare IPv6 address is written without its brackets.
+				(parseHost(entry) ?? parseHost(`[${entry.trim()}]`))?.hostname ?? "",
+		)
+		.filter((name) => name && !LOOPBACK.has(name));
 	const host = clean(listenHost(env));
 	if (!WILDCARD.has(host) && !LOOPBACK.has(host)) names.push(host);
 	return [...new Set(names)];
@@ -75,6 +102,8 @@ function parseHost(value) {
  * @param {string} [request.host] the Host header
  * @param {string} [request.origin] the Origin header, when sent
  * @param {string} [request.secFetchSite] the Sec-Fetch-Site header, when sent
+ * @param {string} [request.remoteAddress] the address the connection came
+ *   from (the socket's, never a header); without one, no loopback name passes
  * @param {string[]} [request.allowedHosts] from allowedHostnames()
  * @returns {{ ok: true } | { ok: false, reason: string }}
  */
@@ -82,18 +111,23 @@ export function checkLocalRequest({
 	host,
 	origin,
 	secFetchSite,
+	remoteAddress,
 	allowedHosts = [],
 } = {}) {
 	const target = parseHost(host);
 	if (!target) return { ok: false, reason: "missing or malformed Host header" };
-	if (
-		!LOOPBACK.has(target.hostname) &&
-		!allowedHosts.includes(target.hostname)
-	) {
-		return {
-			ok: false,
-			reason: `Host "${target.hostname}" is not this machine`,
-		};
+	if (!allowedHosts.includes(target.hostname)) {
+		if (!LOOPBACK.has(target.hostname))
+			return {
+				ok: false,
+				reason: `Host "${target.hostname}" is not this machine`,
+			};
+		// "Host: localhost" is this machine only when the caller is too.
+		if (!isLoopbackAddress(remoteAddress))
+			return {
+				ok: false,
+				reason: `Host "${target.hostname}" from ${clean(remoteAddress) || "an unknown address"}, which is not this machine`,
+			};
 	}
 	if (origin !== undefined && origin !== "") {
 		let from;
@@ -127,6 +161,8 @@ export function localOnly({ allowedHosts = [], onRefuse } = {}) {
 			host: req.headers.host,
 			origin: req.headers.origin,
 			secFetchSite: req.headers["sec-fetch-site"],
+			// The socket's own word, not X-Forwarded-For: a header proves nothing.
+			remoteAddress: req.socket?.remoteAddress,
 			allowedHosts,
 		});
 		if (verdict.ok) return next();

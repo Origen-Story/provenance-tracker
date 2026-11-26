@@ -30,5 +30,10 @@
 		"scripts/**/*",
 		"test/**/*"
 	],
-	"exclude": ["packages/*/test/fixtures/**"]
+	// A test that renders a client component is checked with the client's own
+	// settings (src/client/tsconfig.json), which have JSX and browser types.
+	"exclude": [
+		"packages/*/test/fixtures/**",
+		"test/unit/client/**/*.render.test.ts"
+	]
 }

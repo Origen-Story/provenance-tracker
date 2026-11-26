@@ -517,7 +517,8 @@
 					"type": ["string", "null"]
 				},
 				"signedBy": {
-					"type": "string"
+					"type": "string",
+					"description": "device, tool or creator; empty when unsigned or unknown. \"unverified\" when the ingredient's credentials name a signer (signerName) and the signature did not verify: a page must not present that name as who signed."
 				},
 				"signerName": {
 					"type": "string"

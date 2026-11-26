@@ -3,7 +3,8 @@
 // The guard snapshots the working tree before and after the run and fails if
 // any test changed it, including anything under certs/ or a .env file (by
 // name, size and time; never opened). Tests are pure or write to temp
-// directories only.
+// directories only. It also fails a run that took longer than its budget
+// (scripts/lib/test-budget.mjs).
 //
 //   npm test                                   all tests
 //   npm test -- test/unit/parsers/freepik.test.js   one file
@@ -12,13 +13,22 @@ import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { changedPaths, snapshot } from "./lib/repo-snapshot.mjs";
+import { testBudgetSeconds } from "./lib/test-budget.mjs";
 
 // The path as the filesystem spells it. On Windows a shell that reached the
 // repo as `p:\...` hands Node a lowercase drive letter; vitest then loads
 // itself twice (once per spelling) and every file fails at its first
 // describe() with "Cannot read properties of undefined (reading 'config')".
 const ROOT = realpathSync.native(resolve(import.meta.dirname, ".."));
-const BUDGET_SECONDS = 60;
+// 60 s, or the longer budget a workflow names for a hosted runner. A value
+// that is not one stops here, before any test runs.
+let BUDGET_SECONDS;
+try {
+	BUDGET_SECONDS = testBudgetSeconds(process.env);
+} catch (err) {
+	console.error(`repo guard: FAIL, ${err.message}`);
+	process.exit(1);
+}
 const vitest = resolve(ROOT, "node_modules", "vitest", "vitest.mjs");
 
 const args = process.argv.slice(2);

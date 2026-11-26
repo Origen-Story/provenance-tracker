@@ -89,13 +89,16 @@ export interface ProjectSummary {
 
 export const projects = {
 	list: () => api<{ projects: KnownProject[] }>("GET", "/projects"),
-	open: (folder: string) =>
+	/**
+	 * Open a project folder. A folder holding a project this machine already
+	 * has at another folder is refused (409, with `elsewhere` in the error's
+	 * data) unless `takeOver` says this is where the project lives now (D68).
+	 */
+	open: (folder: string, takeOver = false) =>
 		api<{ projectId: string; name: string; folder: string }>(
 			"POST",
 			"/projects/open",
-			{
-				folder,
-			},
+			takeOver ? { folder, take_over: true } : { folder },
 		),
 	create: (folder: string, name: string) =>
 		api<{ projectId: string; name: string; folder: string }>(
@@ -177,6 +180,17 @@ export interface Reading {
 	status: string;
 	observedAt: string;
 	fromSidecar: boolean;
+	/** For a reading of Content Credentials that found some: what it comes to (D67). */
+	credentials?: {
+		/** Who the credentials name. Only `verdict` says whether anything stands behind the name. */
+		signer: string;
+		issuer: string;
+		generator: string;
+		verdict: string;
+		label: string;
+		contentMatches: boolean;
+		failures: Array<{ code: string; explanation: string }>;
+	};
 }
 
 export interface Credit {
@@ -529,13 +543,20 @@ export interface Timeline {
 	clips: TimelineClip[];
 }
 
-/** An assertion in a source's own credentials that says something about a person, a place or a device (D62). */
+/** Something a source's own credentials say: everything is listed, except what is known to be harmless (D62, D64). */
 export interface RevealItem {
 	uri: string;
 	manifest: string;
 	label: string;
 	kind:
-		"identity" | "metadata" | "author" | "location" | "device" | "generation";
+		| "identity"
+		| "metadata"
+		| "author"
+		| "location"
+		| "device"
+		| "generation"
+		| "names"
+		| "other";
 	what: string;
 	values: string[];
 	redactable: boolean;
@@ -549,9 +570,42 @@ export interface SourceReveal {
 	reveal: {
 		manifests: number;
 		signers: string[];
+		/** The programs that made its manifests, as each names its own. */
+		generators: string[];
 		items: RevealItem[];
+		/** Assertions known to say nothing about anyone: hashes, thumbnails, time stamps, plain actions. */
 		otherAssertions: number;
+		/** Why its credentials could not be read; they can then only be left out. */
+		unreadable?: string;
 	};
+}
+
+/** What a file that goes into the signed film says in its own metadata, outside any credentials (D64). */
+export interface FileCarries {
+	assetId: number;
+	title: string;
+	role: "cut" | "thumbnail";
+	/** False when ExifTool has not read it yet. */
+	read: boolean;
+	details: Array<{
+		tag: string;
+		value: string;
+		kind: "path" | "location" | "person" | "device" | "text";
+	}>;
+	more: number;
+}
+
+/** What the last signing of an edit kept out, as it applies to the sources now (D63). */
+export interface WithheldBefore {
+	/** Where the next signing starts: addresses to redact, and sources to leave out. */
+	redact: string[];
+	leaveOut: number[];
+	/** Each redaction the last signing made, in words, with its address or addresses now. */
+	redactions: Array<{ assetId: number | null; what: string; now: string[] }>;
+	/** The sources the last signing left out. */
+	leftOut: number[];
+	/** What was found again in a changed file, and what was dropped, in sentences. */
+	notes: string[];
 }
 
 export interface StatementIngredient {
@@ -710,7 +764,16 @@ export const outputs = {
 			/** What each source's own credentials would reveal inside the signed film (D62). */
 			reveals: SourceReveal[];
 			/** What the newest signing of this edit kept out; null before the first. */
-			lastWithheld: { redact: string[]; leaveOut: number[] } | null;
+			lastWithheld: WithheldBefore | null;
+			/** The signer each source's credentials name, and whether that signature verified; the statement leaves out those the last signing left out. */
+			sourceSigners: Array<{
+				assetId: number;
+				title: string;
+				signer: string;
+				verified: boolean;
+			}>;
+			/** What the cut and the thumbnail carry in their own metadata (D64). */
+			filesCarry: FileCarries[];
 		}>("GET", `/projects/${projectId}/assets/${assetId}/statement-preview`),
 	signing: (projectId: string) =>
 		api<SigningStatus>("GET", `/projects/${projectId}/signing`),

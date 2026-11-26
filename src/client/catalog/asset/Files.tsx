@@ -97,6 +97,43 @@ export default function Files({
 	);
 }
 
+/**
+ * What a reading of the file's Content Credentials comes to (D67): who they
+ * name, whether that verified, and if not, why, in the reader's own words.
+ * A name from credentials that did not verify is shown as what the file
+ * says, never as who signed it.
+ */
+function Credentials({ read }: { read: NonNullable<Reading["credentials"]> }) {
+	const sound =
+		read.verdict === "valid" || read.verdict === "unrecognised_issuer";
+	const who = [
+		read.signer,
+		read.issuer && read.issuer !== read.signer ? `(${read.issuer})` : "",
+	]
+		.filter(Boolean)
+		.join(" ");
+	return (
+		<div className="ml-4 mt-0.5 space-y-0.5">
+			<p className={sound ? "text-text-secondary" : "text-warning"}>
+				{sound
+					? `Signed by ${who || "an unnamed signer"}: ${read.label.toLowerCase()}.`
+					: `Its credentials name ${who || "no signer"}, and they did not verify: ${read.label.toLowerCase()}. A signed film and its public page give the name as unverified, never as who signed.`}
+				{read.generator && ` Made with ${read.generator}.`}
+				{read.contentMatches &&
+					!sound &&
+					" The file is still the one that was signed."}
+			</p>
+			{!sound &&
+				read.failures.map((f) => (
+					<p key={f.code} className="text-text-secondary">
+						{f.code}
+						{f.explanation && `: ${f.explanation}`}
+					</p>
+				))}
+		</div>
+	);
+}
+
 function ReadingRow({
 	projectId,
 	reading,
@@ -125,6 +162,7 @@ function ReadingRow({
 				{reading.fromSidecar && " · from a sidecar"} ·{" "}
 				{when(reading.observedAt)}
 			</button>
+			{reading.credentials && <Credentials read={reading.credentials} />}
 			{open && (
 				<div className="mt-1 ml-4">
 					<Problem error={full.error} />

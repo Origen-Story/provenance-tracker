@@ -316,6 +316,68 @@ describe("buildCreatorStatement", () => {
 		});
 	});
 
+	it("carries a name from credentials that did not verify as unverified, never as who signed (D67)", () => {
+		// The catalog keeps the name as "unverified": what the file says. The
+		// statement says the same, so a page can name the maker and say the
+		// signature could not be verified.
+		const unverified = new Map(assets);
+		unverified.set("ai:21", {
+			...assets.get("ai:21"),
+			signedBy: "unverified",
+			signerName: "Gen Tool",
+		});
+		const said = buildCreatorStatement({
+			output,
+			timeline,
+			composition,
+			segments,
+			assets: unverified,
+			statement,
+			statedAt: "2026-11-13T10:00:00Z",
+		});
+		expect(said.ingredients[2]).toMatchObject({
+			title: "gen-01.mp4",
+			// What the creator and the file say about how it was made stays.
+			originClass: "trainedAlgorithmicMedia",
+			fileCredentials: "present",
+			signedBy: "unverified",
+			signerName: "Gen Tool",
+		});
+		expect(validate(statementSchema, said)).toEqual([]);
+	});
+
+	it("says nothing that came from the credentials of a source whose credentials are left out (D64)", () => {
+		const args = {
+			output,
+			timeline,
+			composition,
+			segments,
+			assets,
+			statement,
+			statedAt: "2026-11-13T10:00:00Z",
+			credentialsLeftOut: ["ai:21"],
+		};
+		const [take, , gen] = buildCreatorStatement(args).ingredients;
+		// Not who signed it, and not the class its credentials claim. That the
+		// file had credentials stays, and so does everything the creator said.
+		expect(gen).toMatchObject({
+			title: "gen-01.mp4",
+			originClass: "trainedAlgorithmicMedia",
+			fileCredentials: "present",
+			classClaimedByFile: null,
+			signedBy: "",
+			signerName: "",
+		});
+		expect(take).toEqual(s.ingredients[0]);
+		expect(JSON.stringify(buildCreatorStatement(args))).not.toContain(
+			"Gen Tool",
+		);
+		// The signed manifest carries that statement.
+		const built = buildOutputManifest({ ...args, generator: GENERATOR });
+		expect(built.statement.ingredients[2].signerName).toBe("");
+		expect(validate(statementSchema, built.statement)).toEqual([]);
+	});
+
 	it("keeps the C2PA ingredient title as the file name, whatever the public title", () => {
 		const { ingredients } = buildOutputManifest({
 			output,

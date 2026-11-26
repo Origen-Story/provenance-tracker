@@ -231,7 +231,7 @@ export function recordSigning(
 export function signatureForExport(db: DatabaseSync, signatureId: number) {
 	const s = db
 		.prepare(
-			`SELECT s.kind, s.version, s.statement, s.report, s.definition, s.signed_sha256, s.signed_at, c.size,
+			`SELECT s.kind, s.version, s.statement, s.report, s.definition, s.signed_sha256, s.signed_at, s.certificate_sha256, c.size,
 			        (SELECT l.path FROM locations l WHERE l.content_sha256 = s.signed_sha256
 			         ORDER BY l.gone_run_id IS NOT NULL, l.id LIMIT 1) AS path
 			 FROM signatures s JOIN contents c ON c.sha256 = s.signed_sha256 WHERE s.id = ?`,
@@ -245,6 +245,7 @@ export function signatureForExport(db: DatabaseSync, signatureId: number) {
 				definition: string;
 				signed_sha256: string;
 				signed_at: string;
+				certificate_sha256: string;
 				size: number;
 				path: string | null;
 		  }
@@ -260,6 +261,9 @@ export function signatureForExport(db: DatabaseSync, signatureId: number) {
 		signedHash: s.signed_sha256,
 		signedSize: s.size,
 		createdAt: s.signed_at,
+		// The signing certificate's SHA-256, kept at signing; "" for a
+		// signing recorded before it was (D72).
+		certificateSha256: s.certificate_sha256,
 	};
 }
 

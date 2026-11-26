@@ -1,6 +1,6 @@
 {
 	"format": "provenance-tracker.public-export",
-	"formatVersion": 2,
+	"formatVersion": 3,
 	"generatedAt": "2026-11-14T09:31:00Z",
 	"generator": {
 		"name": "provenance-tracker",
@@ -409,6 +409,7 @@
 		"statusLabel": "Valid, on the C2PA trust list",
 		"commonName": "Example Studio",
 		"issuer": "Example Trust Services CA",
+		"certificateSha256": "3a9c84c3f50845cb5a6b38b16174350c2050272922c81b7f9ae093c5d0023447",
 		"algorithm": "Es256",
 		"timeStamp": {
 			"time": "2026-11-14T09:30:04Z",

@@ -35,6 +35,7 @@ import { signingEngineFor } from "./engines/index.ts";
 import {
 	holderOrRefuse,
 	identityFor,
+	identityUrlOf,
 	NotReadyError,
 	refuseUnlessSetUp,
 } from "./sign-output.ts";
@@ -171,6 +172,16 @@ export async function signAsset(
 		  }
 		| { action: "refuse"; reason: string };
 	if (plan.action === "refuse") throw new NotReadyError(plan.reason);
+	// The catalog says the .c2pa beside the file is one the tracker wrote, and
+	// it is about to be renamed on that word. Its bytes must be the ones the
+	// catalog recorded: a catalog from someone else could claim any file (D68).
+	if (
+		plan.action === "rotate" &&
+		(await sha256OfFile(plan.archive.from)) !== current!.signed_sha256
+	)
+		throw new NotReadyError(
+			`${path.basename(plan.archive.from)} beside this file is not the sidecar the tracker wrote: it has changed since. Move or rename it, then sign again.`,
+		);
 	if (plan.action === "rotate" && existsSync(plan.archive.to))
 		throw new NotReadyError(
 			`Cannot set the earlier signature aside: ${path.basename(plan.archive.to)} already exists.`,
@@ -192,7 +203,7 @@ export async function signAsset(
 			toolUsed: opts.toolUsed ?? "",
 			authorName: opts.creatorName ?? meta("author"),
 			organization: opts.organization ?? meta("organization"),
-			identityUrl: meta("cawg_identity_url"),
+			identityUrl: identityUrlOf(project),
 			trainingMiningOptOut: opts.trainingMiningOptOut !== false,
 			generator: GENERATOR,
 		});
@@ -232,6 +243,11 @@ export async function signAsset(
 	}
 
 	const stats = statSync(plan.sidecarPath);
+	const signedSha256 = await sha256OfFile(plan.sidecarPath);
+	// The new sidecar as `extract` reads one, kept below as a reading: signing
+	// an edit that places this source compares what the sidecar says with what
+	// the review showed (D63), and this is what the review shows.
+	const reading = await engine.read(file, plan.sidecarPath);
 	const { signatureId, runId } = recordSigning(
 		db,
 		{
@@ -240,7 +256,7 @@ export async function signAsset(
 			version: plan.version,
 			sourceSha256: place.sha256,
 			signed: {
-				sha256: await sha256OfFile(plan.sidecarPath),
+				sha256: signedSha256,
 				size: stats.size,
 				rootId: root.id,
 				path: relOf(plan.sidecarPath),
@@ -267,6 +283,24 @@ export async function signAsset(
 		},
 		{ tool: TOOL, now },
 	);
+	if (reading.status !== "unavailable")
+		db.prepare(
+			`INSERT INTO observations (content_sha256, source_sha256, run_id, kind, extractor, extractor_version,
+			   status, data, error, warnings, validation, observed_at)
+			 VALUES (?, ?, ?, 'c2pa-sidecar', ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			place.sha256,
+			signedSha256,
+			runId,
+			reading.extractor,
+			reading.version,
+			reading.status,
+			reading.data === null ? null : JSON.stringify(reading.data),
+			reading.error,
+			JSON.stringify(reading.warnings),
+			reading.validation ? JSON.stringify(reading.validation) : null,
+			now(),
+		);
 	const { status } = db
 		.prepare("SELECT status FROM signatures WHERE id = ?")
 		.get(signatureId) as { status: string };

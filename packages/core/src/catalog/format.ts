@@ -87,13 +87,46 @@ export function refusalMessage(state: CatalogState): string | null {
 }
 
 /**
- * Settings every connection to a catalog needs. Foreign keys are off by
- * default in SQLite and per connection. trusted_schema off stops a catalog
- * someone else made from running functions with side effects through its own
- * views and triggers.
+ * Settings every connection to a catalog needs, a read-only one too (D68).
+ * Foreign keys are off by default in SQLite and per connection.
+ * trusted_schema off stops a catalog someone else made from running functions
+ * with side effects through its own views and triggers. Defensive mode stops
+ * any SQL, a trigger's included, from rewriting the schema table, writing to
+ * an index's own tables or switching the journal off.
  */
 export function prepareConnection(db: DatabaseSync): void {
 	db.exec("PRAGMA foreign_keys = ON; PRAGMA trusted_schema = OFF;");
+	const defensive = (
+		db as DatabaseSync & { enableDefensive?: (active: boolean) => void }
+	).enableDefensive;
+	// A safety setting is never skipped quietly: without it the tracker does
+	// not open a catalog at all.
+	if (typeof defensive !== "function")
+		throw new Error(
+			"This version of Node cannot turn on SQLite's defensive mode, which every catalog is opened with. Update Node 24 to its newest release.",
+		);
+	defensive.call(db, true);
+}
+
+/**
+ * Run fn as one read of the catalog. Every statement in it sees the catalog
+ * as it was at one moment, whatever another program writes meanwhile, and a
+ * write inside it is refused, not undone quietly. Inside an open transaction
+ * the reads are already one, so only the refusal is added.
+ */
+export function inOneRead<T>(db: DatabaseSync, fn: () => T): T {
+	const { query_only: was } = db.prepare("PRAGMA query_only").get() as {
+		query_only: number;
+	};
+	const own = !db.isTransaction;
+	db.exec("PRAGMA query_only = ON");
+	if (own) db.exec("BEGIN");
+	try {
+		return fn();
+	} finally {
+		if (own && db.isTransaction) db.exec("ROLLBACK");
+		if (!was) db.exec("PRAGMA query_only = OFF");
+	}
 }
 
 let savepoints = 0;

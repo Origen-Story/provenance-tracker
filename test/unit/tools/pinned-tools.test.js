@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { DATA, TOOLS, assetFor, verifySha256, reportsVersion } from "../../../scripts/lib/pinned-tools.mjs";
+import { existsSync, readFileSync } from "node:fs";
+import { DATA, TOOLS, assetFor, pinnedBinary, verifySha256, reportsVersion } from "../../../scripts/lib/pinned-tools.mjs";
 
 describe("assetFor", () => {
 	it("picks the Windows zip and the .exe inside it", () => {
@@ -86,5 +86,35 @@ describe("the pinned trust lists (D51)", () => {
 		expect(t.commit).toMatch(/^[0-9a-f]{40}$/);
 		expect(t.baseUrl).toContain(`/${t.commit}/`);
 		for (const sha of Object.values(t.files)) expect(sha).toMatch(/^[0-9a-f]{64}$/);
+	});
+});
+
+describe("the program inside each download (D69)", () => {
+	it("is pinned by its own SHA-256, which is what is checked before it is loaded or run", () => {
+		for (const [name, tool] of Object.entries(TOOLS))
+			for (const [target, asset] of Object.entries(tool.assets)) {
+				expect(asset.binarySha256, `${name} ${target}`).toMatch(/^[0-9a-f]{64}$/);
+				// The archive and the program in it are different files.
+				expect(asset.binarySha256, `${name} ${target}`).not.toBe(asset.sha256);
+			}
+		// One universal build serves both Mac architectures.
+		expect(pinnedBinary("c2patool", "darwin", "arm64")).toEqual(pinnedBinary("c2patool", "darwin", "x64"));
+		expect(pinnedBinary("c2pa-node", "win32", "x64")).toEqual({
+			version: TOOLS["c2pa-node"].version,
+			sha256: assetFor("c2pa-node", "win32", "x64").binarySha256,
+		});
+		expect(pinnedBinary("c2patool", "linux", "arm64")).toBeNull();
+		expect(pinnedBinary("nope", "win32", "x64")).toBeNull();
+	});
+
+	it("is what tools:fetch installed on this machine, where it is installed", () => {
+		for (const name of Object.keys(TOOLS)) {
+			const pin = pinnedBinary(name, process.platform, process.arch);
+			if (!pin) continue;
+			const inArchive = TOOLS[name].binary[process.platform] ?? TOOLS[name].binary.default;
+			const file = `tools/${name}/${inArchive.split("/").pop()}`;
+			if (!existsSync(file)) continue;
+			expect(createHash("sha256").update(readFileSync(file)).digest("hex"), file).toBe(pin.sha256);
+		}
 	});
 });

@@ -5,6 +5,7 @@
 
 import { afterAll, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	existsSync,
 	mkdtempSync,
@@ -21,8 +22,10 @@ import {
 	loadLibraryReader,
 	readC2paWithLibrary,
 	readerSettings,
+	versionMismatch,
 } from "../src/extract/c2pa-library.ts";
-import { c2patoolPath } from "../src/extract/c2patool.ts";
+import { c2patoolPath, c2patoolProblem } from "../src/extract/c2patool.ts";
+import { notPinned, pinOf } from "../src/pinned.ts";
 import { signWithC2patool } from "../src/sign/engines/c2patool.ts";
 import { keyFilesHolder } from "../src/sign/holders/key-files.ts";
 import { devCertificate, haveOpenssl } from "./helpers/cert.ts";
@@ -91,12 +94,102 @@ describe("readerSettings", () => {
 	});
 });
 
-describe("libraryBinary", () => {
-	it("takes C2PA_LIBRARY_PATH when it is set", () => {
-		expect(libraryBinary({ C2PA_LIBRARY_PATH: "/x/index.node" })).toEqual({
-			path: "/x/index.node",
+describe("what may be loaded and run (D69)", () => {
+	const dir = mkdtempSync(path.join(tmpdir(), "pt-pinned-"));
+	afterAll(() => rmSync(dir, { recursive: true, force: true, maxRetries: 10 }));
+	const pin = pinOf("c2pa-node")!;
+
+	it("loads no library binary a setting names: the override is refused", () => {
+		const elsewhere = path.join(dir, "elsewhere", "index.node");
+		expect(libraryBinary({ C2PA_LIBRARY_PATH: elsewhere })).toEqual({
+			unavailable: expect.stringMatching(
+				/^C2PA_LIBRARY_PATH is set\. The tracker loads only .* take that setting out\.$/,
+			),
+		});
+		// The tracker's own setting of it, to the pinned copy, is not an override.
+		const own = libraryBinary({ C2PA_LIBRARY_PATH: PINNED_BINARY });
+		if (haveLibrary)
+			expect(own).toEqual({
+				path: PINNED_BINARY,
+				version: pin.version,
+			});
+	});
+
+	it("loads a binary only while its bytes are the pinned ones", () => {
+		// A file where the library goes, with other bytes.
+		const other = path.join(dir, "index.node");
+		writeFileSync(other, "not the library");
+		expect(libraryBinary({}, { file: other })).toEqual({
+			unavailable: expect.stringMatching(
+				/^tools\/c2pa-node\/index\.node is not the pinned copy: .* so it is not loaded\. Run npm run tools:fetch -- --force\.$/,
+			),
+		});
+		// A record beside it that says otherwise changes nothing: only the
+		// hash in tracked source counts.
+		writeFileSync(
+			`${other}.pinned.json`,
+			JSON.stringify({ version: pin.version, sha256: "0".repeat(64) }),
+		);
+		expect(libraryBinary({}, { file: other })).toHaveProperty("unavailable");
+		expect(libraryBinary({}, { file: path.join(dir, "missing.node") })).toEqual(
+			{
+				unavailable:
+					"The C2PA library's native binary is not installed. Run npm run tools:fetch.",
+			},
+		);
+		// A kind of machine with no pinned binary has none to load.
+		expect(libraryBinary({}, { platform: "freebsd", arch: "x64" })).toEqual({
+			unavailable: expect.stringMatching(/no pinned binary for freebsd-x64/),
 		});
 	});
+
+	it("refuses a package and a binary of different releases", () => {
+		expect(versionMismatch(pin.version, pin.version)).toBeNull();
+		expect(versionMismatch("0.13.0", pin.version)).toMatch(
+			/package is 0\.13\.0 and the binary in tools\/ is the one pinned for .* same release/,
+		);
+	});
+
+	it("tells a file that is the pinned one from one that is not, and sees it change", () => {
+		const file = path.join(dir, "list.pem");
+		writeFileSync(file, "pinned bytes");
+		const sha = createHash("sha256").update("pinned bytes").digest("hex");
+		expect(notPinned(file, sha, "The list")).toBeNull();
+		writeFileSync(file, "other bytes, longer");
+		expect(notPinned(file, sha, "The list", "Fetch it again.")).toBe(
+			"The list is not the pinned copy: its bytes are not the ones recorded in scripts/lib/pinned-tools.mjs, so it is not loaded. Fetch it again.",
+		);
+	});
+
+	it("runs no c2patool a setting names, none from PATH, and none that is not the pinned program", () => {
+		// The path is the copy in tools/, whatever the environment says.
+		expect(c2patoolPath({ C2PATOOL_PATH: "/x/c2patool" }, "linux")).toBe(
+			c2patoolPath({}, "linux"),
+		);
+		expect(c2patoolPath({}, "linux")).toMatch(
+			/tools[\\/]c2patool[\\/]c2patool$/,
+		);
+		expect(c2patoolProblem({ C2PATOOL_PATH: "/x/c2patool" })).toMatch(
+			/^C2PATOOL_PATH is set\./,
+		);
+		expect(c2patoolProblem({}, "linux", "arm64")).toMatch(
+			/no pinned download for linux-arm64/,
+		);
+		if (haveC2patool) expect(c2patoolProblem({})).toBeNull();
+	});
+
+	it.skipIf(!haveLibrary)(
+		"has, on this machine, the library and the trust lists that are pinned",
+		async () => {
+			expect(libraryBinary({})).toEqual({
+				path: PINNED_BINARY,
+				version: pin.version,
+			});
+			const reader = await loadLibraryReader({}, NO_REMOTE);
+			expect(reader).not.toHaveProperty("unavailable");
+			expect((reader as { version: string }).version).toBe(pin.version);
+		},
+	);
 });
 
 describe.skipIf(!haveOpenssl || !haveC2patool || !haveLibrary)(
@@ -161,6 +254,17 @@ describe.skipIf(!haveOpenssl || !haveC2patool || !haveLibrary)(
 			);
 			expect(o.validation!.failures).toEqual([]);
 			expect(o.validation!.state).toBe("Trusted");
+			// The library says so in a code of its own; "valid" rests on that
+			// code, never on the absence of a failure (D67).
+			expect(
+				(
+					o.data as {
+						validation_results: {
+							activeManifest: { success: Array<{ code: string }> };
+						};
+					}
+				).validation_results.activeManifest.success.map((s) => s.code),
+			).toContain("signingCredential.trusted");
 			expect(interpretReport(o.data as object).status).toBe("valid");
 		}, 60000);
 

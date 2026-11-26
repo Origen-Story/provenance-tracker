@@ -354,7 +354,14 @@ function IngredientRow({
 				<span className={i.fileCredentials === "none" ? "text-warning" : ""}>
 					{CREDENTIALS[i.fileCredentials] ?? i.fileCredentials}
 				</span>
-				{i.signerName && <div>signed by {i.signerName}</div>}
+				{i.signerName &&
+					(i.signedBy === "unverified" ? (
+						<div className="text-warning">
+							names {i.signerName}; not verified
+						</div>
+					) : (
+						<div>signed by {i.signerName}</div>
+					))}
 			</td>
 			<td className="py-1.5 pr-2 text-right tabular-nums text-text-secondary">
 				{i.pictureSeconds ? fmtClock(i.pictureSeconds) : "–"}

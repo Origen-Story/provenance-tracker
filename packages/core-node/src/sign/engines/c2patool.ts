@@ -33,8 +33,12 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { sidecarPathFor } from "@provenancetracker/core/manifest/build.js";
-import { c2patoolPath, c2patoolVersion } from "../../extract/c2patool.ts";
+import { libraryObservation } from "@provenancetracker/core/extraction/c2pa-library-read.ts";
+import {
+	c2patoolPath,
+	c2patoolProblem,
+	c2patoolVersion,
+} from "../../extract/c2patool.ts";
 import type { Machine } from "../../machine.ts";
 import {
 	checkSignArgs,
@@ -63,10 +67,9 @@ async function run(
 	} catch (err) {
 		const e = err as NodeJS.ErrnoException & { stderr?: string };
 		if (e.code === "ENOENT")
-			throw new Error(
-				"c2patool was not found. Run npm run tools:fetch or set C2PATOOL_PATH.",
-				{ cause: err },
-			);
+			throw new Error("c2patool was not found. Run npm run tools:fetch.", {
+				cause: err,
+			});
 		const out = new Error(
 			(e.stderr || e.message || "")
 				.trim()
@@ -116,7 +119,13 @@ async function prepareIngredient(
 		label,
 		relationship,
 		title,
-	}: { label: string; relationship: string; title?: string },
+		sidecarPath,
+	}: {
+		label: string;
+		relationship: string;
+		title?: string;
+		sidecarPath?: string;
+	},
 ): Promise<string> {
 	if (!existsSync(filePath))
 		throw new Error(
@@ -134,9 +143,10 @@ async function prepareIngredient(
 	// them into the ingredient's subfolder.
 	// `-i` reads only credentials embedded in the file. A source asset signed
 	// at ingest has them in a sidecar (D13), so attach that as the ingredient's
-	// manifest store, with the validation results a reader gives for it.
-	const sidecar = sidecarPathFor(filePath);
-	if (!record.manifest_data && existsSync(sidecar)) {
+	// manifest store, with the validation results a reader gives for it. Only
+	// the sidecar the catalog knows (engine.ts), never one found here.
+	const sidecar = sidecarPath;
+	if (!record.manifest_data && sidecar && existsSync(sidecar)) {
 		const report = await readReport(filePath, {
 			tool,
 			externalManifest: sidecar,
@@ -269,11 +279,24 @@ export async function moveFile(from: string, to: string): Promise<void> {
  * it), so signingEngineFor answers that question with the library when it can.
  */
 export async function c2patoolEngine(machine: Machine): Promise<SigningEngine> {
+	// The program is checked against its pinned hash before it is ever run,
+	// its version asked included (D69).
+	const problem = c2patoolProblem(machine.env, machine.platform);
+	if (problem) throw new Error(problem);
 	const tool = c2patoolPath(machine.env, machine.platform);
 	return {
 		name: C2PATOOL_ENGINE,
 		version: (await c2patoolVersion(tool)) ?? "",
 		sign: (args) => signWithC2patool({ ...args, tool }),
+		// c2patool is not a reader for the catalog (D15): signingEngineFor
+		// answers with the library when it can.
+		read: async (_file, sidecar) =>
+			libraryObservation({
+				kind: sidecar ? "c2pa-sidecar" : "c2pa",
+				version: null,
+				unavailable:
+					"c2patool does not read files for the tracker; the C2PA library does.",
+			}),
 		readEmbedded: async (file) => {
 			const report = await readReport(file, { tool }).catch(() => null);
 			if (!report?.active_manifest) return null;

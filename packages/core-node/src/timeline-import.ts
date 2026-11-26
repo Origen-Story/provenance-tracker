@@ -2,6 +2,8 @@
 // in the project as .provenancetracker/timelines/<sha256>, match each source
 // to the project's assets by path, bytes or name, and write it. The pure
 // parts are core's (timeline formats, matching, the breakdown, writeTimeline).
+// A path the timeline names is opened only inside the project's media
+// folders (D65).
 
 import { createHash } from "node:crypto";
 import {
@@ -19,10 +21,8 @@ import {
 } from "@provenancetracker/core/catalog/timelines.ts";
 import { fromCatalogPath } from "@provenancetracker/core/catalog/paths.ts";
 import { segmentsFromTimeline } from "@provenancetracker/core/timeline/breakdown.js";
-import {
-	listSequences,
-	parseTimeline,
-} from "@provenancetracker/core/timeline/formats/index.js";
+import { openTimeline } from "@provenancetracker/core/timeline/formats/index.js";
+import { mayOpenSourcePath } from "@provenancetracker/core/timeline/source-paths.ts";
 import { chooseSequence } from "@provenancetracker/core/timeline/sequence-choice.js";
 import {
 	buildMatchIndex,
@@ -96,11 +96,49 @@ function matchIndex(project: OpenProject, machine: Machine) {
 	});
 }
 
-/** Reading the files a timeline names, to match them by size or bytes. */
-const io = {
-	statSize: async (p: string) => (existsSync(p) ? statSync(p).size : null),
-	hashFile: async (p: string) => (existsSync(p) ? sha256OfFile(p) : null),
+/** What reading a file takes; given so a test can see what would be opened. */
+export interface SourceFiles {
+	exists: (file: string) => boolean;
+	size: (file: string) => number;
+	hash: (file: string) => Promise<string>;
+}
+
+const DISK: SourceFiles = {
+	exists: existsSync,
+	size: (file) => statSync(file).size,
+	hash: sha256OfFile,
 };
+
+/**
+ * Reading the files a timeline names, to match them by size or bytes: only
+ * inside the project's media folders (D65). A timeline is a file from
+ * somewhere else, and a path it names may be anywhere, another computer
+ * included; any path outside those folders is answered as if no file were
+ * there, without being touched.
+ * @param folders the project's media folders on this machine
+ */
+export function sourceReader(
+	folders: readonly string[],
+	platform: Machine["platform"],
+	files: SourceFiles = DISK,
+) {
+	const here = (p: string) =>
+		mayOpenSourcePath(p, folders, platform) && files.exists(p);
+	return {
+		statSize: async (p: string) => (here(p) ? files.size(p) : null),
+		hashFile: async (p: string) => (here(p) ? files.hash(p) : null),
+	};
+}
+
+/** The reader for a project: its media folders that are here now. */
+function readerFor(project: OpenProject, machine: Machine) {
+	return sourceReader(
+		listRoots(project, machine)
+			.filter((r) => r.status === "ok" && r.folder !== null)
+			.map((r) => r.folder!),
+		machine.platform,
+	);
+}
 
 /** The output's own newest file (never a signed copy): the cut a timeline belongs to by default. */
 function ownCut(project: OpenProject, assetId: number): string | null {
@@ -188,8 +226,10 @@ export async function importTimeline(
 	if (!content)
 		throw new Error("This output has no file of its own to hang a timeline on");
 	// A whole-project export holds every sequence: never take the first
-	// without saying so (Phase 8 step 6).
-	const list = listSequences(text);
+	// without saying so (Phase 8 step 6). The file is read once, for the list
+	// and for the sequence chosen from it.
+	const timeline = openTimeline(text);
+	const list = timeline.sequences();
 	const choice = chooseSequence(list, {
 		requested: opts.sequence ?? null,
 		outputSeconds: secondsOf(project, content),
@@ -203,12 +243,16 @@ export async function importTimeline(
 				seconds: c.seconds,
 			})),
 		);
-	const parsed = parseTimeline(text, { sequence: choice.index });
+	const parsed = timeline.parse({ sequence: choice.index });
 	const sha256 = createHash("sha256").update(opts.bytes).digest("hex");
 	keepFile(project.folder, opts.bytes, sha256);
 
 	const index = buildMatchIndex(matchIndex(project, machine));
-	const bySource = await matchClips(sourcesFromTimeline(parsed), index, io);
+	const bySource = await matchClips(
+		sourcesFromTimeline(parsed),
+		index,
+		readerFor(project, machine),
+	);
 	const segments = segmentsFromTimeline(
 		parsed,
 		matchesByClip(parsed, bySource),
@@ -270,8 +314,12 @@ export async function matchEvidence(
 		(f) => f.assetId === assetId,
 	);
 	if (!files.length) return "manual";
+	// The path is the timeline's word, kept in the catalog: as at import, it
+	// is opened only inside the project's media folders.
 	const hash = sourcePath
-		? await io.hashFile(sourcePath).catch(() => null)
+		? await readerFor(project, machine)
+				.hashFile(sourcePath)
+				.catch(() => null)
 		: null;
 	for (const f of files) {
 		const m = reconcileManualMatch({ path: sourcePath, hash }, f);

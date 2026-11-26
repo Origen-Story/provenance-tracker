@@ -5,50 +5,11 @@
 // redacted (the file then says something was removed, and why), or a
 // source's credentials are left out entirely, for what a redaction cannot
 // reach. The public record shows what is in the file, so this one review
-// covers both (decision 7). Choices start from the last signing of this edit.
+// covers both (decision 7). Choices start from the last signing of this edit
+// (withhold-choice.ts).
 
 import type { BuiltStatement, SourceReveal } from "../api.ts";
-
-export interface WithholdChoice {
-	redact: Set<string>;
-	leaveOut: Set<number>;
-}
-
-/** The last signing's choices, kept to what these sources still carry. */
-export function startingChoice(
-	reveals: SourceReveal[],
-	last: { redact: string[]; leaveOut: number[] } | null,
-): WithholdChoice {
-	const uris = new Set(
-		reveals.flatMap((r) =>
-			r.reveal.items.filter((i) => i.redactable).map((i) => i.uri),
-		),
-	);
-	const ids = new Set(reveals.map((r) => r.assetId));
-	return {
-		redact: new Set((last?.redact ?? []).filter((u) => uris.has(u))),
-		leaveOut: new Set((last?.leaveOut ?? []).filter((id) => ids.has(id))),
-	};
-}
-
-/** What this choice reveals that the last signing kept out, in words; empty when nothing. */
-export function revealedAgain(
-	choice: WithholdChoice,
-	last: { redact: string[]; leaveOut: number[] } | null,
-	reveals: SourceReveal[],
-): string[] {
-	if (!last) return [];
-	const out: string[] = [];
-	for (const r of reveals) {
-		if (last.leaveOut.includes(r.assetId) && !choice.leaveOut.has(r.assetId))
-			out.push(`all of ${r.title}'s own credentials`);
-		if (choice.leaveOut.has(r.assetId)) continue;
-		for (const i of r.reveal.items)
-			if (last.redact.includes(i.uri) && !choice.redact.has(i.uri))
-				out.push(`${i.what.toLowerCase()} in ${r.title}`);
-	}
-	return out;
-}
+import type { WithholdChoice } from "./withhold-choice.ts";
 
 const KIND_WORDS: Record<string, string> = {
 	identity: "Identity",
@@ -156,14 +117,22 @@ export default function Reveals({
 								{r.title}
 								{r.parent ? " (the cut itself)" : ""}
 							</legend>
-							<p className="text-xs text-text-secondary">
-								{r.reveal.manifests} manifest
-								{r.reveal.manifests === 1 ? "" : "s"}, signed by{" "}
-								{r.reveal.signers.join(", ") || "unnamed signers"}
-								{r.reveal.otherAssertions > 0 &&
-									` · ${r.reveal.otherAssertions} other assertions that say nothing personal`}
-							</p>
-							{r.reveal.items.length === 0 && (
+							{r.reveal.unreadable ? (
+								<p className="text-xs text-warning">
+									Its Content Credentials could not be read (
+									{r.reveal.unreadable}), so what they say cannot be shown here.
+									They can only be left out.
+								</p>
+							) : (
+								<p className="text-xs text-text-secondary">
+									{r.reveal.manifests} manifest
+									{r.reveal.manifests === 1 ? "" : "s"}, signed by{" "}
+									{r.reveal.signers.join(", ") || "unnamed signers"}
+									{r.reveal.otherAssertions > 0 &&
+										` · ${r.reveal.otherAssertions} other assertions that say nothing personal`}
+								</p>
+							)}
+							{r.reveal.items.length === 0 && !r.reveal.unreadable && (
 								<p className="text-xs text-text-secondary">
 									Nothing personal found in them.
 								</p>

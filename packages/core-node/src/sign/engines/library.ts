@@ -8,7 +8,8 @@
 // library judges camera files" holds while signing too. A source signed at
 // ingest carries its credentials in a .c2pa sidecar (D13); the library reads
 // only embedded ones, so the sidecar goes in as the ingredient's manifest
-// store, with the library's reading of it, as the c2patool engine does.
+// store, with the library's reading of it, as the c2patool engine does. The
+// sidecar is the one the caller names (the catalog's), never one found on disk.
 //
 // The creator's identity (D55), when there is one, is a CAWG identity
 // assertion the library adds as it signs: it asks for a finished COSE_Sign1
@@ -22,11 +23,14 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { sidecarPathFor } from "@provenancetracker/core/manifest/build.js";
 import { mediaTypeForSigning } from "@provenancetracker/core/manifest/formats.ts";
 import { coseSign1 } from "@provenancetracker/core/manifest/cose.ts";
 import { readIdentity } from "@provenancetracker/core/manifest/identity.ts";
-import { readStore, type LoadedLibrary } from "../../extract/c2pa-library.ts";
+import {
+	readC2paWithLibrary,
+	readStore,
+	type LoadedLibrary,
+} from "../../extract/c2pa-library.ts";
 import { checkSignArgs, type SignArgs, type SigningEngine } from "../engine.ts";
 
 /** The name recorded on signatures the library made (the reader's name too). */
@@ -107,8 +111,9 @@ async function addIngredients(
 			);
 			continue;
 		}
-		const sidecar = sidecarPathFor(file);
-		if (!ing.useInput && existsSync(sidecar)) {
+		// Only the sidecar the catalog knows (engine.ts), never one found here.
+		const sidecar = ing.sidecarPath;
+		if (!ing.useInput && sidecar && existsSync(sidecar)) {
 			const own = await readStore(loaded, file).catch(() => null);
 			const fromSidecar = (
 				own ? null : await readStore(loaded, file, sidecar).catch(() => null)
@@ -228,6 +233,15 @@ export function libraryEngine(loaded: LoadedLibrary): SigningEngine {
 		name: LIBRARY_ENGINE,
 		version: loaded.version,
 		sign: (args) => signWithLibrary(loaded, args),
+		read: (file, sidecar) =>
+			readC2paWithLibrary(
+				{
+					version: loaded.version,
+					read: (f, s) => readStore(loaded, f, s),
+				},
+				file,
+				sidecar,
+			),
 		readEmbedded: async (file) => {
 			const store = (await readStore(loaded, file).catch(() => null)) as {
 				active_manifest?: string;

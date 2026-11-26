@@ -4,7 +4,7 @@ Local web app that records where multimedia assets came from (camera, archive, A
 
 ## Commands (from repo root)
 
-- Tests: `npm test`. Run them before saying anything is done. They run vitest inside the repo guard (scripts/test.mjs), which fails if a test changes the checkout or the suite takes over 60 s.
+- Tests: `npm test`. Run them before saying anything is done. They run vitest inside the repo guard (scripts/test.mjs), which fails if a test changes the checkout or the suite takes over 60 s (180 s in CI, which names its own budget).
 - Tests are pure, temp-dir or in-memory catalog only: no network, no signing against certs/. core-node tests pass a machine of their own (packages/core-node/test/helpers/machine.ts) and never touch this machine's settings. Small fixtures are committed beside the tests that use them (packages/core/test/fixtures/); large media stays in test-fixtures/ (gitignored).
 - Dev: `npm run dev` (Express on 3001, Vite on 5173). Build: `npm run build`. Command line: `npm run cli -- help`.
 - Node 24 locally and in CI.

@@ -28,6 +28,7 @@ import { signBytes } from "../src/sign/holder.ts";
 import { keyFilesHolder } from "../src/sign/holders/key-files.ts";
 import { memoryHolder } from "./helpers/holder.ts";
 import {
+	DEV_CERT_NAME,
 	devCertificate,
 	haveOpenssl,
 	type DevKeyType,
@@ -266,14 +267,14 @@ describe.each(ENGINES)("the $name engine", ({ name, ready }) => {
 				};
 				expect(v.status).toBe("unrecognised_issuer");
 				expect(v.hashVerified).toBe(true);
-				expect(v.signer?.commonName).toBe("Origen Story Dev Signing Cert");
+				expect(v.signer?.commonName).toMatch(DEV_CERT_NAME);
 			}
 			// An original is never changed (CLAUDE.md).
 			expect(readFileSync(input).equals(before)).toBe(true);
 			expect(
 				await engine.readEmbedded(path.join(dir, "still.signed.png")),
 			).toEqual({
-				signer: "Origen Story Dev Signing Cert",
+				signer: expect.stringMatching(DEV_CERT_NAME),
 			});
 			// The sidecar beside it is not the file's own (c2patool alone would say it is).
 			expect(await engine.readEmbedded(input)).toBeNull();

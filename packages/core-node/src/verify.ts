@@ -10,11 +10,14 @@
 //   restores the time).
 
 import { statSync } from "node:fs";
-import path from "node:path";
 import {
 	verifyCatalog,
 	type Problem,
 } from "@provenancetracker/core/catalog/verify.ts";
+import {
+	fromCatalogPath,
+	isCatalogPath,
+} from "@provenancetracker/core/catalog/paths.ts";
 import { sha256OfFile } from "./hash.ts";
 import type { Machine } from "./machine.ts";
 import type { OpenProject } from "./project.ts";
@@ -26,7 +29,8 @@ export interface FileProblem {
 	problem:
 		| "missing"
 		| "changed since the last scan"
-		| "bytes differ from the catalog's hash";
+		| "bytes differ from the catalog's hash"
+		| "its path in the catalog is not a path inside its media folder";
 	detail?: string;
 }
 
@@ -95,12 +99,24 @@ export async function verifyProject(
 				});
 			continue;
 		}
-		for (const f of files)
+		for (const f of files) {
+			// A path is the catalog's word: one that leads out of its media
+			// folder is reported, and the file it names is never opened (D68).
+			if (!isCatalogPath(f.path)) {
+				report.files.push({
+					root: root.name,
+					path: f.path,
+					problem:
+						"its path in the catalog is not a path inside its media folder",
+				});
+				continue;
+			}
 			jobs.push({
 				...f,
 				root: root.name,
-				abs: path.join(root.folder, ...f.path.split("/")),
+				abs: fromCatalogPath(root.folder, f.path, machine.platform),
 			});
+		}
 	}
 	let done = 0;
 	for (const job of jobs) {

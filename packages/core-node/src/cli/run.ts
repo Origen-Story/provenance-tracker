@@ -10,6 +10,7 @@ import {
 	createProject,
 	findProjectFolder,
 	NoCatalogError,
+	ProjectElsewhereError,
 	openProject,
 	type OpenProject,
 } from "../project.ts";
@@ -114,7 +115,9 @@ Usage: npm run cli -- <command> [options]
 
 Commands that work on a project use the one in the current folder (or a
 folder above it), or --project <folder>. Edits are recorded under the name
-from "settings person", or --by <name>.
+from "settings person", or --by <name>. A folder holding a project this
+machine already has at another folder is opened only with --take-over, which
+moves this machine's signing set-up and media folders for it there.
 `;
 
 /** A mistake in how the command was typed: printed with a hint, exit code 2. */
@@ -141,6 +144,7 @@ const OPTIONS = {
 	version: { type: "string" },
 	file: { type: "string" },
 	page: { type: "string" },
+	"take-over": { type: "boolean" },
 } as const;
 
 type Values = {
@@ -153,6 +157,7 @@ type Values = {
 	hash?: boolean;
 	help?: boolean;
 	"dry-run"?: boolean;
+	"take-over"?: boolean;
 	write?: boolean;
 	layout?: string;
 	report?: string;
@@ -197,11 +202,19 @@ async function withProject<T>(
 		);
 	let project: OpenProject;
 	try {
-		project = openProject(folder, { machine: io.machine });
+		project = openProject(folder, {
+			machine: io.machine,
+			takeOver: !!values["take-over"],
+		});
 	} catch (err) {
 		if (err instanceof NoCatalogError)
 			throw new Error(
 				`${err.message} To make one there: npm run cli -- init "${err.folder}"`,
+				{ cause: err },
+			);
+		if (err instanceof ProjectElsewhereError)
+			throw new Error(
+				`${err.message} If ${err.folder} is where the project lives now, run the command again with --take-over. To look at a copy without touching the original's set-up, give it a settings file of its own (PROVENANCETRACKER_SETTINGS).`,
 				{ cause: err },
 			);
 		throw err;
@@ -644,6 +657,8 @@ async function sign(io: Io, args: string[], values: Values): Promise<number> {
 				io.out(
 					`Kept out of it, as in the last signing (change it on the Signing tab): ${r.withheld.redacted} detail(s) redacted from sources' credentials, ${r.withheld.leftOut} source(s)' credentials left out.`,
 				);
+			// What changed between that signing and this one is always said.
+			for (const note of r.notes) io.out(note);
 			return 0;
 		}
 		// A source asset: its credentials go in a .c2pa sidecar beside it.

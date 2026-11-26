@@ -278,7 +278,8 @@ describe("a root inside the project folder", () => {
 		p.db.close();
 		const copy = path.join(t.tempDir(), "film copy");
 		cpSync(p.folder, copy, { recursive: true });
-		const q = t.track(openProject(copy, { machine: m }));
+		// The original is still there, so the copy is opened on purpose (D68).
+		const q = t.track(openProject(copy, { machine: m, takeOver: true }));
 		expect(listRoots(q, m)[0].folder).toBe(path.join(copy, "Media", "Day 1"));
 	});
 

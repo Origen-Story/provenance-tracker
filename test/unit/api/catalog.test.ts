@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { request as httpRequest, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
+	cpSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -253,6 +254,44 @@ describe("the catalog API", () => {
 		expect(missing.body.error).toMatch(
 			/^There is no catalog in .* use "Make a new project".$/,
 		);
+	});
+
+	it("asks before opening a second copy of a project this machine already has, and opens it when told to (D68)", async () => {
+		const dir = tempDir();
+		const m = machineIn(dir);
+		const { projectId, folder } = await demoProject(m, dir);
+		const api = await serve(m);
+		const copy = path.join(dir, "Demo copy");
+		cpSync(folder, copy, { recursive: true });
+
+		const asked = await api.post("/api/projects/open", { folder: copy });
+		expect(asked.status).toBe(409);
+		expect(asked.body.error).toMatch(
+			/a project this machine already has at .* Nothing was changed\.$/,
+		);
+		// Where it is now, so the page can say what would move.
+		expect(asked.body.elsewhere).toEqual({ folder });
+		const where = async () =>
+			(await api.get("/api/projects")).body.projects.find(
+				(p: { projectId: string }) => p.projectId === projectId,
+			).folder;
+		expect(await where()).toBe(folder);
+
+		expect(
+			(await api.post("/api/projects/open", { folder: copy, take_over: "yes" }))
+				.status,
+		).toBe(400);
+		expect(
+			(await api.post("/api/projects/open", { folder: copy, force: true }))
+				.status,
+		).toBe(400);
+		const taken = await api.post("/api/projects/open", {
+			folder: copy,
+			take_over: true,
+		});
+		expect(taken.status).toBe(200);
+		expect(taken.body.projectId).toBe(projectId);
+		expect(await where()).toBe(taken.body.folder);
 	});
 
 	it("makes a new project in a folder, and refuses one without a name, an unknown field, or a folder that already has one", async () => {

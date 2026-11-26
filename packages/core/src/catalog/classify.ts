@@ -67,6 +67,8 @@ type Row = Record<string, unknown>;
 
 interface Reading {
 	id: number;
+	/** The content that was read, when it is not the observed one: a sidecar. */
+	sourceSha256: string | null;
 	status: Observation["status"];
 	data: unknown;
 	error: string | null;
@@ -161,7 +163,7 @@ function newestReading(
 ): Reading | null {
 	const row = db
 		.prepare(
-			`SELECT id, status, data, error, validation FROM observations
+			`SELECT id, source_sha256, status, data, error, validation FROM observations
 			 WHERE content_sha256 = ? AND kind = ? AND status <> 'unavailable'
 			 ORDER BY id DESC LIMIT 1`,
 		)
@@ -170,6 +172,7 @@ function newestReading(
 	const parse = (v: unknown) => (typeof v === "string" ? JSON.parse(v) : null);
 	return {
 		id: row.id as number,
+		sourceSha256: (row.source_sha256 as string | null) ?? null,
 		status: row.status as Observation["status"],
 		data: parse(row.data),
 		error: (row.error as string | null) ?? null,
@@ -214,30 +217,34 @@ function compositionClass(db: DatabaseSync, sha256: string): string | null {
 }
 
 /**
- * The certificates this project has signed with, as a reader reports them
- * (the signer's name and its issuer's), from the catalog's own signing
- * record: a file signed by one of them was signed by the creator. Read from
- * the catalog rather than this machine's settings, so every classify run,
- * on any machine, agrees.
+ * Whether the creator signed what was read, by this catalog's own record
+ * (D67): the credentials are in a .c2pa sidecar whose bytes are a signing of
+ * this asset that the catalog recorded, with the fingerprint of the
+ * certificate that made it (`signatures.certificate_sha256`). The answer is
+ * the catalog's, so every classify run, on any machine, agrees; and it never
+ * rests on a certificate's name, which anyone can give a certificate of
+ * their own. The fingerprint is returned as the evidence.
  */
-export function ownSigners(
+function signedHere(
 	db: DatabaseSync,
-): Array<{ commonName: string; issuer: string }> {
-	return (
-		db
-			.prepare(
-				`SELECT DISTINCT signer_name AS commonName, signer_issuer AS issuer
-				 FROM signatures WHERE signer_name <> '' ORDER BY signer_name, signer_issuer`,
-			)
-			.all() as Array<{ commonName: string; issuer: string }>
-	).map((r) => ({ commonName: r.commonName, issuer: r.issuer }));
+	assetId: number,
+	reading: Reading | null,
+): string | null {
+	if (!reading?.sourceSha256) return null;
+	const row = db
+		.prepare(
+			`SELECT certificate_sha256 AS fingerprint FROM signatures
+			 WHERE asset_id = ? AND kind = 'asset' AND signed_sha256 = ?
+			 ORDER BY id DESC LIMIT 1`,
+		)
+		.get(assetId, reading.sourceSha256) as { fingerprint: string } | undefined;
+	return row?.fingerprint ?? null;
 }
 
 /** What classify would do to one asset. Reads only. */
 export function classifyAsset(
 	db: DatabaseSync,
 	assetId: number,
-	own: ReadonlyArray<{ commonName: string; issuer: string }> = ownSigners(db),
 ): AssetClassification | null {
 	const asset = db.prepare("SELECT * FROM assets WHERE id = ?").get(assetId) as
 		Row | undefined;
@@ -266,13 +273,14 @@ export function classifyAsset(
 		platform: string;
 		data: Record<string, unknown>;
 	};
+	const signedWith = signedHere(db, assetId, c2pa);
 	const signals = {
 		c2paSummary: c2paSummaryOf(c2pa),
 		exifTags,
 		platform: detected.platform,
 		platformData: detected.platform === "unknown" ? null : detected.data,
 		parentClass: parentClass(db, assetId),
-		ownSigners: [...own],
+		signedHere: signedWith !== null,
 	};
 
 	// Kind first, for an unsorted asset: the class rules depend on it.
@@ -330,6 +338,9 @@ export function classifyAsset(
 					.map(([k, r]) => [k, r!.id]),
 			),
 			platform: detected.platform,
+			// Why "signed by the creator": the certificate this catalog signed
+			// the sidecar with.
+			...(signedWith ? { signed_here_with: signedWith } : {}),
 		},
 	};
 	const propose = (field: string, to: unknown) => {
@@ -410,9 +421,8 @@ export function classifyCatalog(
 	const ids = opts.assetIds
 		? all.filter((id) => opts.assetIds!.includes(id))
 		: all;
-	const own = ownSigners(db);
 	const plans = ids
-		.map((id) => classifyAsset(db, id, own))
+		.map((id) => classifyAsset(db, id))
 		.filter((p): p is AssetClassification => p !== null);
 	const report: ClassifyReport = {
 		runId: null,

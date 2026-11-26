@@ -781,7 +781,7 @@ export function setPublication(
 }
 
 /** A whole https:// address with a host, as a browser would open it. */
-function isHttpsAddress(value: string): boolean {
+export function isHttpsAddress(value: string): boolean {
 	if (!URL.canParse(value)) return false;
 	const url = new URL(value);
 	return (

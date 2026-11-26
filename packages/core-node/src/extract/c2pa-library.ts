@@ -4,11 +4,13 @@
 // wrong, and c2patool now only signs when a machine chooses it.
 //
 // The library's native binary is loaded only from the copy `npm run
-// tools:fetch` pinned and checksummed (tools/c2pa-node/index.node), or from
-// C2PA_LIBRARY_PATH when set; never from what the package's install script
-// may have downloaded. Trust comes from the pinned C2PA trust lists
-// (tools/trust-lists/), given as text, so nothing is fetched to load them:
-// the signing list for claims, and the time-stamp list for time stamps.
+// tools:fetch` installed (tools/c2pa-node/index.node), and only while its
+// bytes are the ones pinned in tracked source and its version is the
+// package's (D69); never from what the package's install script may have
+// downloaded, and never from a path a setting names. Trust comes from the
+// pinned C2PA trust lists (tools/trust-lists/), checked the same way and
+// given as text, so nothing is fetched to load them: the signing list for
+// claims, and the time-stamp list for time stamps.
 // What reading may send out (docs/network.md): only a request for Content
 // Credentials a file says are stored on the web (Adobe Firefly video), and
 // only while this machine's setting allows it (on unless turned off). OCSP is
@@ -16,8 +18,7 @@
 // that refuses, so it can never fetch a trust list. Signing uses the same
 // settings, so the same switch covers ingredients read while signing.
 
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -27,6 +28,7 @@ import {
 } from "@provenancetracker/core/extraction/c2pa-library-read.ts";
 import type { Observation } from "@provenancetracker/core/extraction/observation.ts";
 import type { Env } from "../machine.ts";
+import { notPinned, pinOf, pinnedTrustLists } from "../pinned.ts";
 
 /** The repository's tools/ folder, from this file (packages/core-node/src/extract/). */
 const TOOLS = path.resolve(
@@ -66,39 +68,55 @@ export interface LoadedLibrary {
 }
 
 /**
- * Which native binary to load: C2PA_LIBRARY_PATH when set, else the pinned
- * copy, which must still have the hash recorded when it was installed.
- * @returns the path, or the reason there is none
+ * The native binary to load: the pinned copy, and only while its bytes are
+ * the ones recorded in tracked source for this kind of machine (D69). No
+ * setting names another file: C2PA_LIBRARY_PATH, which the package itself
+ * reads, is refused when it points anywhere else.
+ * @param at for tests: the file, and the machine's kind
+ * @returns the path and the version its hash is pinned for, or the reason there is none
  */
 export function libraryBinary(
 	env: Env,
-): { path: string } | { unavailable: string } {
-	if (env.C2PA_LIBRARY_PATH) return { path: env.C2PA_LIBRARY_PATH };
-	if (!existsSync(PINNED_BINARY))
+	at: { file?: string; platform?: NodeJS.Platform; arch?: string } = {},
+): { path: string; version: string } | { unavailable: string } {
+	const file = at.file ?? PINNED_BINARY;
+	if (
+		env.C2PA_LIBRARY_PATH &&
+		path.resolve(env.C2PA_LIBRARY_PATH) !== path.resolve(file)
+	)
 		return {
 			unavailable:
-				"The C2PA library's native binary is not installed. Run npm run tools:fetch.",
+				"C2PA_LIBRARY_PATH is set. The tracker loads only the C2PA library binary that npm run tools:fetch installed and checked, so take that setting out.",
 		};
-	const marker = `${PINNED_BINARY}.pinned.json`;
-	try {
-		const { sha256 } = JSON.parse(readFileSync(marker, "utf8")) as {
-			sha256?: string;
-		};
-		const actual = createHash("sha256")
-			.update(readFileSync(PINNED_BINARY))
-			.digest("hex");
-		if (actual !== sha256)
-			return {
-				unavailable:
-					"tools/c2pa-node/index.node has changed since tools:fetch installed it. Run npm run tools:fetch -- --force.",
-			};
-	} catch {
+	const pin = pinOf("c2pa-node", at.platform, at.arch);
+	if (!pin)
 		return {
-			unavailable:
-				"tools/c2pa-node/index.node has no install record. Run npm run tools:fetch -- --force.",
+			unavailable: `The C2PA library has no pinned binary for ${at.platform ?? process.platform}-${at.arch ?? process.arch}, so it cannot be used on this machine.`,
 		};
-	}
-	return { path: PINNED_BINARY };
+	const problem = notPinned(file, pin.sha256, "tools/c2pa-node/index.node");
+	if (problem)
+		return {
+			unavailable: problem.replace(
+				"tools/c2pa-node/index.node is not installed",
+				"The C2PA library's native binary is not installed",
+			),
+		};
+	return { path: file, version: pin.version };
+}
+
+/**
+ * Why the library package and the pinned binary may not be used together;
+ * null when they are the same release. A package bumped without its binary
+ * would otherwise run the old binary and record the new version's name on
+ * everything it read or signed.
+ */
+export function versionMismatch(
+	packageVersion: string,
+	binaryVersion: string,
+): string | null {
+	return packageVersion === binaryVersion
+		? null
+		: `The C2PA library package is ${packageVersion} and the binary in tools/ is the one pinned for ${binaryVersion}: they must be the same release. Run npm ci, then npm run tools:fetch -- --force.`;
 }
 
 /**
@@ -177,21 +195,39 @@ export function loadLibrary(
 	env: Env,
 	opts: { remoteManifests: boolean; userAnchors?: string },
 ): Promise<LoadedLibrary | { unavailable: string }> {
-	const key = `${env.C2PA_LIBRARY_PATH ?? ""}|${opts.remoteManifests}|${opts.userAnchors ?? ""}`;
+	const key = `${opts.remoteManifests}|${opts.userAnchors ?? ""}`;
 	const known = loaded.get(key);
 	if (known) return known;
 	const attempt = (async () => {
+		// Checked before anything is loaded, each time a library is made ready:
+		// the binary, the package it belongs to, and the two trust lists.
 		const binary = libraryBinary(env);
 		if ("unavailable" in binary) return binary;
-		for (const list of [TRUST_LIST, TSA_TRUST_LIST])
-			if (!existsSync(list))
-				return {
-					unavailable: `The C2PA trust list ${path.basename(list)} is not installed. Run npm run tools:fetch.`,
-				};
+		const version = (
+			createRequire(import.meta.url)("@contentauth/c2pa-node/package.json") as {
+				version: string;
+			}
+		).version;
+		const mismatch = versionMismatch(version, binary.version);
+		if (mismatch) return { unavailable: mismatch };
+		const lists = pinnedTrustLists();
+		for (const list of [TRUST_LIST, TSA_TRUST_LIST]) {
+			const name = path.basename(list);
+			const problem = notPinned(
+				list,
+				lists[name] ?? "",
+				`The C2PA trust list tools/trust-lists/${name}`,
+				"Run npm run tools:fetch.",
+			);
+			if (problem) return { unavailable: problem };
+		}
+		// The package finds its binary by this name: it is the tracker's to
+		// set, to the copy just checked, whatever it was set to before.
 		const chosen = process.env.C2PA_LIBRARY_PATH;
 		if (chosen && path.resolve(chosen) !== path.resolve(binary.path))
 			return {
-				unavailable: `C2PA_LIBRARY_PATH already names ${chosen} in this process; it cannot also load ${binary.path}.`,
+				unavailable:
+					"C2PA_LIBRARY_PATH is set. The tracker loads only the C2PA library binary that npm run tools:fetch installed and checked, so take that setting out.",
 			};
 		process.env.C2PA_LIBRARY_PATH = binary.path;
 		let lib: Lib;
@@ -202,11 +238,6 @@ export function loadLibrary(
 				unavailable: `The C2PA library could not be loaded: ${(err as Error).message}`,
 			};
 		}
-		const version = (
-			createRequire(import.meta.url)("@contentauth/c2pa-node/package.json") as {
-				version: string;
-			}
-		).version;
 		const tsaAnchors = readFileSync(TSA_TRUST_LIST, "utf8");
 		// Still a Context, so the library keeps its own handling of it (and the
 		// fetch that refuses); only the resolved settings gain the time-stamp list.

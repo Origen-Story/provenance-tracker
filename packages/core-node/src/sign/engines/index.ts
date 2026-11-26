@@ -11,6 +11,7 @@ import {
 	signingEngineOf,
 	type SigningEngineName,
 } from "../../settings.ts";
+import { libraryObservation } from "@provenancetracker/core/extraction/c2pa-library-read.ts";
 import type { SigningEngine } from "../engine.ts";
 import { c2patoolEngine } from "./c2patool.ts";
 import { libraryEngine } from "./library.ts";
@@ -38,9 +39,26 @@ export async function signingEngineFor(
 		// Whether a file carries credentials of its own is a reading, and the
 		// library is the reader (D15): c2patool takes a .c2pa sidecar beside a
 		// file as the file's own, so it would refuse to sign a source again.
-		return "unavailable" in loaded
-			? engine
-			: { ...engine, readEmbedded: libraryEngine(loaded).readEmbedded };
+		// So is what a source carries, which signing a finished edit reads
+		// first: without the library nothing here can, and the engine says why.
+		if ("unavailable" in loaded) {
+			const why = loaded.unavailable;
+			return {
+				...engine,
+				read: async (_file, sidecar) =>
+					libraryObservation({
+						kind: sidecar ? "c2pa-sidecar" : "c2pa",
+						version: null,
+						unavailable: why,
+					}),
+			};
+		}
+		const library = libraryEngine(loaded);
+		return {
+			...engine,
+			readEmbedded: library.readEmbedded,
+			read: library.read,
+		};
 	}
 	if ("unavailable" in loaded)
 		throw new EngineUnavailableError(

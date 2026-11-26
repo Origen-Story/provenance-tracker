@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { interpretReport } from "../../src/manifest/verify.js";
+import { interpretReport, UNCHECKED } from "../../src/manifest/verify.js";
 
 // Reports shaped like c2patool 0.27.1 output, trimmed to the fields read.
 const URN = "urn:c2pa:00000000-0000-0000-0000-000000000001";
@@ -7,6 +7,7 @@ const UNTRUSTED = {
 	code: "signingCredential.untrusted",
 	explanation: "signing certificate untrusted",
 };
+const TRUSTED = { code: "signingCredential.trusted" };
 const report = ({
 	failure = [UNTRUSTED],
 	success = [{ code: "assertion.bmffHash.match" }],
@@ -64,9 +65,45 @@ describe("interpretReport", () => {
 	it("reads a trusted, timestamped signature as valid", () => {
 		expect(
 			interpretReport(
-				report({ failure: [], time: "2026-11-13T10:00:00+00:00" }),
+				report({
+					failure: [],
+					success: [{ code: "assertion.bmffHash.match" }, TRUSTED],
+					time: "2026-11-13T10:00:00+00:00",
+				}),
 			),
-		).toMatchObject({ status: "valid", timestamped: true, untrusted: false });
+		).toMatchObject({
+			status: "valid",
+			claim: "trusted",
+			timestamped: true,
+			untrusted: false,
+		});
+	});
+
+	it("calls a signer trusted only when the reader said so, never because it said nothing (D67)", () => {
+		// No complaint, and no word that the signer is on a trust list.
+		const silent = interpretReport(report({ failure: [] }));
+		expect(silent).toMatchObject({
+			status: "invalid",
+			claim: "invalid",
+			untrusted: false,
+		});
+		expect(silent.failures).toEqual([UNCHECKED]);
+		// No results at all: the same, not "valid".
+		const bare = report();
+		delete bare.validation_results;
+		expect(interpretReport(bare)).toMatchObject({
+			status: "invalid",
+			claim: "invalid",
+		});
+		// An older report lists failures only: untrusted is still read from it.
+		expect(
+			interpretReport({ ...bare, validation_status: [UNTRUSTED] }).status,
+		).toBe("unrecognised_issuer");
+		// Both said (a reader that contradicts itself) is not trusted.
+		expect(
+			interpretReport(report({ failure: [UNTRUSTED], success: [TRUSTED] }))
+				.status,
+		).toBe("unrecognised_issuer");
 	});
 
 	it("separates a content-hash mismatch from other failures", () => {

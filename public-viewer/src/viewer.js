@@ -13,9 +13,13 @@
 //   });
 //
 // Everything shown comes from the public export, which may come from anyone:
-// text is only ever set as text (no innerHTML). Links are the ones the page
-// passes in, and the signed file's and page's addresses an export records,
-// used only when they are https (safeLink in model.js).
+// text is only ever set as text (no innerHTML), and its numbers and kinds are
+// checked once on load (assertViewable in model.js). Every link is checked
+// before it is made: the ones the page passes in (pageLink), the signed
+// file's and page's addresses an export records (safeLink, https only), and
+// a source type, linked only when it is an IPTC vocabulary address
+// (sourceTypeLink). What the record says of the signature is shown as the
+// record's account, never as something this page checked (D71).
 
 import {
 	SPECTRUM,
@@ -34,6 +38,12 @@ import {
 	readCopyCredentials,
 	credentialVerdict,
 	TONE_WORDS,
+	RECORD_TONE_WORDS,
+	RECORD_NOTE,
+	pageLink,
+	sourceTypeLink,
+	youtubeIdOf,
+	hashCommands,
 	groupHash,
 	formatBytes,
 	assertViewable,
@@ -141,6 +151,8 @@ class Viewer {
 			);
 		this.current = { picture: -2, audio: -2 };
 		this.pinned = null;
+		// A video id that is not one is left out: the clock plays.
+		this.youtubeId = youtubeIdOf(opts.video?.youtubeId);
 		this.render();
 		this.player = this.makePlayer();
 		this.player.ready
@@ -153,10 +165,16 @@ class Viewer {
 	makePlayer() {
 		const v = this.opts.video || {};
 		const title = this.exp.film.title;
-		if (v.youtubeId)
-			return youtubePlayer(this.stage, { videoId: v.youtubeId, title });
-		if (v.src)
-			return videoPlayer(this.stage, { src: v.src, poster: v.poster, title });
+		// An address that is not one the page may use is left out the same way.
+		const src = pageLink(v.src, document.baseURI);
+		if (this.youtubeId)
+			return youtubePlayer(this.stage, { videoId: this.youtubeId, title });
+		if (src)
+			return videoPlayer(this.stage, {
+				src,
+				poster: pageLink(v.poster, document.baseURI) || undefined,
+				title,
+			});
 		this.stage.classList.add("ptv-stage-clock");
 		return clockPlayer(this.stage, { duration: this.duration });
 	}
@@ -1078,12 +1096,12 @@ class Viewer {
 				h(
 					"dd",
 					{},
-					i.digitalSourceType
+					sourceTypeLink(i.digitalSourceType)
 						? h(
 								"a",
 								{
-									href: i.digitalSourceType,
-									rel: "noopener",
+									href: sourceTypeLink(i.digitalSourceType),
+									rel: "noopener noreferrer",
 									target: "_blank",
 								},
 								i.originClass,
@@ -1156,7 +1174,11 @@ class Viewer {
 					"h4",
 					{ class: "ptv-result-h" },
 					h("span", { class: "ptv-result-label" }, label),
-					h("span", { class: "ptv-tone-word" }, TONE_WORDS[verdict.tone]),
+					h(
+						"span",
+						{ class: "ptv-tone-word" },
+						RECORD_TONE_WORDS[verdict.tone],
+					),
 				),
 				h("strong", {}, verdict.headline),
 				h("p", {}, verdict.detail),
@@ -1170,9 +1192,13 @@ class Viewer {
 			{ class: "ptv-signature", "aria-labelledby": "ptv-signature-h" },
 			h("h3", { class: "ptv-h", id: "ptv-signature-h" }, "Signature"),
 			this.signedBy(),
+			h("p", { class: "ptv-muted ptv-small ptv-record-note" }, RECORD_NOTE),
 			h(
 				"ul",
-				{ class: "ptv-results", "aria-label": "What the signature shows" },
+				{
+					class: "ptv-results",
+					"aria-label": "What the record says about the signature",
+				},
 				card("The film", fileVerdict(r.file)),
 				card(
 					"The signer",
@@ -1228,7 +1254,9 @@ class Viewer {
 					h(
 						"dd",
 						{},
-						r.file.hashVerified ? "verified when signed" : "not verified",
+						r.file.hashVerified
+							? "recorded as verified when signed"
+							: "not verified",
 					),
 					h("dt", {}, "Manifests in the file"),
 					h("dd", {}, String(s.manifestCount)),
@@ -1406,7 +1434,9 @@ class Viewer {
 			}, 2000);
 		});
 		// The page's own link first; else where the export says the signed file is (https only).
-		const fileUrl = opts.download?.url || this.results.fileUrl;
+		const fileUrl =
+			pageLink(opts.download?.url, document.baseURI) || this.results.fileUrl;
+		const commands = hashCommands(f.fileName);
 		const download = fileUrl
 			? h(
 					"a",
@@ -1414,7 +1444,7 @@ class Viewer {
 						class: "ptv-button",
 						href: fileUrl,
 						download: f.fileName,
-						rel: "noopener",
+						rel: "noopener noreferrer",
 					},
 					"Download the signed film",
 					f.bytes
@@ -1447,7 +1477,7 @@ class Viewer {
 				"details",
 				{ class: "ptv-fold" },
 				foldSummary("Show the steps", "Hide the steps"),
-				opts.video?.youtubeId
+				this.youtubeId
 					? h(
 							"p",
 							{ class: "ptv-muted ptv-small ptv-verify-note" },
@@ -1486,10 +1516,12 @@ class Viewer {
 							"p",
 							{ class: "ptv-muted ptv-small" },
 							"Windows: ",
-							h("code", {}, `certutil -hashfile "${f.fileName}" SHA256`),
+							h("code", {}, commands.windows),
 							". macOS or Linux: ",
-							h("code", {}, `shasum -a 256 "${f.fileName}"`),
-							".",
+							h("code", {}, commands.unix),
+							commands.named
+								? "."
+								: ". Put the name of the file you downloaded where the command says.",
 						),
 						this.copyCheck(),
 					),
@@ -1504,8 +1536,9 @@ class Viewer {
 							h(
 								"a",
 								{
-									href: opts.verifyUrl || VERIFY_URL,
-									rel: "noopener",
+									href:
+										pageLink(opts.verifyUrl, document.baseURI) || VERIFY_URL,
+									rel: "noopener noreferrer",
 									target: "_blank",
 								},
 								"Content Credentials Verify",

@@ -650,3 +650,27 @@ describe("export format 1, still built for the Postgres migration's check", () =
 		expect(only2).toEqual(only1);
 	});
 });
+
+describe("a source type is written only when it is a vocabulary address", () => {
+	it("leaves out a stored value that is anything else, in the film and in a source", () => {
+		const stored = JSON.parse(signature.statementJson);
+		stored.output.digitalSourceType = "javascript:alert(document.domain)";
+		stored.ingredients[0].digitalSourceType =
+			"https://example.org/not-a-vocabulary";
+		const out = buildPublicExport({
+			signature: { ...signature, statementJson: JSON.stringify(stored) },
+			generatedAt: "2026-11-14T10:00:00Z",
+			generator: GENERATOR,
+		});
+		expect(out.film.digitalSourceType).toBeNull();
+		// The class's own address stands in for a source.
+		expect(out.ingredients[0].digitalSourceType).toBe(
+			e.ingredients[0].digitalSourceType,
+		);
+		expect(validate(SCHEMA, out)).toEqual([]);
+		// The genuine ones are untouched.
+		expect(e.film.digitalSourceType).toMatch(
+			/^http:\/\/cv\.iptc\.org\/newscodes\/digitalsourcetype\/[A-Za-z]+$/,
+		);
+	});
+});

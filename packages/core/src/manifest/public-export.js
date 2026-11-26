@@ -8,9 +8,10 @@
 // project carries on. No paths, no database ids: file names only, and the
 // ingredient refs (ing-1, ing-2...) that the manifest itself uses.
 //
-// Schema: spec/public-export.v2.schema.json (format 2, D57); format 1's is
-// spec/public-export.v1.schema.json. Bump EXPORT_FORMAT_VERSION on any change
-// a viewer would have to handle differently. Format 1 is still built by
+// Schema: spec/public-export.v3.schema.json (format 3, D72: format 2 with
+// the signing certificate's fingerprint); format 2's (D57) and format 1's
+// are beside it. Bump EXPORT_FORMAT_VERSION on any change a viewer would
+// have to handle differently. Format 1 is still built by
 // buildPublicExportV1, for the Postgres migration's check that its exports
 // come out byte for byte as they were (D34).
 
@@ -26,7 +27,7 @@ import {
 } from "../origin-vocabulary.js";
 
 export const EXPORT_FORMAT = "provenance-tracker.public-export";
-export const EXPORT_FORMAT_VERSION = 2;
+export const EXPORT_FORMAT_VERSION = 3;
 const MIN_STATEMENT_VERSION = 2;
 
 function parse(json, what) {
@@ -257,6 +258,7 @@ const SIGNER_LABELS = {
  * creator left out, without saying what.
  * @param {object} a
  * @param {object} a.signature    as for buildPublicExportV1, plus `definition` (the stored manifest definition)
+ *   and `certificateSha256` (the signing certificate's fingerprint, kept at signing; "" when it was not)
  * @param {object|null} [a.publication] where the signed copy is published: { fileUrl, pageUrl, withheld }
  * @param {string} a.generatedAt  ISO time
  * @param {object} a.generator    { name, version }
@@ -303,6 +305,14 @@ export function buildPublicExport({
 			statusLabel: SIGNER_LABELS[v.claim],
 			commonName: v.signer?.commonName || "",
 			issuer: v.signer?.issuer || "",
+			// What a name cannot do: tell this signer's certificate from
+			// another with the same name (D72). Empty for no signature, and for
+			// a signing recorded before the fingerprint was kept.
+			certificateSha256:
+				v.claim !== "absent" &&
+				/^[0-9a-f]{64}$/.test(signature.certificateSha256 || "")
+					? signature.certificateSha256
+					: "",
 			algorithm: v.signer?.alg || "",
 			timeStamp: readTimeStamp(report),
 			manifestCount: v.manifests,

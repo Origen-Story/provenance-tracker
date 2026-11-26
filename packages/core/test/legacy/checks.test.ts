@@ -344,6 +344,9 @@ describe("signatureForExport", () => {
 			signedHash: FILES.signed.sha256,
 			signedSize: FILES.signed.size,
 			createdAt: "2026-11-06T09:00:00.250Z",
+			// A signing brought across from the old app has no fingerprint
+			// (D72); format 1, which this check builds, does not carry one.
+			certificateSha256: "",
 		});
 		// The app's row, as node-postgres returned it.
 		const fromApp = {

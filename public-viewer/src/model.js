@@ -1,5 +1,5 @@
-// Pure: everything the viewer works out from a public export (formats 1 and
-// 2), with no DOM. Tested in test/unit/public-viewer/model.test.js.
+// Pure: everything the viewer works out from a public export (formats 1 to
+// 3), with no DOM. Tested in test/unit/public-viewer/model.test.js.
 //
 // An export may come from anyone. Its numbers, lists and kinds are checked
 // once, on load (assertViewable); a word is looked up in a table only by a
@@ -866,11 +866,68 @@ export function readCopyCredentials(report) {
 		issuer: active.signature_info?.issuer || "",
 		contentChecked: codes(results.success).some((c) => CONTENT_MATCH.test(c)),
 		failures: blocking,
+		// Which manifest the reader judged, to hold the certificate check to it.
+		label:
+			typeof report.active_manifest === "string" ? report.active_manifest : "",
 	};
 }
 
-/** That reading in plain words: { tone, headline, detail }, said against what the record names. */
-export function credentialVerdict(reading, exp) {
+/** The fingerprint of the certificate a record says the film was signed with (format 3), or "". */
+export function recordedCertificate(exp) {
+	const value = exp?.formatVersion === 3 ? exp?.signer?.certificateSha256 : "";
+	return typeof value === "string" && /^[0-9a-f]{64}$/.test(value) ? value : "";
+}
+
+/** Whether a reading is of a signature the reader said validated. */
+const validated = (reading) =>
+	["trusted", "unrecognised_issuer", "unchecked"].includes(reading?.status);
+
+/**
+ * Whether the page should look for the certificate in a copy at all: only
+ * when the record names one, and a reader has said the copy's signature
+ * validated. A certificate is public and can be pasted into any file, so its
+ * fingerprint says something only beside a signature that checks out.
+ */
+export function shouldCompareCertificate(reading, exp) {
+	return !!recordedCertificate(exp) && validated(reading);
+}
+
+/**
+ * The certificate in a visitor's copy against the one the record names
+ * (D72). `found` is what certificate.js found, { label, sha256 }, or
+ * { error } with its plain reason. Returns { status, reason? }:
+ *   same       the copy's signature was made with the recorded certificate
+ *   different  with another one, whatever name it carries
+ *   unsure     the page could not find the certificate for sure
+ *   none       nothing to compare (see shouldCompareCertificate)
+ * The certificate must belong to the manifest the reader judged, or the
+ * reader's word that the signature validated would be about something else.
+ */
+export function compareCertificate(reading, found, exp) {
+	if (!shouldCompareCertificate(reading, exp)) return { status: "none" };
+	if (!found || found.error || !/^[0-9a-f]{64}$/.test(found.sha256 || ""))
+		return {
+			status: "unsure",
+			reason: found?.error || "the certificate could not be found",
+		};
+	if (!reading.label || found.label !== reading.label)
+		return {
+			status: "unsure",
+			reason:
+				"this page and the reader disagree about which manifest signs the file",
+		};
+	return {
+		status: found.sha256 === recordedCertificate(exp) ? "same" : "different",
+	};
+}
+
+/**
+ * That reading in plain words: { tone, headline, detail }, said against what
+ * the record names. `certificate` is compareCertificate's result, when the
+ * page compared the certificates themselves; without it, only names are
+ * compared, and the words say so.
+ */
+export function credentialVerdict(reading, exp, certificate) {
 	const recorded =
 		exp?.formatVersion === 1
 			? exp?.signature?.signer?.commonName
@@ -878,7 +935,7 @@ export function credentialVerdict(reading, exp) {
 	const who = reading.signer || "an unnamed certificate";
 	// Names are compared, and a name can be copied into any certificate. Only
 	// a certificate on the trust list has someone vouching for its name.
-	const same =
+	const byName =
 		recorded && reading.signer
 			? reading.signer === recorded
 				? reading.status === "trusted"
@@ -886,6 +943,20 @@ export function credentialVerdict(reading, exp) {
 					: ` That is the name this record gives for the signer. A name alone does not show it is the same signer: anyone can make a certificate with any name, and no one on the trust list vouches for this one.`
 				: ` This record names ${recorded}, not ${reading.signer}.`
 			: "";
+	// The certificates themselves, when the page compared them (D72).
+	const same =
+		certificate?.status === "same"
+			? ` It was signed with the certificate this record names, compared by the certificate's fingerprint and not by its name.`
+			: certificate?.status === "different"
+				? recorded && reading.signer === recorded
+					? ` It carries the name this record gives for the signer, but it was signed with a different certificate. Either the creator has changed certificate since this record was made, or someone else signed this copy.`
+					: `${byName} It was signed with a different certificate from the one this record names.`
+				: certificate?.status === "unsure"
+					? `${byName} The certificates themselves could not be compared: ${certificate.reason}.`
+					: byName;
+	// A different certificate is never "checks out" against this record.
+	const toned = (tone) =>
+		certificate?.status === "different" && tone === "good" ? "caution" : tone;
 	// "Unchanged" only when the reader said the content matched what was signed.
 	const unchanged = reading.contentChecked ? ", and unchanged" : "";
 	const content = reading.contentChecked
@@ -913,7 +984,7 @@ export function credentialVerdict(reading, exp) {
 			};
 		case "trusted":
 			return {
-				tone: reading.contentChecked ? "good" : "caution",
+				tone: toned(reading.contentChecked ? "good" : "caution"),
 				headline: `Signed by ${who}, a recognised signer${unchanged}`,
 				detail: `${content} The certificate is on the Content Credentials trust list.${same}`,
 			};
@@ -1025,9 +1096,9 @@ function assertLane(lane, name) {
 export function assertViewable(exp) {
 	if (!isObject(exp) || exp.format !== "provenance-tracker.public-export")
 		throw new Error("This is not a provenance tracker public export.");
-	if (exp.formatVersion !== 1 && exp.formatVersion !== 2)
+	if (![1, 2, 3].includes(exp.formatVersion))
 		throw new Error(
-			`This viewer reads export formats 1 and 2, not ${exp.formatVersion}. A newer viewer may read it.`,
+			`This viewer reads export formats 1 to 3, not ${exp.formatVersion}. A newer viewer may read it.`,
 		);
 	const bad = (what) =>
 		new Error(`The export is not one this viewer can show: ${what}.`);
@@ -1100,7 +1171,15 @@ export function assertViewable(exp) {
 		!(missing(signer.failures) || listOf(signer.failures, isText))
 	)
 		throw bad("what it says of the signature is not readable");
-	if (exp.formatVersion === 2) {
+	if (exp.formatVersion >= 2) {
+		if (
+			exp.formatVersion === 3 &&
+			!(
+				isText(signer.certificateSha256) &&
+				/^([0-9a-f]{64})?$/.test(signer.certificateSha256)
+			)
+		)
+			throw bad("the signing certificate's fingerprint is not one");
 		if (!isObject(exp.file)) throw bad("it does not say what was checked");
 		if (!listOf(signer.failures, isText))
 			throw bad("what it says of the signature is not readable");

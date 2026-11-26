@@ -21,7 +21,8 @@ const schemaOf = (v) =>
 			"utf8",
 		),
 	);
-const SCHEMA = schemaOf(2);
+const SCHEMA = schemaOf(3);
+const SCHEMA_V2 = schemaOf(2);
 const SCHEMA_V1 = schemaOf(1);
 const GENERATOR = { name: "provenance-tracker", version: "0.0.0-test" };
 const dir = path.join(path.sep, "media", "project");
@@ -319,6 +320,8 @@ describe("buildPublicExport", () => {
 			statusLabel: "Valid, unrecognised issuer",
 			commonName: "Dev Signer",
 			issuer: "Dev CA",
+			// This signing was recorded without a fingerprint.
+			certificateSha256: "",
 			algorithm: "Es256",
 			timeStamp: {
 				time: "2026-11-14T09:00:01Z",
@@ -651,5 +654,51 @@ describe("a source type is written only when it is a vocabulary address", () => 
 		expect(e.film.digitalSourceType).toMatch(
 			/^http:\/\/cv\.iptc\.org\/newscodes\/digitalsourcetype\/[A-Za-z]+$/,
 		);
+	});
+});
+
+describe("export format 3: the signing certificate's fingerprint (D72)", () => {
+	const build = (certificateSha256) =>
+		buildPublicExport({
+			signature: { ...signature, certificateSha256 },
+			generatedAt: "2026-11-14T10:00:00Z",
+			generator: GENERATOR,
+		});
+
+	it("carries the fingerprint kept at signing, and nothing that is not one", () => {
+		const fingerprint = "cd".repeat(32);
+		const out = build(fingerprint);
+		expect(out.formatVersion).toBe(3);
+		expect(out.signer.certificateSha256).toBe(fingerprint);
+		expect(validate(SCHEMA, out)).toEqual([]);
+		for (const not of [
+			"",
+			undefined,
+			null,
+			"CD".repeat(32),
+			"cd".repeat(31),
+			"x",
+		])
+			expect(build(not).signer.certificateSha256, String(not)).toBe("");
+		// No signature, no signer's certificate, whatever the row says.
+		const none = buildPublicExport({
+			signature: {
+				...signature,
+				certificateSha256: fingerprint,
+				reportJson: JSON.stringify({}),
+			},
+			generatedAt: "2026-11-14T10:00:00Z",
+			generator: GENERATOR,
+		});
+		expect(none.signer.status).toBe("absent");
+		expect(none.signer.certificateSha256).toBe("");
+	});
+
+	it("is format 2 with that one field added", () => {
+		const { certificateSha256, ...signer } = build("cd".repeat(32)).signer;
+		expect(certificateSha256).toBe("cd".repeat(32));
+		expect(validate(SCHEMA_V2, { ...e, formatVersion: 2, signer })).toEqual([]);
+		// And format 3's schema refuses a record without it.
+		expect(validate(SCHEMA, { ...e, signer })).not.toEqual([]);
 	});
 });

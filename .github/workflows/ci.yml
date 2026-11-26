@@ -5,7 +5,10 @@ name: CI
 # most recurring bugs are path and line-ending bugs Linux never shows, and
 # many video editors work on Macs.
 # `npm test` runs vitest inside the repo guard (scripts/test.mjs): it fails if
-# any test changes the checkout or the suite takes over 60 s.
+# any test changes the checkout or the suite takes over its time budget. The
+# budget is 60 s on a person's machine, where the suite takes about 20 s. Here
+# it is 180 s: a hosted Windows runner has taken over 80 s on runs where every
+# test passed, and failed the job for that alone.
 # The tests themselves use no network. Before them, `npm run tools:fetch`
 # installs the pinned c2patool, the C2PA library's native binary and the trust
 # lists (each checked against its SHA-256), so signing and reading are tested
@@ -56,6 +59,8 @@ jobs:
 
       - name: Tests
         run: npm test
+        env:
+          PT_TEST_BUDGET_SECONDS: "180"
 
       - name: Client build
         run: npm run build

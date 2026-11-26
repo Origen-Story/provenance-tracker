@@ -21,6 +21,7 @@ import {
 	writeTimeline,
 } from "@provenancetracker/core/catalog/timelines.ts";
 import type { Machine } from "@provenancetracker/core-node/machine.ts";
+import { makeObservation } from "@provenancetracker/core/extraction/observation.ts";
 import {
 	createProject,
 	openProject,
@@ -51,6 +52,9 @@ const stub: SigningEngine = {
 	name: "stub",
 	version: "1.0",
 	readEmbedded: async () => null,
+	// A stand-in reads every source as carrying no credentials.
+	read: async () =>
+		makeObservation({ kind: "c2pa", extractor: "stub", status: "absent" }),
 	sign: async ({ inputPath, outputPath }) => {
 		copyFileSync(inputPath, outputPath);
 		writeFileSync(

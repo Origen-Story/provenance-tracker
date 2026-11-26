@@ -246,3 +246,32 @@ Short numbered log of decisions that shape the code. Add a line when one is made
     - the spike, on a copy of the demo film with throwaway certificates: redacting the Premiere export's `cawg.identity` leaves the claim valid, records `c2pa.redacted` and leaves no trace of it; leaving the parent's credentials out leaves only the tracker's own manifest;
     - in tests, with real signing: a source given credentials naming an author is listed, redacted, carried to the next signing, left out, recorded and counted, and wrong choices and the c2patool engine are refused;
     - in the app, on the copy: the Signing tab listed the film's three credentialed sources with the identity's name and links, and a signing through the route redacted the identity. Read back by the library and by c2patool, the copy is valid apart from the throwaway certificate's trust, with no trace of the identity.
+- **D63 (2026-11-26) A choice to keep something out survives a re-render, and signing reads every source before it signs.** A review of D62 found that the review before signing could be wrong in two ways: a choice could be lost without a word, and a source could carry more than the review showed. No catalog change and no new dependency.
+  - _What was wrong._
+    - A redaction was remembered only by its address, which holds the label of the manifest the assertion is in. A file that is rendered and exported again is signed afresh under a new label, so the remembered address matched nothing and was dropped silently: the next signed copy revealed what the last one kept out. D62 promised the opposite.
+    - The review listed only sources with a stored good reading, while the signing engine read every source file itself. A source never read, or changed after its scan, or with a `.c2pa` beside it that nobody had scanned, brought in credentials the review never showed.
+  - _Remembering._ A signature's stored definition keeps each redaction by source, assertion label and kind as well as by address (`redactions_by_source`, beside `redactions`). `carryWithheld` (`packages/core/src/manifest/reveal.ts`, pure) carries the last signing's choices to the sources as they are now:
+    - an address still in its source stays redacted;
+    - an address gone from its source is looked for there by assertion label and by kind, and every redactable match is kept out. When in doubt, more is withheld;
+    - what the sources no longer carry is dropped.
+
+    Whatever was found again or dropped is said in sentences: on the Signing tab before signing, in the signing job's result, and on the command line. The Signing tab starts from the carried choices and still warns when a choice would reveal what the last copy kept out, following each redaction to the address it has now. A record made before this decision has addresses only; it is looked for in every source by label.
+
+  - _Reading first._ Before anything is signed, `signOutput`:
+    - hashes the cut, every source the timeline places and any sidecar it will use, and refuses if one is not the bytes the catalog knows;
+    - reads each source with the reader the engine embeds by (`SigningEngine.read`, the C2PA library), and refuses if what it finds is not what the review showed, naming the files and asking for them to be read again;
+    - refuses credentials that could not be read unless that source's credentials are left out, since nothing in them can be shown.
+
+    The preview says which sources have not been read yet and blocks signing until they are.
+
+  - _Sidecars._ An engine uses the `.c2pa` it is handed and never looks for one itself. `signOutput` hands over a sidecar only when the catalog has it at that place and its hash matches. Signing a source into a sidecar (D42) keeps the library's reading of the new sidecar, so an edit that places that source can be signed without another pass over the project.
+  - _What this costs._
+    - Signing hashes and reads every source first, so it takes longer on a film with large sources.
+    - A machine where the C2PA library cannot load can no longer sign a finished edit with c2patool alone, because nothing there can read the sources (planned-features).
+    - After the library is updated, `extract` has to run again before signing, because the stored readings are the older version's.
+  - _Unchanged._ A new export started from an earlier edit is another asset and inherits no choices (D62 says "the same edit"). The review still lists the five kinds D62 lists; what it leaves unlisted, and a check of the signed copy after signing, are the next change.
+  - _Checked:_ in tests, with real signing:
+    - a cut re-rendered and re-signed between two signings keeps its author's name out of the second, and a third render that names nobody reports the choice as dropped;
+    - a source given credentials and not read is refused until `extract` has run;
+    - a source changed after its scan is refused before anything is written;
+    - a `.c2pa` put beside a source is ignored until it is scanned and read, and refused once its bytes change.

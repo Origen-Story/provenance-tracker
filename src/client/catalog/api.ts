@@ -551,7 +551,22 @@ export interface SourceReveal {
 		signers: string[];
 		items: RevealItem[];
 		otherAssertions: number;
+		/** Why its credentials could not be read; they can then only be left out. */
+		unreadable?: string;
 	};
+}
+
+/** What the last signing of an edit kept out, as it applies to the sources now (D63). */
+export interface WithheldBefore {
+	/** Where the next signing starts: addresses to redact, and sources to leave out. */
+	redact: string[];
+	leaveOut: number[];
+	/** Each redaction the last signing made, in words, with its address or addresses now. */
+	redactions: Array<{ assetId: number | null; what: string; now: string[] }>;
+	/** The sources the last signing left out. */
+	leftOut: number[];
+	/** What was found again in a changed file, and what was dropped, in sentences. */
+	notes: string[];
 }
 
 export interface StatementIngredient {
@@ -710,7 +725,7 @@ export const outputs = {
 			/** What each source's own credentials would reveal inside the signed film (D62). */
 			reveals: SourceReveal[];
 			/** What the newest signing of this edit kept out; null before the first. */
-			lastWithheld: { redact: string[]; leaveOut: number[] } | null;
+			lastWithheld: WithheldBefore | null;
 		}>("GET", `/projects/${projectId}/assets/${assetId}/statement-preview`),
 	signing: (projectId: string) =>
 		api<SigningStatus>("GET", `/projects/${projectId}/signing`),

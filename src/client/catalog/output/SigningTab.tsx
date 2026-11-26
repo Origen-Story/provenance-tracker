@@ -19,11 +19,13 @@ import {
 } from "../ui.tsx";
 import { previewKey } from "./shared.tsx";
 import Thumbnail from "./Thumbnail.tsx";
-import Reveals, {
+import Reveals from "./Reveals.tsx";
+import {
 	revealedAgain,
 	startingChoice,
+	unreviewed,
 	type WithholdChoice,
-} from "./Reveals.tsx";
+} from "./withhold-choice.ts";
 
 export const signingKey = (projectId: string) => [
 	"catalog",
@@ -116,6 +118,7 @@ function SignOutput({
 	const last = preview.data?.lastWithheld ?? null;
 	const chosen = choice ?? startingChoice(reveals, last);
 	const again = revealedAgain(chosen, last, reveals);
+	const unread = unreviewed(chosen, reveals);
 	const withholding = chosen.redact.size + chosen.leaveOut.size > 0;
 	const { start, job, busy, interrupted } = useSignJob(projectId, asset.id);
 	const next =
@@ -128,7 +131,13 @@ function SignOutput({
 	const blockers = [
 		...(signing.data && signing.data.problem ? [signing.data.problem] : []),
 		...(preview.data?.blockers ?? []),
+		...unread.map(
+			(title) =>
+				`${title} has Content Credentials that could not be read, so the review cannot show what they say. Leave its credentials out to sign.`,
+		),
 	];
+	// What the signing said about the choices it carried from the last one.
+	const said = (job?.result as { notes?: string[] } | null)?.notes ?? [];
 	const running = job?.state === "running";
 	return (
 		<Card className="space-y-3">
@@ -163,6 +172,11 @@ function SignOutput({
 					</div>
 				</details>
 			)}
+			{(last?.notes ?? []).map((note) => (
+				<p key={note} className="text-xs text-warning">
+					{note}
+				</p>
+			))}
 			{again.length > 0 && (
 				<p className="text-xs text-warning">
 					The last signed copy kept out {again.join("; ")}. This one would
@@ -207,9 +221,16 @@ function SignOutput({
 			{job?.state === "failed" && <Problem error={job.error} />}
 			{interrupted && <Interrupted />}
 			{job?.state === "done" && (
-				<p className="text-sm text-accent">
-					Signed. The new copy is listed below.
-				</p>
+				<div className="space-y-1">
+					<p className="text-sm text-accent">
+						Signed. The new copy is listed below.
+					</p>
+					{said.map((note) => (
+						<p key={note} className="text-xs text-text-secondary">
+							{note}
+						</p>
+					))}
+				</div>
 			)}
 		</Card>
 	);

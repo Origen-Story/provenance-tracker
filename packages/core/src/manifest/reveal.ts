@@ -38,6 +38,19 @@ export interface Reveal {
 	items: RevealItem[];
 	/** Assertions that say nothing personal (hashes, ingredients, thumbnails, plain actions). */
 	otherAssertions: number;
+	/**
+	 * Set when the source has credentials (or may have) and the reader failed
+	 * on them: nothing in them can be listed, so they can only be left out.
+	 */
+	unreadable?: string;
+}
+
+/** A source of a signed film, with what its own credentials would reveal. */
+export interface RevealSource {
+	assetId: number;
+	/** Its file name, for messages. */
+	title?: string;
+	reveal: Reveal;
 }
 
 type Store = {
@@ -181,7 +194,7 @@ export interface Withhold {
  */
 export function checkWithhold(
 	choice: Withhold,
-	sources: ReadonlyArray<{ assetId: number; reveal: Reveal }>,
+	sources: ReadonlyArray<RevealSource>,
 ): string[] {
 	const problems: string[] = [];
 	const redactable = new Set(
@@ -189,9 +202,7 @@ export function checkWithhold(
 			s.reveal.items.filter((i) => i.redactable).map((i) => i.uri),
 		),
 	);
-	const carrying = new Set(
-		sources.filter((s) => s.reveal.manifests > 0).map((s) => s.assetId),
-	);
+	const carrying = new Set(sources.filter(carries).map((s) => s.assetId));
 	for (const uri of choice.redact)
 		if (!redactable.has(uri))
 			problems.push(
@@ -202,5 +213,215 @@ export function checkWithhold(
 			problems.push(
 				`Asset ${id} is not a source here that carries credentials`,
 			);
+	// Credentials nobody could read cannot be reviewed, so they cannot travel.
+	for (const s of sources)
+		if (s.reveal.unreadable && !choice.leaveOut.includes(s.assetId))
+			problems.push(
+				`${nameOf(s)} has Content Credentials that could not be read (${s.reveal.unreadable}), so what they say cannot be shown. Leave its credentials out to sign`,
+			);
 	return problems;
+}
+
+/** Whether a source has credentials of its own that would travel, read or not. */
+const carries = (s: RevealSource) =>
+	s.reveal.manifests > 0 || !!s.reveal.unreadable;
+
+const nameOf = (s: { assetId: number | null; title?: string }) =>
+	s.title || (s.assetId === null ? "a source" : `asset ${s.assetId}`);
+
+/**
+ * Whether two readings of a source would put the same things in a signed
+ * film: the same manifests and signers, and the same items at the same
+ * addresses with the same values. Signing compares what it reads with what
+ * the review showed, and refuses when they differ.
+ */
+export function sameReveal(a: Reveal, b: Reveal): boolean {
+	const plain = (r: Reveal) =>
+		JSON.stringify([
+			r.manifests,
+			r.signers,
+			r.items.map((i) => [i.uri, i.kind, i.values, i.redactable]),
+			r.otherAssertions,
+			!!r.unreadable,
+		]);
+	return plain(a) === plain(b);
+}
+
+/**
+ * A redaction as a signing remembers it: by source, assertion and kind, as
+ * well as by address. The address holds the label of the manifest the
+ * assertion was in, and a re-rendered file is signed afresh under a new
+ * label, so the address alone is lost with every re-render.
+ */
+export interface RememberedRedaction {
+	/** The source it was in; null in a record made before sources were remembered. */
+	assetId: number | null;
+	/** That source's file name then, for messages. */
+	title: string;
+	/** The assertion's label in its manifest. */
+	label: string;
+	/** Null in a record made before kinds were remembered. */
+	kind: RevealKind | null;
+	/** The address it had in that signing. */
+	uri: string;
+}
+
+/** What a signing kept out, as the next one starts from it. */
+export interface Remembered {
+	redact: RememberedRedaction[];
+	/** Asset ids of sources whose credentials were left out entirely. */
+	leaveOut: number[];
+}
+
+const KIND_WORDS: Record<RevealKind, string> = {
+	identity: "an identity",
+	metadata: "descriptive metadata",
+	author: "an author's name",
+	location: "a location",
+	device: "device details",
+	generation: "generation details",
+};
+
+/** Whether a value read from a catalog is one of the kinds. */
+export const isRevealKind = (v: unknown): v is RevealKind =>
+	typeof v === "string" && Object.hasOwn(KIND_WORDS, v);
+
+/** An assertion's label without the counter a repeated label gets. */
+const plainLabel = (label: string) => label.replace(/__\d+$/, "");
+
+/** The assertion label an address ends with. */
+const labelOfUri = (uri: string) => uri.split("/").pop() ?? "";
+
+/** How a choice is remembered: each address with the source, label and kind it has now. */
+export function rememberRedactions(
+	uris: readonly string[],
+	sources: ReadonlyArray<RevealSource>,
+): RememberedRedaction[] {
+	return uris.map((uri) => {
+		for (const s of sources) {
+			const item = s.reveal.items.find((i) => i.uri === uri);
+			if (item)
+				return {
+					assetId: s.assetId,
+					title: s.title ?? "",
+					label: item.label,
+					kind: item.kind,
+					uri,
+				};
+		}
+		return {
+			assetId: null,
+			title: "",
+			label: labelOfUri(uri),
+			kind: null,
+			uri,
+		};
+	});
+}
+
+/** One thing the last signing kept out, and where it is in the sources now. */
+export interface CarriedItem {
+	/** The source it was in; null when the record does not say. */
+	assetId: number | null;
+	/** What it is, in words: "an identity in film.mp4". */
+	what: string;
+	/** Its address or addresses now; empty when the sources no longer carry it. */
+	now: string[];
+}
+
+export interface Carried {
+	/** The last signing's choices as they apply to these sources. */
+	withhold: Withhold;
+	/** Each redaction the last signing made, and where it is now. */
+	redactions: CarriedItem[];
+	/**
+	 * What a person should be told, in sentences: what was found at a new
+	 * address and kept out again, and what was dropped because the sources no
+	 * longer carry it. Empty when every choice applies exactly as it was.
+	 */
+	notes: string[];
+}
+
+/**
+ * Carry the last signing's choices to the sources as they are now, so a new
+ * signed copy never quietly reveals what the last one kept out.
+ *
+ * A redaction whose address is still in its source is kept as it is. One
+ * whose address is gone from its source (the source was re-rendered, so its
+ * manifest has a new label) is looked for there by its assertion label and
+ * by its kind, and every redactable match is kept out: when in doubt, more
+ * is withheld, and the person is told. What no source carries any more is
+ * dropped, and the person is told that too.
+ *
+ * An address names a manifest by its label, and two sources can hold the same
+ * manifest (a still, and a cut that used it). So an address still found in
+ * another source stays redacted, but it never stands in for looking in the
+ * source the choice was made about.
+ */
+export function carryWithheld(
+	last: Remembered,
+	sources: ReadonlyArray<RevealSource>,
+): Carried {
+	const redact = new Set<string>();
+	const redactions: CarriedItem[] = [];
+	const notes: string[] = [];
+	const redactableIn = (s: RevealSource) =>
+		s.reveal.items.filter((i) => i.redactable);
+	const has = (s: RevealSource, uri: string) =>
+		redactableIn(s).some((i) => i.uri === uri);
+	for (const r of last.redact) {
+		const source = sources.find((s) => s.assetId === r.assetId);
+		const where = nameOf({
+			assetId: r.assetId,
+			title: source?.title || r.title,
+		});
+		const what = `${r.kind ? KIND_WORDS[r.kind] : `"${plainLabel(r.label)}"`} in ${where}`;
+		const now: string[] = sources.some((s) => has(s, r.uri)) ? [r.uri] : [];
+		// Where to look again: in its own source when the address is gone from
+		// it; in every source for a record that names none and matches nowhere.
+		const within =
+			r.assetId === null
+				? now.length
+					? []
+					: sources
+				: source && !has(source, r.uri)
+					? [source]
+					: [];
+		const label = plainLabel(r.label || labelOfUri(r.uri));
+		const found = within.flatMap((s) =>
+			redactableIn(s)
+				.filter(
+					(i) => plainLabel(i.label) === label || (r.kind && i.kind === r.kind),
+				)
+				.map((i) => i.uri),
+		);
+		for (const uri of found) if (!now.includes(uri)) now.push(uri);
+		for (const uri of now) redact.add(uri);
+		redactions.push({ assetId: r.assetId, what, now });
+		if (found.length)
+			notes.push(
+				`The last signed copy kept out ${what}. The file has changed since, so it was looked for again and is kept out of this copy too (${found.length} ${found.length === 1 ? "item" : "items"}).`,
+			);
+		else if (now.length) continue;
+		else if (r.assetId !== null && !source)
+			notes.push(
+				`The last signed copy kept out ${what}. That file is no longer a source of this edit, so there is nothing to keep out.`,
+			);
+		else
+			notes.push(
+				`The last signed copy kept out ${what}. The file no longer carries it, so there is nothing to keep out.`,
+			);
+	}
+	const leaveOut: number[] = [];
+	for (const id of new Set(last.leaveOut)) {
+		const source = sources.find((s) => s.assetId === id);
+		if (source && carries(source)) leaveOut.push(id);
+		else
+			notes.push(
+				source
+					? `The last signed copy left out all of ${nameOf(source)}'s own credentials. The file carries none now, so there is nothing to leave out.`
+					: `The last signed copy left out the credentials of asset ${id}. It is no longer a source of this edit.`,
+			);
+	}
+	return { withhold: { redact: [...redact], leaveOut }, redactions, notes };
 }

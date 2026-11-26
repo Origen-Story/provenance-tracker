@@ -6,6 +6,7 @@
 
 import { existsSync } from "node:fs";
 import path from "node:path";
+import type { Observation } from "@provenancetracker/core/extraction/observation.ts";
 import type { CredentialHolder } from "./holder.ts";
 
 export interface SignIngredient {
@@ -15,6 +16,13 @@ export interface SignIngredient {
 	filePath?: string;
 	/** The file being signed is this ingredient (the parent). */
 	useInput?: boolean;
+	/**
+	 * The .c2pa sidecar that holds this ingredient's credentials, when the
+	 * catalog knows one beside it and its bytes are the ones the catalog
+	 * recorded. An engine uses this file and no other: a .c2pa that merely
+	 * sits beside a source is not read.
+	 */
+	sidecarPath?: string;
 }
 
 /**
@@ -73,6 +81,14 @@ export interface SigningEngine {
 	 * when it has none. A file that has them is not signed at ingest.
 	 */
 	readEmbedded: (file: string) => Promise<{ signer: string } | null>;
+	/**
+	 * Read a file's own Content Credentials (or a .c2pa sidecar against it) as
+	 * `extract` does, with the reader this engine embeds ingredients by. Signing
+	 * a finished edit reads every source with it first, so the review of what
+	 * the film will carry is of what goes in. "unavailable" when nothing on
+	 * this machine can read: such an engine cannot sign a finished edit.
+	 */
+	read: (file: string, sidecar?: string) => Promise<Observation>;
 }
 
 // An identifier is a plain file name: it must not reach outside the folder.

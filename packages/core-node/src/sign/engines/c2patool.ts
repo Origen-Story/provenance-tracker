@@ -34,7 +34,11 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { sidecarPathFor } from "@provenancetracker/core/manifest/build.js";
-import { c2patoolPath, c2patoolVersion } from "../../extract/c2patool.ts";
+import {
+	c2patoolPath,
+	c2patoolProblem,
+	c2patoolVersion,
+} from "../../extract/c2patool.ts";
 import type { Machine } from "../../machine.ts";
 import {
 	checkSignArgs,
@@ -63,10 +67,9 @@ async function run(
 	} catch (err) {
 		const e = err as NodeJS.ErrnoException & { stderr?: string };
 		if (e.code === "ENOENT")
-			throw new Error(
-				"c2patool was not found. Run npm run tools:fetch or set C2PATOOL_PATH.",
-				{ cause: err },
-			);
+			throw new Error("c2patool was not found. Run npm run tools:fetch.", {
+				cause: err,
+			});
 		const out = new Error(
 			(e.stderr || e.message || "")
 				.trim()
@@ -269,6 +272,10 @@ export async function moveFile(from: string, to: string): Promise<void> {
  * it), so signingEngineFor answers that question with the library when it can.
  */
 export async function c2patoolEngine(machine: Machine): Promise<SigningEngine> {
+	// The program is checked against its pinned hash before it is ever run,
+	// its version asked included (D69).
+	const problem = c2patoolProblem(machine.env, machine.platform);
+	if (problem) throw new Error(problem);
 	const tool = c2patoolPath(machine.env, machine.platform);
 	return {
 		name: C2PATOOL_ENGINE,

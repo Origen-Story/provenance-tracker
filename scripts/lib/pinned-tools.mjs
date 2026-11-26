@@ -4,6 +4,11 @@
 // bytes differ is refused. To move to a new release, change the version and
 // every checksum together, in one commit with a line in the decisions log.
 //
+// Each download also has the SHA-256 of the program inside it (binarySha256),
+// worked out once from the checked archive. That is what the tracker compares
+// with before it loads the library or runs c2patool (D69): the file on disk
+// has to be the pinned one each time, not only on the day it was installed.
+//
 // Pure: scripts/fetch-tools.mjs does the downloading.
 import { createHash } from "node:crypto";
 
@@ -19,29 +24,37 @@ export const TOOLS = {
 				file: "c2patool-v0.27.1-x86_64-pc-windows-msvc.zip",
 				sha256:
 					"3f290d272713642aa18f7e7c3fc981301121fe781de84b8fe391af35188d98db",
+				binarySha256:
+					"6d5f13e4235e4b83fe7933de5f98a42233042234ad596b9dea9c9b8c0c8001ba",
 			},
 			"darwin-x64": {
 				file: "c2patool-v0.27.1-universal-apple-darwin.zip",
 				sha256:
 					"d61281d32fbf5f8fa3b113a4706364dd1614478a995dadf3d0d94f9b294e62ae",
+				binarySha256:
+					"31dd1eeaccaaf57c889827b9708b49b48a4c938f2eb33723cb3a3cb2396aeda3",
 			},
 			"darwin-arm64": {
 				file: "c2patool-v0.27.1-universal-apple-darwin.zip",
 				sha256:
 					"d61281d32fbf5f8fa3b113a4706364dd1614478a995dadf3d0d94f9b294e62ae",
+				binarySha256:
+					"31dd1eeaccaaf57c889827b9708b49b48a4c938f2eb33723cb3a3cb2396aeda3",
 			},
 			"linux-x64": {
 				file: "c2patool-v0.27.1-x86_64-unknown-linux-gnu.tar.gz",
 				sha256:
 					"648ea104a388d04c0e673a5498c75228c0a4be9a9c6def51c44553446ad521ac",
+				binarySha256:
+					"e408b7c2dca64ed6e5749d76fc46f95bc6f75f20ce1a79df42d726ec98fc3844",
 			},
 		},
 	},
 	// The native part of @contentauth/c2pa-node (D15, D51). Its install script
-	// would download this without a checksum; npm installs it with
-	// SKIP_RUST_BUILD=1 (in CI) and the app loads this pinned copy through
-	// C2PA_LIBRARY_PATH. The version must equal the package's in
-	// package-lock.json (test/unit/tools/pinned-tools.test.js checks).
+	// would download this without a checksum; .npmrc stops install scripts
+	// running, and the app loads only this pinned copy, after checking its
+	// bytes. The version must equal the package's in package-lock.json
+	// (test/unit/tools/pinned-tools.test.js checks, and so does the loader).
 	"c2pa-node": {
 		kind: "library",
 		version: "0.12.1",
@@ -54,26 +67,36 @@ export const TOOLS = {
 				file: "c2pa-node_x86_64-pc-windows-msvc-v0.12.1.zip",
 				sha256:
 					"8b6f6bd33765f838efe27fc77e139e5ce92205f3091ec6600f6ff894dbc026eb",
+				binarySha256:
+					"e06fc13f060179a9440dc7c18edeeb8a69382b26297a505faede03eb264fadc4",
 			},
 			"linux-x64": {
 				file: "c2pa-node_x86_64-unknown-linux-gnu-v0.12.1.zip",
 				sha256:
 					"47a83f5dc0f138aa13edc1bebf8089f0706bae75cfcc41a609ccad18c38c2061",
+				binarySha256:
+					"3962e81703b15723782af742471fdaf75137eaf09d14d64a4126765fc5cafba2",
 			},
 			"linux-arm64": {
 				file: "c2pa-node_aarch64-unknown-linux-gnu-v0.12.1.zip",
 				sha256:
 					"3421ff2ed9b57f16b6946972b0ab16273b2d13f3958866ace0357ded93da5f71",
+				binarySha256:
+					"1d0054978a9511d85c54896a340538d92301a8206d16795ef1b15bbba023c03f",
 			},
 			"darwin-x64": {
 				file: "c2pa-node_x86_64-apple-darwin-v0.12.1.zip",
 				sha256:
 					"58b709363a0cc74e11fb5193fecab4f88d5c393ba12e525ed6de6b8320abd211",
+				binarySha256:
+					"f8598b5ca4812b1acc972505a058243accc1e86dcdbd50236b37b7a044cb274c",
 			},
 			"darwin-arm64": {
 				file: "c2pa-node_aarch64-apple-darwin-v0.12.1.zip",
 				sha256:
 					"6155d01d3f2f154e430471d23f577a514526fa1aca1782dfa51ec5758f8d43c5",
+				binarySha256:
+					"7615e9cf4fcb8ef8d7d59e8e0177d52f9102d7ab135904ee47b0a67538d5bbd2",
 			},
 		},
 	},
@@ -116,17 +139,30 @@ export function assetFor(name, platform, arch) {
 	const asset = tool.assets[`${platform}-${arch}`];
 	if (!asset) {
 		throw new Error(
-			`${name} ${tool.version} has no pinned download for ${platform}-${arch}. ` +
-				`Install it by hand and set its path in .env (see tools/README.md).`,
+			`${name} ${tool.version} has no pinned download for ${platform}-${arch}, ` +
+				`so it cannot be used on this machine (see tools/README.md).`,
 		);
 	}
 	return {
 		url: tool.releaseUrl + asset.file,
 		file: asset.file,
 		sha256: asset.sha256,
+		binarySha256: asset.binarySha256,
 		binaryInArchive: tool.binary[platform] ?? tool.binary.default,
 		version: tool.version,
 	};
+}
+
+/**
+ * The program one tool is on one machine: its pinned version and the SHA-256
+ * its file must have. Null where there is no pinned download.
+ * @returns {{ version: string, sha256: string } | null}
+ */
+export function pinnedBinary(name, platform, arch) {
+	const asset = TOOLS[name]?.assets[`${platform}-${arch}`];
+	return asset
+		? { version: TOOLS[name].version, sha256: asset.binarySha256 }
+		: null;
 }
 
 /** Throws unless the bytes hash to the expected SHA-256 (hex). */

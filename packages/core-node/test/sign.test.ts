@@ -20,9 +20,16 @@ import {
 import { publicExport } from "@provenancetracker/core/catalog/signatures.ts";
 import { validate } from "../../core/test/helpers/json-schema-lite.js";
 import { editRow } from "@provenancetracker/core/catalog/edit.ts";
-import { setThumbnail } from "@provenancetracker/core/catalog/edits.ts";
+import {
+	editSettings,
+	setThumbnail,
+} from "@provenancetracker/core/catalog/edits.ts";
 import { c2patoolPath } from "../src/extract/c2patool.ts";
-import { createProject, openProject } from "../src/project.ts";
+import {
+	createProject,
+	openProject,
+	type OpenProject,
+} from "../src/project.ts";
 import { addRoot } from "../src/roots.ts";
 import { scanProject } from "../src/scan.ts";
 import { extractProject } from "../src/extract.ts";
@@ -551,6 +558,75 @@ describe.skipIf(!haveOpenssl)("previewOutputStatement and signOutput", () => {
 			.prepare("SELECT statement FROM signatures WHERE id = ?")
 			.get(r.signatureId) as { statement: string };
 		expect(JSON.parse(signed.statement)).toEqual(preview.statement);
+	});
+});
+
+describe.skipIf(!haveOpenssl)("signOutput and the catalog (D68)", () => {
+	const changes = (db: OpenProject["db"]) =>
+		(db.prepare("SELECT total_changes() AS n").get() as { n: number }).n;
+
+	it("writes nothing to the catalog before the film is signed", async () => {
+		const w = await world();
+		const { engine } = stubEngine();
+		// How many rows this connection had changed, each time the engine is
+		// asked to read a source and when it is asked to sign.
+		const seen: number[] = [];
+		const watching: SigningEngine = {
+			...engine,
+			read: async (...args) => {
+				seen.push(changes(w.p.db));
+				return engine.read(...args);
+			},
+			sign: async (args) => {
+				seen.push(changes(w.p.db));
+				return engine.sign(args);
+			},
+		};
+		const before = changes(w.p.db);
+		const r = await signOutput(w.p, w.m, {
+			assetId: w.film.id,
+			engine: watching,
+		});
+		// The cut and the two sources read, then the signing.
+		expect(seen).toEqual([before, before, before, before]);
+		// The signing itself is recorded, and the timeline's cache brought up
+		// to date, afterwards.
+		expect(changes(w.p.db)).toBeGreaterThan(before);
+		const { breakdown } = w.p.db
+			.prepare(
+				"SELECT t.breakdown FROM timelines t JOIN signatures s ON s.source_sha256 = t.content_sha256 WHERE s.id = ?",
+			)
+			.get(r.signatureId) as { breakdown: string };
+		expect(JSON.parse(breakdown)).toHaveProperty("composition");
+	});
+
+	it("signs the catalog as it was when signing began, not as it is changed while the files are read", async () => {
+		const w = await world();
+		const settings = (url: string) =>
+			editSettings(
+				w.p.db,
+				{ cawg_identity_url: url },
+				{ actor: ME, tool: TOOL },
+			);
+		settings("https://example.org/me");
+		const { engine, calls } = stubEngine();
+		let changed = false;
+		const slow: SigningEngine = {
+			...engine,
+			// The first source takes a while to read, and meanwhile the project
+			// is changed from another window.
+			read: async (...args) => {
+				if (!changed) settings("https://example.org/someone-else");
+				changed = true;
+				return engine.read(...args);
+			},
+		};
+		await signOutput(w.p, w.m, { assetId: w.film.id, engine: slow });
+		expect(changed).toBe(true);
+		// The identity link is in the definition the engine signs.
+		const signed = JSON.stringify(calls[0].definition);
+		expect(signed).toContain("https://example.org/me");
+		expect(signed).not.toContain("someone-else");
 	});
 });
 

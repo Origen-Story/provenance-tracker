@@ -108,6 +108,27 @@ export function prepareConnection(db: DatabaseSync): void {
 	defensive.call(db, true);
 }
 
+/**
+ * Run fn as one read of the catalog. Every statement in it sees the catalog
+ * as it was at one moment, whatever another program writes meanwhile, and a
+ * write inside it is refused, not undone quietly. Inside an open transaction
+ * the reads are already one, so only the refusal is added.
+ */
+export function inOneRead<T>(db: DatabaseSync, fn: () => T): T {
+	const { query_only: was } = db.prepare("PRAGMA query_only").get() as {
+		query_only: number;
+	};
+	const own = !db.isTransaction;
+	db.exec("PRAGMA query_only = ON");
+	if (own) db.exec("BEGIN");
+	try {
+		return fn();
+	} finally {
+		if (own && db.isTransaction) db.exec("ROLLBACK");
+		if (!was) db.exec("PRAGMA query_only = OFF");
+	}
+}
+
 let savepoints = 0;
 
 /**

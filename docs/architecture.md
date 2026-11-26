@@ -76,7 +76,7 @@ Scan, read, classify, import and signing run as jobs (`src/server/api/jobs.ts`):
 There is no login, so reach is the access control. `src/server/lib/core/local-only.js` (pure, unit-tested), wired in `src/server/app.ts`:
 
 - **Bind.** The server listens on `HOST`, default `127.0.0.1`. Other devices get a refused connection.
-- **Request check.** `localOnly` is the first middleware on `/api`, before any body is parsed. It refuses a `Host` that is not this machine (DNS rebinding), an `Origin` that is not the same host and port as `Host` (another site's form post, which needs no CORS preflight), and anything the browser marks `Sec-Fetch-Site: cross-site`.
+- **Request check.** `localOnly` is the first middleware on `/api`, before any body is parsed. It refuses a `Host` that is not this machine (DNS rebinding), a loopback `Host` on a connection that did not come from this machine (D66), an `Origin` that is not the same host and port as `Host` (another site's form post, which needs no CORS preflight), and anything the browser marks `Sec-Fetch-Site: cross-site`.
 
 The Vite proxy must forward the browser's `Host` unchanged for the second rule to pass in development, which is why `vite.config.js` uses the long proxy form with `changeOrigin: false`.
 
@@ -88,4 +88,4 @@ All optional (`.env` or the environment): `PORT` (default 3001), `HOST` and `ALL
 
 ## Testing
 
-`npm test` runs vitest inside a repo guard (`scripts/test.mjs`) that fails if a test changes the checkout or the suite takes over 60 s. Tests use temp folders and throwaway machines only; the API is tested over real HTTP against temporary projects (`test/unit/api/`), and the pages' API client against the real routes (`test/unit/client/`). Signing for real uses a throwaway certificate made in the test's folder. Large media samples stay in `test-fixtures/` (gitignored); small fixtures are committed beside their tests. vitest on Windows needs `pool: 'forks'` (`vitest.config.js` says why).
+`npm test` runs vitest inside a repo guard (`scripts/test.mjs`) that fails if a test changes the checkout or the suite takes over 60 s. CI names a longer budget, 180 s, in its workflow (`PT_TEST_BUDGET_SECONDS`, a whole number from 60 to 300; `scripts/lib/test-budget.mjs`), because a hosted runner can take several times as long as a person's machine on a run where every test passes. Tests use temp folders and throwaway machines only; the API is tested over real HTTP against temporary projects (`test/unit/api/`), and the pages' API client against the real routes (`test/unit/client/`). Signing for real uses a throwaway certificate made in the test's folder. Large media samples stay in `test-fixtures/` (gitignored); small fixtures are committed beside their tests. vitest on Windows needs `pool: 'forks'` (`vitest.config.js` says why).

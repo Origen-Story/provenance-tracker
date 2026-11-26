@@ -384,4 +384,41 @@ describe("previews by content", () => {
 		).toBe(404);
 		expect((await w.call("GET", "/contents/../../etc/file")).status).toBe(404);
 	});
+
+	it("answers in words when what the catalog places is no longer a file, and goes on answering (D66)", async () => {
+		const w = await world();
+		// Where the catalog has the take there is now a folder of the same name:
+		// it is there, and named like a sound, and cannot be read as one. With no
+		// handler on the stream, this stopped the server.
+		rmSync(path.join(w.media, "take.wav"));
+		mkdirSync(path.join(w.media, "take.wav"));
+		const r = await w.call("GET", `/contents/${w.take.sha256}/file`);
+		expect(r.status).toBe(404);
+		const body = await r.text();
+		expect(JSON.parse(body)).toEqual({
+			error: "That file is not on this machine any more",
+		});
+		expect(body).not.toContain(w.dir);
+		// The same with a range, as a player asks.
+		expect(
+			(
+				await w.call("GET", `/contents/${w.take.sha256}/file`, undefined, {
+					range: "bytes=0-1",
+				})
+			).status,
+		).toBe(404);
+		// The server is still there for the next request.
+		const film = await w.call("GET", `/contents/${w.film.sha256}/file`);
+		expect(film.status).toBe(200);
+		expect(await film.text()).toBe("the cut");
+		// A range that is not in the file is still said, and the file let go.
+		const beyond = await w.call(
+			"GET",
+			`/contents/${w.film.sha256}/file`,
+			undefined,
+			{ range: "bytes=99-" },
+		);
+		expect(beyond.status).toBe(416);
+		rmSync(path.join(w.media, "film.mp4"));
+	});
 });

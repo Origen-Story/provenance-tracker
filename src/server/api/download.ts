@@ -7,6 +7,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream, rmSync } from "node:fs";
 import path from "node:path";
+import { pipeline } from "node:stream/promises";
 import {
 	isMediaType,
 	offeredFileName,
@@ -60,27 +61,44 @@ export async function download(opts: {
 		throw new Error(`The file is ${length} bytes; the most taken is ${max}`);
 
 	const file = path.join(opts.incoming, `${randomUUID()}.part`);
-	const out = createWriteStream(file, { flags: "wx" });
 	const hash = createHash("sha256");
 	let size = 0;
+	const body = res.body as unknown as AsyncIterable<Uint8Array>;
+	// One pipeline, so an error from any part of it is this job's failure: a
+	// write stream with no error handler (the folder gone, the disk full)
+	// would stop the whole server instead (D66).
+	const out = createWriteStream(file, { flags: "wx" });
 	try {
-		for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-			if (opts.signal?.aborted) throw new Error("Stopped");
-			size += chunk.byteLength;
-			if (size > max)
-				throw new Error(
-					`The file is larger than ${max} bytes; it was not kept`,
-				);
-			hash.update(chunk);
-			if (!out.write(chunk))
-				await new Promise<void>((r) => out.once("drain", () => r()));
-		}
-		await new Promise<void>((resolve, reject) =>
-			out.end((err?: Error | null) => (err ? reject(err) : resolve())),
-		);
+		await pipeline(async function* () {
+			for await (const chunk of body) {
+				if (opts.signal?.aborted) throw new Error("Stopped");
+				size += chunk.byteLength;
+				if (size > max)
+					throw new Error(
+						`The file is larger than ${max} bytes; it was not kept`,
+					);
+				hash.update(chunk);
+				yield chunk;
+			}
+		}, out);
 	} catch (err) {
-		out.destroy();
-		rmSync(file, { force: true });
+		const code = (err as NodeJS.ErrnoException).code;
+		// The file may still be being opened: it is removed once the stream has
+		// let it go, or it would appear again after being removed.
+		if (!out.closed)
+			await new Promise<void>((resolve) => out.once("close", () => resolve()));
+		// "wx" never replaces a file: one already there is not this download's.
+		if (code !== "EEXIST") rmSync(file, { force: true });
+		// A failure of the disk is said without the folder's path.
+		if (
+			code &&
+			/^E[A-Z]+$/.test(code) &&
+			(err as NodeJS.ErrnoException).syscall
+		)
+			throw new Error(
+				`The download could not be saved on this machine (${code})`,
+				{ cause: err },
+			);
 		throw err;
 	}
 	const name = withExtension(

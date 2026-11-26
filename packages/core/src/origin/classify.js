@@ -6,6 +6,15 @@
 // answer. It also reports who signed the file, which is an attribute beside
 // the class. The user confirms or overrides.
 //
+// Who signed is only said of a claim that verified (D67). Anyone can write a
+// manifest that names Sony as its signer or this tracker as its generator, so
+// a name counts for nothing on its own: a file is "device-signed" only when
+// the reader found the signer on the C2PA trust list, and "signed by the
+// creator" only when this catalog's own signing record covers it. Where a
+// claim did not verify, the name its credentials give is kept as exactly
+// that, "unverified": worth knowing in the tracker, and never said in a
+// signed statement.
+//
 // Tools apply the terms loosely, so a declared term is read in context:
 //   - Premiere stamps an export `compositeWithTrainedAlgorithmicMedia` (one
 //     asset edited with generative AI) while listing placed ingredients; an
@@ -23,6 +32,7 @@
 
 import {
 	ORIGIN_CLASSES,
+	UNVERIFIED_SIGNER,
 	normalizeSourceType,
 	originClassDef,
 } from "../origin-vocabulary.js";
@@ -36,9 +46,12 @@ const GENERATIVE_CODES = [
 	"compositeWithTrainedAlgorithmicMedia",
 	"compositeSynthetic",
 ];
+// Makers of capture devices, as their certificates name them. Read only from
+// a certificate the reader found on the trust list, where the name is the
+// list's word and not the file's; and only when the file declares no source
+// type at all, since the same makers also sign what their software generates.
 const CAPTURE_DEVICE_PATTERNS = [
 	/pixel camera/i,
-	/c2pa sdk for android/i,
 	/\bleica\b/i,
 	/\bsony\b/i,
 	/\bnikon\b/i,
@@ -48,9 +61,6 @@ const CAPTURE_DEVICE_PATTERNS = [
 	/\bapple\b|iphone/i,
 	/\bqualcomm\b/i,
 ];
-// Claim generators that mean the creator signed the file themselves.
-const CREATOR_SIGNER_PATTERNS = [/provenance[-_ ]?tracker/i, /\bc2patool\b/i];
-
 // An action's source type: the spec field, else a vendor-namespaced
 // parameter. Firefly signs files from partner models (Seedance and others)
 // with only `c2pa.opened` and `parameters["com.adobe.digitalSourceType"]`.
@@ -78,8 +88,14 @@ export function c2paSignals(summary) {
 			issuer: "",
 			commonName: "",
 			claimGenerator: "",
+			verdict: null,
+			sound: false,
+			trusted: false,
 		};
 	}
+	// What the reading's codes come to; null for a summary that does not say
+	// (one made by hand, or before readings carried a verdict).
+	const verdict = summary.validation?.verdict ?? null;
 	const actions = [];
 	for (const a of summary.assertions || []) {
 		if (!String(a.label || "").startsWith("c2pa.actions")) continue;
@@ -107,40 +123,51 @@ export function c2paSignals(summary) {
 		issuer: summary.signatureInfo?.issuer || "",
 		commonName: summary.signatureInfo?.commonName || "",
 		claimGenerator: summary.claimGenerator || "",
+		verdict,
+		// The claim's signature verified and the file is the one it signed.
+		sound: verdict !== "invalid" && verdict !== "hash_mismatch",
+		// And the reader found its signer on the trust list.
+		trusted: verdict === "valid",
 	};
 }
 
+/**
+ * A capture device signed it: a signer on the trust list that declares the
+ * file a capture, or, when the file declares no source type, one whose
+ * certificate names a device maker. The claim generator is never read for
+ * this: it is text anyone can write.
+ */
 function isCaptureDevice(sig) {
-	const hay = `${sig.issuer} ${sig.commonName} ${sig.claimGenerator}`;
-	return CAPTURE_DEVICE_PATTERNS.some((re) => re.test(hay));
+	if (!sig.trusted) return false;
+	if (CAPTURE_CODES.includes(sig.createdType)) return true;
+	return (
+		sig.sourceTypes.length === 0 &&
+		CAPTURE_DEVICE_PATTERNS.some((re) =>
+			re.test(`${sig.issuer} ${sig.commonName}`),
+		)
+	);
 }
 
 /**
- * Who vouches for the file: the creator (signed at ingest with this tool or
- * c2patool, or by one of `ownSigners`, the certificates the project has
- * signed with), the capture device, or the tool that made or exported it.
- * '' when there is no manifest.
+ * Who vouches for the file: the creator, a capture device, or the tool that
+ * made or exported it. '' when there is no manifest. When the claim did not
+ * verify, or the file is not the one it signed, nobody vouches for it: the
+ * name the credentials give is returned as "unverified", which is what the
+ * file says and not a signer.
  *
- * An own signer is a certificate's name and its issuer's name together, as
- * a reader reports them: a name alone would also match anyone who made a
- * certificate with that name, and an issuer alone every certificate it issued.
+ * "creator" is the caller's to say (`signedHere`): the catalog recorded
+ * signing these bytes itself, with a certificate it knows by fingerprint. It
+ * is never read from a name in the file, which anyone can write, nor from a
+ * certificate's name, which anyone can give a certificate of their own.
  *
  * @param {object} sig c2paSignals(...)
- * @param {Array<{commonName: string, issuer: string}>} [ownSigners]
+ * @param {{ signedHere?: boolean }} [known]
  */
-export function signerOf(sig, ownSigners = []) {
+export function signerOf(sig, { signedHere = false } = {}) {
 	if (!sig.hasManifest) return { signedBy: "", signerName: "" };
-	const signerName = sig.commonName || sig.issuer || sig.claimGenerator || "";
-	const fold = (s) => String(s || "").toLowerCase();
-	const mine =
-		!!sig.commonName &&
-		ownSigners.some(
-			(o) =>
-				fold(o?.commonName) === fold(sig.commonName) &&
-				fold(o?.issuer) === fold(sig.issuer),
-		);
-	if (mine || CREATOR_SIGNER_PATTERNS.some((re) => re.test(sig.claimGenerator)))
-		return { signedBy: "creator", signerName };
+	const signerName = sig.commonName || sig.issuer || "";
+	if (!sig.sound) return { signedBy: UNVERIFIED_SIGNER, signerName };
+	if (signedHere) return { signedBy: "creator", signerName };
 	if (isCaptureDevice(sig)) return { signedBy: "device", signerName };
 	return { signedBy: "tool", signerName };
 }
@@ -220,7 +247,7 @@ function fromManifest(sig) {
  * @param {object|null} [input.platformData] parsed platform blob (parser output)
  * @param {object|null} [input.exifTags] stored exifJson, parsed
  * @param {string|null} [input.parentClass] origin class of a derived_from parent
- * @param {Array<{commonName: string, issuer: string}>} [input.ownSigners] certificates that mean "the creator signed this" (signerOf)
+ * @param {boolean} [input.signedHere] the catalog's own signing record covers the credentials read (signerOf)
  * @returns {{ originClass: string, source: string, signedBy: string, signerName: string, captureSigned: boolean }}
  */
 export function proposeOriginClass({
@@ -230,11 +257,11 @@ export function proposeOriginClass({
 	platformData = null,
 	exifTags = null,
 	parentClass = null,
-	ownSigners = [],
+	signedHere = false,
 }) {
 	const sig = c2paSignals(c2paSummary);
 	const exif = exifTags || {};
-	const signer = signerOf(sig, ownSigners);
+	const signer = signerOf(sig, { signedHere });
 	const done = (originClass, source) => ({
 		originClass,
 		source,

@@ -207,9 +207,12 @@
 				},
 				"signedBy": {
 					"type": "string",
-					"description": "Who signed the ingredient's own credentials: device, tool or creator; empty when unsigned or unknown."
+					"description": "Who signed the ingredient's own credentials: device, tool or creator; empty when unsigned or unknown. \"unverified\" when the credentials name a signer (signerName) and the signature did not verify: a reader must not present that name as who signed."
 				},
-				"signerName": { "type": "string" },
+				"signerName": {
+					"type": "string",
+					"description": "The signer's name as the ingredient's credentials give it. Only signedBy says whether the signature verified."
+				},
 				"aiAssisted": {
 					"type": "boolean",
 					"description": "An AI model wrote the instructions (such as code) and an ordinary program made the pixels; IPTC has no term for this."

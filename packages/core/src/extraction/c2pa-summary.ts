@@ -3,6 +3,7 @@
 // ingredients and who signed it, from a manifest store's active manifest.
 // One implementation, used by the app's extraction and by classify.
 
+import { interpretReport } from "../manifest/verify.js";
 import { activeManifestOf } from "./c2patool-read.ts";
 import type { Observation } from "./observation.ts";
 
@@ -26,6 +27,13 @@ export interface C2paSummary {
 		state: string | null;
 		failures: unknown[];
 		statuses: unknown[];
+		/**
+		 * What the reading's codes come to (manifest/verify.js): "valid" (the
+		 * reader said the signer is on its trust list), "unrecognised_issuer",
+		 * "hash_mismatch" or "invalid". The classifier names a signer only from
+		 * a claim that verified, and a device only from a trusted one (D67).
+		 */
+		verdict?: string;
 	};
 }
 
@@ -107,6 +115,9 @@ export function c2paSummaryOf(
 				state: observation.validation?.state ?? null,
 				failures: observation.validation?.failures ?? [],
 				statuses: observation.validation?.statuses ?? [],
+				verdict: (
+					interpretReport(observation.data as object) as { status: string }
+				).status,
 			},
 		};
 	}

@@ -74,7 +74,12 @@ export default function Reveals({
 	signerName: string | null;
 	reveals: SourceReveal[];
 	/** Who signed each source that names a signer, whatever the choice. */
-	sourceSigners: Array<{ assetId: number; title: string; signer: string }>;
+	sourceSigners: Array<{
+		assetId: number;
+		title: string;
+		signer: string;
+		verified: boolean;
+	}>;
 	filesCarry: FileCarries[];
 	choice: WithholdChoice;
 	onChange: (next: WithholdChoice) => void;
@@ -102,6 +107,8 @@ export default function Reveals({
 	];
 	// A source whose credentials are left out is not named by its signer.
 	const named = sourceSigners.filter((s) => !choice.leaveOut.has(s.assetId));
+	// "Who signed" only when every one of those signatures verified (D67).
+	const allVerified = named.every((s) => s.verified);
 	return (
 		<div className="space-y-4">
 			<div className="space-y-1.5">
@@ -147,8 +154,16 @@ export default function Reveals({
 						items={clips}
 					/>
 					<Listed
-						summary={`Who signed ${plural(named.length, "source")}, as its own credentials say`}
-						items={named.map((s) => `${s.title}: ${s.signer}`)}
+						summary={
+							allVerified
+								? `Who signed ${plural(named.length, "source")}, as its own credentials say`
+								: `Who the credentials of ${plural(named.length, "source")} name as signer`
+						}
+						items={named.map((s) =>
+							s.verified
+								? `${s.title}: ${s.signer}`
+								: `${s.title}: ${s.signer} (that signature could not be verified)`,
+						)}
 					/>
 					{identityName && <li>Your identity: {identityName}</li>}
 					{signerName && <li>The signing certificate's name: {signerName}</li>}
@@ -237,8 +252,11 @@ export default function Reveals({
 								</p>
 							) : (
 								<p className="text-xs text-text-secondary">
-									{plural(r.reveal.manifests, "manifest")}, signed by{" "}
-									{r.reveal.signers.join(", ") || "unnamed signers"}
+									{plural(r.reveal.manifests, "manifest")},{" "}
+									{r.reveal.manifests === 1
+										? "whose signature names"
+										: "whose signatures name"}{" "}
+									{r.reveal.signers.join(", ") || "no one"}
 									{r.reveal.generators.length > 0 &&
 										` · made with ${r.reveal.generators.join(", ")}`}
 									{r.reveal.otherAssertions > 0 &&

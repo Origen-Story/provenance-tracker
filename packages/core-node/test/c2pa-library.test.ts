@@ -161,6 +161,17 @@ describe.skipIf(!haveOpenssl || !haveC2patool || !haveLibrary)(
 			);
 			expect(o.validation!.failures).toEqual([]);
 			expect(o.validation!.state).toBe("Trusted");
+			// The library says so in a code of its own; "valid" rests on that
+			// code, never on the absence of a failure (D67).
+			expect(
+				(
+					o.data as {
+						validation_results: {
+							activeManifest: { success: Array<{ code: string }> };
+						};
+					}
+				).validation_results.activeManifest.success.map((s) => s.code),
+			).toContain("signingCredential.trusted");
 			expect(interpretReport(o.data as object).status).toBe("valid");
 		}, 60000);
 

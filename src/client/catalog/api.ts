@@ -177,6 +177,17 @@ export interface Reading {
 	status: string;
 	observedAt: string;
 	fromSidecar: boolean;
+	/** For a reading of Content Credentials that found some: what it comes to (D67). */
+	credentials?: {
+		/** Who the credentials name. Only `verdict` says whether anything stands behind the name. */
+		signer: string;
+		issuer: string;
+		generator: string;
+		verdict: string;
+		label: string;
+		contentMatches: boolean;
+		failures: Array<{ code: string; explanation: string }>;
+	};
 }
 
 export interface Credit {

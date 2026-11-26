@@ -346,8 +346,14 @@ describe.skipIf(!haveOpenssl)(
 				expect(a.commonName).not.toBe(b.commonName);
 				// The authority that issued each is named for the same run.
 				expect(a.issuer).toBe(
-					`Origen Story Dev Root CA ${a.commonName.split(" ").pop()}`,
+					`Provenance Tracker development root ${a.commonName.split(" ").pop()}`,
 				);
+				// Neither names a person or an organisation: the defaults are the
+				// same for everyone who runs the tool.
+				expect(subject(one.certificate)).toMatch(
+					/subject=O=Unverified\\, self-issued [0-9a-f]{8},CN=Provenance Tracker development certificate [0-9a-f]{8}/,
+				);
+				expect(subject(one.certificate)).not.toContain("Origen");
 				expect(a.issuer).not.toBe(b.issuer);
 			} finally {
 				rmSync(dir, { recursive: true, force: true });
@@ -820,7 +826,9 @@ describe.each(ENGINES)("signOutput with $name", ({ name, recorded, ready }) => {
 			const preview = previewOutputStatement(w.p, w.m, { assetId: w.film.id });
 			expect(preview.identity).toMatchObject({
 				name: "Test Person",
-				issuer: expect.stringMatching(/^Origen Story Dev Root CA [0-9a-f]{8}$/),
+				issuer: expect.stringMatching(
+					/^Provenance Tracker development root [0-9a-f]{8}$/,
+				),
 				role: "cawg.creator",
 				// The statement's author is "A. Maker".
 				authorDiffers: true,

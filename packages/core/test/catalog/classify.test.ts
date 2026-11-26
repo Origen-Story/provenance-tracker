@@ -6,6 +6,7 @@ import {
 	generationFields,
 } from "../../src/catalog/classify.ts";
 import { createRow, editRow, type Actor } from "../../src/catalog/edit.ts";
+import { assetRecord } from "../../src/catalog/read.ts";
 import { finishRun, startRun } from "../../src/catalog/runs.ts";
 import { PERSON, TEST_TOOL, sha } from "../helpers/catalog.ts";
 import { catalogsForTests } from "../helpers/catalog-tests.ts";
@@ -45,7 +46,10 @@ function store(opts: {
 						: [],
 				failure:
 					read === "broken"
-						? [{ code: "claimSignature.mismatch" }]
+						? [
+								{ code: "claimSignature.mismatch" },
+								{ code: "signingCredential.untrusted" },
+							]
 						: read === "unrecognised"
 							? [{ code: "signingCredential.untrusted" }]
 							: [],
@@ -478,13 +482,38 @@ describe("classify", () => {
 			signed_by: "tool",
 			signer_name: "Google LLC",
 		});
-		// Nobody is said to have signed it. The class it declares is still
-		// proposed, for a person to confirm or not.
+		// Nobody is said to have signed it: the name is kept as what its
+		// credentials say, marked as not verified. The class it declares is
+		// still proposed, for a person to confirm or not.
 		expect(asset(db, forged.id)).toMatchObject({
-			signed_by: "",
-			signer_name: "",
+			signed_by: "unverified",
+			signer_name: "Google LLC",
 			origin_class: "digitalCapture",
 			origin_class_confirmed: 0,
+		});
+		// The asset's page can say why, in the reader's own words.
+		const reading = (id: number) =>
+			assetRecord(db, id)!.contents[0].readings.find((r) => r.kind === "c2pa")!
+				.credentials;
+		expect(reading(forged.id)).toEqual({
+			signer: "Google LLC",
+			issuer: "Google LLC",
+			generator: "Pixel Camera",
+			verdict: "invalid",
+			label: "Invalid",
+			contentMatches: false,
+			failures: [
+				{ code: "claimSignature.mismatch", explanation: "" },
+				{ code: "signingCredential.untrusted", explanation: "" },
+			],
+		});
+		expect(reading(real.id)).toMatchObject({
+			signer: "Google LLC",
+			verdict: "valid",
+			failures: [],
+		});
+		expect(reading(lookalike.id)).toMatchObject({
+			verdict: "unrecognised_issuer",
 		});
 	});
 

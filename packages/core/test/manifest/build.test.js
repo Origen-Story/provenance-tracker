@@ -316,6 +316,36 @@ describe("buildCreatorStatement", () => {
 		});
 	});
 
+	it("never repeats a signer's name from credentials that did not verify (D67)", () => {
+		// The catalog keeps the name as "unverified": what the file says. The
+		// statement is signed and published, and says only what holds.
+		const unverified = new Map(assets);
+		unverified.set("ai:21", {
+			...assets.get("ai:21"),
+			signedBy: "unverified",
+			signerName: "Gen Tool",
+		});
+		const said = buildCreatorStatement({
+			output,
+			timeline,
+			composition,
+			segments,
+			assets: unverified,
+			statement,
+			statedAt: "2026-11-13T10:00:00Z",
+		});
+		expect(said.ingredients[2]).toMatchObject({
+			title: "gen-01.mp4",
+			// What the creator and the file say about how it was made stays.
+			originClass: "trainedAlgorithmicMedia",
+			fileCredentials: "present",
+			signedBy: "",
+			signerName: "",
+		});
+		expect(JSON.stringify(said)).not.toContain("unverified");
+		expect(validate(statementSchema, said)).toEqual([]);
+	});
+
 	it("keeps the C2PA ingredient title as the file name, whatever the public title", () => {
 		const { ingredients } = buildOutputManifest({
 			output,

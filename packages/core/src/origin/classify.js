@@ -10,7 +10,10 @@
 // manifest that names Sony as its signer or this tracker as its generator, so
 // a name counts for nothing on its own: a file is "device-signed" only when
 // the reader found the signer on the C2PA trust list, and "signed by the
-// creator" only when this catalog's own signing record covers it.
+// creator" only when this catalog's own signing record covers it. Where a
+// claim did not verify, the name its credentials give is kept as exactly
+// that, "unverified": worth knowing in the tracker, and never said in a
+// signed statement.
 //
 // Tools apply the terms loosely, so a declared term is read in context:
 //   - Premiere stamps an export `compositeWithTrainedAlgorithmicMedia` (one
@@ -29,6 +32,7 @@
 
 import {
 	ORIGIN_CLASSES,
+	UNVERIFIED_SIGNER,
 	normalizeSourceType,
 	originClassDef,
 } from "../origin-vocabulary.js";
@@ -146,9 +150,10 @@ function isCaptureDevice(sig) {
 
 /**
  * Who vouches for the file: the creator, a capture device, or the tool that
- * made or exported it. '' when there is no manifest, and when the claim did
- * not verify or the file is not the one it signed: a signature that does not
- * hold says nothing about who signed.
+ * made or exported it. '' when there is no manifest. When the claim did not
+ * verify, or the file is not the one it signed, nobody vouches for it: the
+ * name the credentials give is returned as "unverified", which is what the
+ * file says and not a signer.
  *
  * "creator" is the caller's to say (`signedHere`): the catalog recorded
  * signing these bytes itself, with a certificate it knows by fingerprint. It
@@ -159,8 +164,9 @@ function isCaptureDevice(sig) {
  * @param {{ signedHere?: boolean }} [known]
  */
 export function signerOf(sig, { signedHere = false } = {}) {
-	if (!sig.hasManifest || !sig.sound) return { signedBy: "", signerName: "" };
+	if (!sig.hasManifest) return { signedBy: "", signerName: "" };
 	const signerName = sig.commonName || sig.issuer || "";
+	if (!sig.sound) return { signedBy: UNVERIFIED_SIGNER, signerName };
 	if (signedHere) return { signedBy: "creator", signerName };
 	if (isCaptureDevice(sig)) return { signedBy: "device", signerName };
 	return { signedBy: "tool", signerName };

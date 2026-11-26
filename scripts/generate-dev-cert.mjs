@@ -16,9 +16,11 @@
 //         The others: es384 (P-384), ps256 (RSA 2048, signed with RSA-PSS) and
 //         ed25519. Every type the tracker signs with is tested with these.
 //         --name makes it a test identity certificate in that name, for
-//         `npm run cli -- identity`, D55; it needs the output folder. Without
-//         --org its organisation reads "Unverified, self-issued <tag>".
-//         Each run puts a tag of its own in the names it makes, D67.)
+//         `npm run cli -- identity`, D55; it needs the output folder.
+//         Without --name the certificate is called "Provenance Tracker
+//         development certificate <tag>", and without --org its organisation
+//         reads "Unverified, self-issued <tag>". Each run has a tag of its
+//         own, so no two certificates read the same, D67.)
 //
 // The cert is self-issued so signatures won't show "trusted publisher" on
 // contentcredentials.org. Creator trust comes from the CAWG identity
@@ -74,13 +76,13 @@ for (const o of ["--name", "--org"])
 const tag = randomBytes(4).toString("hex");
 // The signer's name: a person's, for an identity certificate (D55), or the
 // development signing certificate's.
-const subjectName = opts["--name"] || `Origen Story Dev Signing Cert ${tag}`;
-// An identity nobody checked says so in the organisation a reader shows
+const subjectName =
+	opts["--name"] || `Provenance Tracker development certificate ${tag}`;
+// A certificate nobody checked says so in the organisation a reader shows
 // beside it, unless the person gives one of their own. It is never put under
-// an organisation they did not name.
-const organisation =
-	opts["--org"] ||
-	(opts["--name"] ? `Unverified, self-issued ${tag}` : "Origen Story");
+// an organisation they did not name: these defaults are the same for
+// everyone who runs the tool, so they name nobody.
+const organisation = opts["--org"] || `Unverified, self-issued ${tag}`;
 // An identity certificate (--name) always names its folder: the default,
 // certs/, holds the signing pair under the same file names (2026-11-25).
 if (opts["--name"] && !positional[0]) {
@@ -133,8 +135,8 @@ distinguished_name = dn
 prompt = no
 x509_extensions = v3_ca
 [dn]
-CN = Origen Story Dev Root CA ${tag}
-O = Origen Story
+CN = Provenance Tracker development root ${tag}
+O = "${organisation}"
 [v3_ca]
 basicConstraints = critical, CA:TRUE
 keyUsage = critical, keyCertSign, cRLSign

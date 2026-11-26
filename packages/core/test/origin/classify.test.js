@@ -239,16 +239,18 @@ describe("signerOf (D67)", () => {
 		expect(signerOf(c2paSignals(trusted(generated))).signedBy).toBe("tool");
 	});
 
-	it("names no signer from a claim that did not verify, or a file that is not the one signed", () => {
+	it("keeps the name from a claim that did not verify as what the file says, never as who signed", () => {
+		// The signature does not verify, or the file is not the one it signed:
+		// nobody vouches for it. The name is still worth knowing in the tracker.
 		for (const verdict of ["invalid", "hash_mismatch"])
 			expect(signerOf(c2paSignals(broken(pixel, verdict)))).toEqual({
-				signedBy: "",
-				signerName: "",
+				signedBy: "unverified",
+				signerName: "Pixel Camera",
 			});
-		// Not even when the caller knows the catalog signed it.
+		// Not a device, and not the creator's, whatever else is known.
 		expect(
 			signerOf(c2paSignals(broken(pixel)), { signedHere: true }).signedBy,
-		).toBe("");
+		).toBe("unverified");
 	});
 
 	it("calls a file the creator's only on the caller's word, never for a name in it", () => {
@@ -299,8 +301,8 @@ describe("proposeOriginClass", () => {
 		).toEqual({
 			originClass: "computationalCapture",
 			source: "c2pa_capture_action",
-			signedBy: "",
-			signerName: "",
+			signedBy: "unverified",
+			signerName: "Pixel Camera",
 			captureSigned: false,
 		});
 	});

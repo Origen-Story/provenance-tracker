@@ -212,7 +212,11 @@ export const RETIRED_SOURCE_TYPES = {
 export const C2PA_SOURCE_TYPES = ["empty", "trainedAlgorithmicData"];
 
 export const ORIGIN_CLASSES = ORIGIN_CLASS_DEFS.map((c) => c.code);
-export const SIGNED_BY = ["", "device", "tool", "creator"];
+// "unverified" is not a signer: the file's credentials name one, and the
+// signature did not verify (D67). The catalog keeps the name, since it is
+// what the file says; a signed statement and a public record never repeat it.
+export const UNVERIFIED_SIGNER = "unverified";
+export const SIGNED_BY = ["", "device", "tool", "creator", UNVERIFIED_SIGNER];
 export const SIGNED_BY_LABELS = {
 	device: "the capture device",
 	tool: "the tool that made it",

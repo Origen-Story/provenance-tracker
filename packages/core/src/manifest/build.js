@@ -25,6 +25,7 @@
 
 import path from "node:path";
 import {
+	UNVERIFIED_SIGNER,
 	sourceTypeUri,
 	spectrumPosition,
 	compositeClassFor,
@@ -429,8 +430,10 @@ export function buildCreatorStatement({
 			classSetBy: a.originClassConfirmed ? "creator" : "proposal",
 			fileCredentials: claimed.credentials,
 			classClaimedByFile: claimed.originClass,
-			signedBy: a.signedBy || "",
-			signerName: a.signerName || "",
+			// A name from credentials that did not verify is the catalog's to
+			// know, not the statement's to repeat (D67).
+			signedBy: a.signedBy === UNVERIFIED_SIGNER ? "" : a.signedBy || "",
+			signerName: a.signedBy === UNVERIFIED_SIGNER ? "" : a.signerName || "",
 			aiAssisted: !!a.aiAssisted,
 			note: a.originClassNote || "",
 			pictureSeconds: seconds(on.picture),

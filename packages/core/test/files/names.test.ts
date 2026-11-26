@@ -2,9 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
 	freeName,
 	isMediaType,
+	MEDIA_ENDINGS,
+	mediaFileName,
 	offeredFileName,
 	safeFileName,
-	withExtension,
 } from "../../src/files/names.ts";
 
 describe("safeFileName", () => {
@@ -88,15 +89,62 @@ describe("offeredFileName", () => {
 });
 
 describe("media types", () => {
-	it("takes pictures, video and sound only, and adds a missing extension", () => {
+	it("takes pictures, video and sound only", () => {
 		expect(["image/jpeg", "video/mp4", "audio/x-wav"].every(isMediaType)).toBe(
 			true,
 		);
 		expect(
 			["text/html", "application/pdf", "image/", ""].some(isMediaType),
 		).toBe(false);
-		expect(withExtension("photo", "image/jpeg")).toBe("photo.jpg");
-		expect(withExtension("photo.png", "image/jpeg")).toBe("photo.png");
-		expect(withExtension("photo", "image/x-unknown")).toBe("photo");
+	});
+
+	it("keeps a media ending, whatever case it is in", () => {
+		expect(mediaFileName("photo.png", "image/jpeg")).toBe("photo.png");
+		expect(mediaFileName("CLIP.MOV", "video/quicktime")).toBe("CLIP.MOV");
+		expect(mediaFileName("take 3.aiff", "audio/x-unknown")).toBe("take 3.aiff");
+	});
+
+	it("gives a name with no ending the usual one of its type", () => {
+		expect(mediaFileName("photo", "image/jpeg")).toBe("photo.jpg");
+		expect(mediaFileName("download", "audio/x-wav")).toBe("download.wav");
+	});
+
+	it("never leaves an ending that is not a picture, video or sound", () => {
+		// The name and the type both come from someone else's server.
+		expect(mediaFileName("clip.mp4.exe", "video/mp4")).toBe("clip.mp4.exe.mp4");
+		expect(mediaFileName("holiday.jpg.lnk", "image/jpeg")).toBe(
+			"holiday.jpg.lnk.jpg",
+		);
+		expect(mediaFileName("image.php", "image/png")).toBe("image.php.png");
+		expect(mediaFileName("setup.bat", "audio/mpeg")).toBe("setup.bat.mp3");
+	});
+
+	it("has no name for a type it knows no ending for, unless the name ends as media does", () => {
+		expect(mediaFileName("photo", "image/x-unknown")).toBeNull();
+		expect(mediaFileName("tool.exe", "image/x-unknown")).toBeNull();
+		// A type named like a property every object has is not a known type.
+		expect(mediaFileName("photo", "constructor")).toBeNull();
+		expect(mediaFileName("photo", "toString")).toBeNull();
+	});
+
+	it("counts as media endings only short, lower-case ones that start with a dot", () => {
+		for (const ending of MEDIA_ENDINGS)
+			expect(ending).toMatch(/^[.][a-z0-9]{2,5}$/);
+		for (const program of [
+			".exe",
+			".bat",
+			".cmd",
+			".com",
+			".scr",
+			".msi",
+			".lnk",
+			".ps1",
+			".js",
+			".vbs",
+			".sh",
+			".app",
+			".html",
+		])
+			expect(MEDIA_ENDINGS.has(program)).toBe(false);
 	});
 });

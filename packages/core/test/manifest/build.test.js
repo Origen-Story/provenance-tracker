@@ -346,6 +346,38 @@ describe("buildCreatorStatement", () => {
 		expect(validate(statementSchema, said)).toEqual([]);
 	});
 
+	it("says nothing that came from the credentials of a source whose credentials are left out (D64)", () => {
+		const args = {
+			output,
+			timeline,
+			composition,
+			segments,
+			assets,
+			statement,
+			statedAt: "2026-11-13T10:00:00Z",
+			credentialsLeftOut: ["ai:21"],
+		};
+		const [take, , gen] = buildCreatorStatement(args).ingredients;
+		// Not who signed it, and not the class its credentials claim. That the
+		// file had credentials stays, and so does everything the creator said.
+		expect(gen).toMatchObject({
+			title: "gen-01.mp4",
+			originClass: "trainedAlgorithmicMedia",
+			fileCredentials: "present",
+			classClaimedByFile: null,
+			signedBy: "",
+			signerName: "",
+		});
+		expect(take).toEqual(s.ingredients[0]);
+		expect(JSON.stringify(buildCreatorStatement(args))).not.toContain(
+			"Gen Tool",
+		);
+		// The signed manifest carries that statement.
+		const built = buildOutputManifest({ ...args, generator: GENERATOR });
+		expect(built.statement.ingredients[2].signerName).toBe("");
+		expect(validate(statementSchema, built.statement)).toEqual([]);
+	});
+
 	it("keeps the C2PA ingredient title as the file name, whatever the public title", () => {
 		const { ingredients } = buildOutputManifest({
 			output,

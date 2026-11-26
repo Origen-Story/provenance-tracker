@@ -401,6 +401,10 @@ export function placedAssetRefs(segments, outputRef) {
  *                                 signerName, c2paSummary)
  * @param {object} a.statement     { text, authorName, organization, softwareAgent }
  * @param {string} a.statedAt      ISO time the statement is signed
+ * @param {Iterable<string>} [a.credentialsLeftOut] refs of the assets whose own credentials
+ *                                 are kept out of the signed file (D62). The statement then says
+ *                                 nothing that came from them: not who signed them, and not the
+ *                                 class they claim (D64). That the file had credentials stays.
  */
 export function buildCreatorStatement({
 	output,
@@ -410,7 +414,10 @@ export function buildCreatorStatement({
 	assets,
 	statement = {},
 	statedAt,
+	// No default, as for the thumbnail below.
+	credentialsLeftOut,
 }) {
+	const leftOut = new Set(credentialsLeftOut ?? []);
 	const presence = presenceByAsset(composition);
 	const outputClass = outputClassOf(output, composition);
 	const placed = placedAssetRefs(segments, requireRef(output));
@@ -428,12 +435,12 @@ export function buildCreatorStatement({
 			position: spectrumPosition(a.originClass, { aiAssisted: !!a.aiAssisted }),
 			classSetBy: a.originClassConfirmed ? "creator" : "proposal",
 			fileCredentials: claimed.credentials,
-			classClaimedByFile: claimed.originClass,
+			classClaimedByFile: leftOut.has(k) ? null : claimed.originClass,
 			// "unverified" (origin-vocabulary.js) is carried as it is: the
 			// credentials name this signer and the signature did not verify.
 			// A reader of the statement must say it that way, never "signed by".
-			signedBy: a.signedBy || "",
-			signerName: a.signerName || "",
+			signedBy: leftOut.has(k) ? "" : a.signedBy || "",
+			signerName: leftOut.has(k) ? "" : a.signerName || "",
 			aiAssisted: !!a.aiAssisted,
 			note: a.originClassNote || "",
 			pictureSeconds: seconds(on.picture),
@@ -583,7 +590,7 @@ export function thumbnailIdentifier({ sha256, format }) {
  * `thumbnail` ({ sha256, format, filePath }) is the image the creator picked
  * to stand for the edit: it becomes the claim thumbnail, which verifiers show
  * (D17). The definition names it by hash; `resources` tells the signer which
- * file that name is.
+ * file that name is. `credentialsLeftOut` is as for buildCreatorStatement.
  * @returns {{ definition: object, ingredients: Array<{label, relationship, title, filePath?, useInput?}>, resources: Array<{identifier, filePath}>, statement: object }}
  */
 export function buildOutputManifest({
@@ -598,6 +605,7 @@ export function buildOutputManifest({
 	// No default: a JS default would type it as null for TypeScript callers.
 	thumbnail,
 	trainingMiningOptOut = true,
+	credentialsLeftOut,
 }) {
 	if (!output?.filePath) throw new Error("The output has no file to sign");
 	if (!composition)
@@ -612,6 +620,7 @@ export function buildOutputManifest({
 		assets,
 		statement,
 		statedAt,
+		credentialsLeftOut,
 	});
 	const keys = placedAssetRefs(segments, requireRef(output));
 

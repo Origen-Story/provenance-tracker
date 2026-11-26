@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import * as xmeml from "../../src/timeline/formats/xmeml.js";
 import {
 	detectFormat,
+	listSequences,
+	openTimeline,
 	parseTimeline,
 	formats,
 } from "../../src/timeline/formats/index.js";
@@ -193,5 +195,29 @@ describe("xmeml parse", () => {
 				'<xmeml version="4"><project><name>x</name></project></xmeml>',
 			),
 		).toThrow(/no <sequence>/);
+	});
+});
+
+describe("a timeline file read once (D65)", () => {
+	const project = readFileSync(
+		path.resolve(here, "../fixtures/timeline/project-export.xmeml.xml"),
+		"utf8",
+	);
+	it("lists the sequences and parses the one chosen as the separate calls do", () => {
+		const opened = openTimeline(project);
+		expect(opened.sequences()).toEqual(listSequences(project));
+		expect(opened.sequences()).toHaveLength(3);
+		for (const sequence of [0, 2])
+			expect(opened.parse({ sequence })).toEqual(
+				parseTimeline(project, { sequence }),
+			);
+		// Asking twice changes nothing: the reading is shared, not used up.
+		expect(opened.parse({ sequence: 2 })).toEqual(
+			parseTimeline(project, { sequence: 2 }),
+		);
+		expect(() => opened.parse({ sequence: 3 })).toThrow(/no sequence 3/);
+	});
+	it("refuses text that is no timeline before reading anything", () => {
+		expect(() => openTimeline("TITLE: edl")).toThrow(/Unrecognised/);
 	});
 });

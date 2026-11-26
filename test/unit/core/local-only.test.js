@@ -4,12 +4,15 @@ import {
 	checkLocalRequest,
 	listenHost,
 	allowedHostnames,
+	isLoopbackAddress,
 	isLoopbackHost,
 	localOnly,
 } from "../../../src/server/lib/core/local-only.js";
 
-const ok = (r) => expect(checkLocalRequest(r)).toEqual({ ok: true });
-const refused = (r) => expect(checkLocalRequest(r).ok).toBe(false);
+// Each request comes from this machine unless it says where from.
+const from = (r) => ({ remoteAddress: "127.0.0.1", ...r });
+const ok = (r) => expect(checkLocalRequest(from(r))).toEqual({ ok: true });
+const refused = (r) => expect(checkLocalRequest(from(r)).ok).toBe(false);
 
 describe("listenHost", () => {
 	it("is loopback unless HOST is set", () => {
@@ -36,6 +39,47 @@ describe("allowedHostnames", () => {
 				ALLOWED_HOSTS: "Tracker.example.net, tracker.example.net ,",
 			}),
 		).toEqual(["tracker.example.net"]);
+	});
+
+	it("takes the name from an entry written with a port, and a bare IPv6 address", () => {
+		expect(
+			allowedHostnames({
+				ALLOWED_HOSTS:
+					"tracker.example.net:8443, [2001:db8::1]:3001, 2001:db8::2",
+			}),
+		).toEqual(["tracker.example.net", "2001:db8::1", "2001:db8::2"]);
+	});
+
+	it("never takes a loopback name: localhost from another machine is always a lie", () => {
+		expect(
+			allowedHostnames({
+				HOST: "0.0.0.0",
+				ALLOWED_HOSTS: "localhost, 127.0.0.1, ::1, LocalHost:3001, not a host",
+			}),
+		).toEqual([]);
+	});
+});
+
+describe("isLoopbackAddress", () => {
+	it("knows a connection from this machine, also IPv4 written inside IPv6", () => {
+		for (const a of ["127.0.0.1", "127.8.9.10", "::1", "::ffff:127.0.0.1"])
+			expect(isLoopbackAddress(a), a).toBe(true);
+	});
+	it("refuses every other address, and no address at all", () => {
+		for (const a of [
+			"192.168.1.20",
+			"10.0.0.1",
+			"::ffff:192.168.1.20",
+			"128.0.0.1",
+			"127.0.0.1.example.com",
+			"127.0.0",
+			"127.0.0.999",
+			"fe80::1",
+			"localhost",
+			"",
+			undefined,
+		])
+			expect(isLoopbackAddress(a), String(a)).toBe(false);
 	});
 });
 
@@ -116,8 +160,62 @@ describe("checkLocalRequest", () => {
 	});
 });
 
+describe("a loopback Host name is this machine only from this machine (D66)", () => {
+	it("refuses Host: localhost on a connection from another machine, whatever else it says", () => {
+		for (const host of ["localhost:3001", "127.0.0.1:3001", "[::1]:3001"])
+			for (const remoteAddress of [
+				"192.168.1.20",
+				"::ffff:192.168.1.20",
+				"203.0.113.9",
+				"",
+				undefined,
+			]) {
+				const verdict = checkLocalRequest({
+					host,
+					origin: `http://${host}`,
+					secFetchSite: "same-origin",
+					remoteAddress,
+				});
+				expect(verdict.ok, `${host} from ${remoteAddress}`).toBe(false);
+			}
+		expect(
+			checkLocalRequest({ host: "localhost:3001", remoteAddress: "10.0.0.7" })
+				.reason,
+		).toBe('Host "localhost" from 10.0.0.7, which is not this machine');
+	});
+
+	it("still refuses it when HOST or ALLOWED_HOSTS name something else", () => {
+		const allowedHosts = allowedHostnames({
+			HOST: "192.168.1.5",
+			ALLOWED_HOSTS: "tracker.example.net, localhost",
+		});
+		refused({
+			host: "localhost:3001",
+			remoteAddress: "192.168.1.20",
+			allowedHosts,
+		});
+		// A listed name is answered from anywhere: that is what a login in
+		// front of it is for.
+		ok({
+			host: "tracker.example.net",
+			remoteAddress: "192.168.1.20",
+			allowedHosts,
+		});
+		ok({
+			host: "192.168.1.5:3001",
+			remoteAddress: "192.168.1.20",
+			allowedHosts,
+		});
+	});
+
+	it("accepts it from this machine: the browser, the dev proxy, a proxy on the same machine", () => {
+		ok({ host: "localhost:3001", remoteAddress: "::1" });
+		ok({ host: "localhost:5173", remoteAddress: "::ffff:127.0.0.1" });
+	});
+});
+
 describe("localOnly middleware", () => {
-	function run(headers) {
+	function run(headers, remoteAddress = "127.0.0.1") {
 		const res = {
 			code: 200,
 			body: null,
@@ -133,7 +231,7 @@ describe("localOnly middleware", () => {
 		let passed = false;
 		const refusals = [];
 		localOnly({ onRefuse: (_req, reason) => refusals.push(reason) })(
-			{ headers },
+			{ headers, socket: { remoteAddress } },
 			res,
 			() => {
 				passed = true;
@@ -157,5 +255,14 @@ describe("localOnly middleware", () => {
 		expect(r.res.code).toBe(403);
 		expect(JSON.stringify(r.res.body)).not.toContain("attacker");
 		expect(r.refusals).toHaveLength(1);
+	});
+
+	it("reads where the connection came from off the socket, never a header", () => {
+		const r = run(
+			{ host: "localhost:3001", "x-forwarded-for": "127.0.0.1" },
+			"192.168.1.20",
+		);
+		expect(r.passed).toBe(false);
+		expect(r.res.code).toBe(403);
 	});
 });

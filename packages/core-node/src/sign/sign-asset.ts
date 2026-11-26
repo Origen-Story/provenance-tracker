@@ -243,6 +243,11 @@ export async function signAsset(
 	}
 
 	const stats = statSync(plan.sidecarPath);
+	const signedSha256 = await sha256OfFile(plan.sidecarPath);
+	// The new sidecar as `extract` reads one, kept below as a reading: signing
+	// an edit that places this source compares what the sidecar says with what
+	// the review showed (D63), and this is what the review shows.
+	const reading = await engine.read(file, plan.sidecarPath);
 	const { signatureId, runId } = recordSigning(
 		db,
 		{
@@ -251,7 +256,7 @@ export async function signAsset(
 			version: plan.version,
 			sourceSha256: place.sha256,
 			signed: {
-				sha256: await sha256OfFile(plan.sidecarPath),
+				sha256: signedSha256,
 				size: stats.size,
 				rootId: root.id,
 				path: relOf(plan.sidecarPath),
@@ -278,6 +283,24 @@ export async function signAsset(
 		},
 		{ tool: TOOL, now },
 	);
+	if (reading.status !== "unavailable")
+		db.prepare(
+			`INSERT INTO observations (content_sha256, source_sha256, run_id, kind, extractor, extractor_version,
+			   status, data, error, warnings, validation, observed_at)
+			 VALUES (?, ?, ?, 'c2pa-sidecar', ?, ?, ?, ?, ?, ?, ?, ?)`,
+		).run(
+			place.sha256,
+			signedSha256,
+			runId,
+			reading.extractor,
+			reading.version,
+			reading.status,
+			reading.data === null ? null : JSON.stringify(reading.data),
+			reading.error,
+			JSON.stringify(reading.warnings),
+			reading.validation ? JSON.stringify(reading.validation) : null,
+			now(),
+		);
 	const { status } = db
 		.prepare("SELECT status FROM signatures WHERE id = ?")
 		.get(signatureId) as { status: string };

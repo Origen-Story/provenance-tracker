@@ -657,6 +657,8 @@ async function sign(io: Io, args: string[], values: Values): Promise<number> {
 				io.out(
 					`Kept out of it, as in the last signing (change it on the Signing tab): ${r.withheld.redacted} detail(s) redacted from sources' credentials, ${r.withheld.leftOut} source(s)' credentials left out.`,
 				);
+			// What changed between that signing and this one is always said.
+			for (const note of r.notes) io.out(note);
 			return 0;
 		}
 		// A source asset: its credentials go in a .c2pa sidecar beside it.

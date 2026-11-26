@@ -375,6 +375,27 @@ describe("buildPublicExport", () => {
 		]);
 	});
 
+	it("carries a source's unverified signer as unverified, so a page never calls it who signed (D67)", () => {
+		const said = {
+			...statement,
+			ingredients: statement.ingredients.map((i, n) =>
+				n === 0
+					? { ...i, signedBy: "unverified", signerName: "Example AI Inc." }
+					: i,
+			),
+		};
+		const out = buildPublicExport({
+			signature: { ...signature, statementJson: JSON.stringify(said) },
+			generatedAt: "2026-11-14T10:00:00Z",
+			generator: GENERATOR,
+		});
+		expect(validate(SCHEMA, out)).toEqual([]);
+		expect(out.ingredients[0]).toMatchObject({
+			signedBy: "unverified",
+			signerName: "Example AI Inc.",
+		});
+	});
+
 	it("refuses a copy signed before the statement carried the timeline", () => {
 		const old = {
 			...signature,

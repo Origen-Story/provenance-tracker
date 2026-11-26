@@ -6,13 +6,16 @@
 // reads again, beside the old rows.
 
 import { statSync } from "node:fs";
-import path from "node:path";
 import {
 	createRow,
 	editRow,
 	type Actor,
 } from "@provenancetracker/core/catalog/edit.ts";
 import { inTransaction } from "@provenancetracker/core/catalog/format.ts";
+import {
+	fromCatalogPath,
+	isCatalogPath,
+} from "@provenancetracker/core/catalog/paths.ts";
 import { finishRun, startRun } from "@provenancetracker/core/catalog/runs.ts";
 import { LIBRARY_EXTRACTOR } from "@provenancetracker/core/extraction/c2pa-library-read.ts";
 import type { Observation } from "@provenancetracker/core/extraction/observation.ts";
@@ -183,10 +186,22 @@ export async function extractProject(
 		for (const row of rows) {
 			const root = here.find((r) => r.id === row.rootId);
 			if (!root?.folder) continue;
+			// A path is the catalog's word, and a catalog may be someone else's:
+			// one that is not a plain path inside its media folder ("..", a drive)
+			// is never opened (D68).
+			if (!isCatalogPath(row.path)) {
+				report.skipped.push({
+					root: root.name,
+					path: row.path,
+					reason:
+						"its path in the catalog is not a path inside its media folder",
+				});
+				continue;
+			}
 			files.push({
 				...row,
 				root: root.name,
-				abs: path.join(root.folder, ...row.path.split("/")),
+				abs: fromCatalogPath(root.folder, row.path, machine.platform),
 			});
 		}
 		const hereShas = new Set(files.map((f) => f.sha256));

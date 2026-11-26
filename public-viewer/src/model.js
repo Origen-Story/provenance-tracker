@@ -444,9 +444,16 @@ export function ingredientsBySpectrum(exp) {
 		}));
 }
 
-/** Where an ingredient's provenance comes from, in a sentence. */
+/**
+ * Where an ingredient's provenance comes from, in a sentence. A record may
+ * say its credentials name a signer whose signature did not verify
+ * (signedBy "unverified"): that is said in those words, never as "signed by".
+ */
 export function ingredientProvenance(i) {
-	if (i.credentialsInSignedFile === "present") {
+	const kept = i.credentialsInSignedFile === "present";
+	if (i.signedBy === "unverified" && (kept || i.fileCredentials === "present"))
+		return `Its own Content Credentials name ${i.signerName || "a signer"}; that signature could not be verified.${kept ? " They are kept inside the signed film." : ""}`;
+	if (kept) {
 		return `Carries its own Content Credentials${i.signerName ? `, signed by ${i.signerName}` : ""}, kept inside the signed film.`;
 	}
 	if (i.fileCredentials === "present")

@@ -21,6 +21,7 @@ import {
 	writeTimeline,
 } from "@provenancetracker/core/catalog/timelines.ts";
 import type { Machine } from "@provenancetracker/core-node/machine.ts";
+import { makeObservation } from "@provenancetracker/core/extraction/observation.ts";
 import {
 	createProject,
 	openProject,
@@ -31,6 +32,7 @@ import { updateSettings } from "@provenancetracker/core-node/settings.ts";
 import type { SigningEngine } from "@provenancetracker/core-node/sign/sign-output.ts";
 import { TOOL } from "@provenancetracker/core-node/tool.ts";
 import { devCertificate, haveOpenssl } from "../helpers/cert.ts";
+import { soundReport } from "../../../packages/core-node/test/helpers/readers.ts";
 import { createApp } from "../../../src/server/app.ts";
 import { JobRunner } from "../../../src/server/api/jobs.ts";
 
@@ -51,13 +53,16 @@ const stub: SigningEngine = {
 	name: "stub",
 	version: "1.0",
 	readEmbedded: async () => null,
+	// A stand-in reads every source as carrying no credentials.
+	read: async () =>
+		makeObservation({ kind: "c2pa", extractor: "stub", status: "absent" }),
 	sign: async ({ inputPath, outputPath }) => {
 		copyFileSync(inputPath, outputPath);
 		writeFileSync(
 			outputPath,
 			Buffer.concat([readFileSync(inputPath), Buffer.from(" signed")]),
 		);
-		return { report: null };
+		return { report: soundReport() };
 	},
 };
 
@@ -378,5 +383,42 @@ describe("previews by content", () => {
 			(await w.call("GET", `/contents/${"0".repeat(64)}/file`)).status,
 		).toBe(404);
 		expect((await w.call("GET", "/contents/../../etc/file")).status).toBe(404);
+	});
+
+	it("answers in words when what the catalog places is no longer a file, and goes on answering (D66)", async () => {
+		const w = await world();
+		// Where the catalog has the take there is now a folder of the same name:
+		// it is there, and named like a sound, and cannot be read as one. With no
+		// handler on the stream, this stopped the server.
+		rmSync(path.join(w.media, "take.wav"));
+		mkdirSync(path.join(w.media, "take.wav"));
+		const r = await w.call("GET", `/contents/${w.take.sha256}/file`);
+		expect(r.status).toBe(404);
+		const body = await r.text();
+		expect(JSON.parse(body)).toEqual({
+			error: "That file is not on this machine any more",
+		});
+		expect(body).not.toContain(w.dir);
+		// The same with a range, as a player asks.
+		expect(
+			(
+				await w.call("GET", `/contents/${w.take.sha256}/file`, undefined, {
+					range: "bytes=0-1",
+				})
+			).status,
+		).toBe(404);
+		// The server is still there for the next request.
+		const film = await w.call("GET", `/contents/${w.film.sha256}/file`);
+		expect(film.status).toBe(200);
+		expect(await film.text()).toBe("the cut");
+		// A range that is not in the file is still said, and the file let go.
+		const beyond = await w.call(
+			"GET",
+			`/contents/${w.film.sha256}/file`,
+			undefined,
+			{ range: "bytes=99-" },
+		);
+		expect(beyond.status).toBe(416);
+		rmSync(path.join(w.media, "film.mp4"));
 	});
 });

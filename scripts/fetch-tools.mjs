@@ -62,8 +62,7 @@ function unpack(archive, into) {
 	}
 }
 
-function installedVersion(binary) {
-	if (!existsSync(binary)) return null;
+function reportedVersion(binary) {
 	try {
 		return execFileSync(binary, ["--version"], {
 			encoding: "utf8",
@@ -78,21 +77,16 @@ const sha256Of = (file) =>
 	createHash("sha256").update(readFileSync(file)).digest("hex");
 
 /**
- * A library cannot be asked its version, so installing one writes a marker
- * beside it with the version and the installed file's SHA-256; the marker
- * counts only while the file still has that hash.
+ * What is installed at `target`, told by its bytes: the pinned version when
+ * the file's SHA-256 is the pinned binary's, else that it is something else.
+ * An installed program is never run to ask what it is: one that is not the
+ * pinned one is exactly the program not to run.
  */
-function installedLibrary(target) {
-	const marker = `${target}.pinned.json`;
-	if (!existsSync(target) || !existsSync(marker)) return null;
-	try {
-		const m = JSON.parse(readFileSync(marker, "utf8"));
-		return m.sha256 === sha256Of(target)
-			? String(m.version)
-			: "(changed since it was installed)";
-	} catch {
-		return "(unreadable marker)";
-	}
+function installed(target, asset) {
+	if (!existsSync(target)) return null;
+	return sha256Of(target) === asset.binarySha256
+		? asset.version
+		: "(not the pinned binary)";
 }
 
 async function fetchTool(name) {
@@ -101,7 +95,7 @@ async function fetchTool(name) {
 	const destDir = join(repo, "tools", name);
 	const target = join(destDir, basename(asset.binaryInArchive));
 
-	const current = library ? installedLibrary(target) : installedVersion(target);
+	const current = installed(target, asset);
 	if (current && reportsVersion(current, asset.version)) {
 		console.log(
 			`${name}: ${asset.version} already installed at tools/${name}/${basename(target)}`,
@@ -110,7 +104,7 @@ async function fetchTool(name) {
 	}
 	if (current && !force) {
 		throw new Error(
-			`tools/${name}/${basename(target)} reports "${current}", but the pinned version is ${asset.version}. ` +
+			`tools/${name}/${basename(target)} is not the pinned ${name} ${asset.version} ${current}. ` +
 				`Run "npm run tools:fetch -- --force" to replace it.`,
 		);
 	}
@@ -140,10 +134,17 @@ async function fetchTool(name) {
 			throw new Error(
 				`${name}: ${asset.binaryInArchive} is not in ${asset.file}`,
 			);
+		// The program inside must be the pinned one too, byte for byte: this is
+		// the hash the tracker checks again each time it loads or runs it.
+		verifySha256(
+			readFileSync(extracted),
+			asset.binarySha256,
+			`${asset.binaryInArchive} in ${asset.file}`,
+		);
 		if (!library && process.platform !== "win32") chmodSync(extracted, 0o755);
 		const reported = library
 			? `${name} ${asset.version}`
-			: installedVersion(extracted);
+			: reportedVersion(extracted);
 		if (!reportsVersion(reported, asset.version)) {
 			throw new Error(
 				`${name}: the downloaded binary reports "${reported}", expected ${asset.version}`,

@@ -14,6 +14,7 @@ import {
 	spectrumPosition,
 	describeOrigin,
 	SIGNED_BY_LABELS,
+	UNVERIFIED_SIGNER,
 } from "@provenancetracker/core/origin-vocabulary.js";
 
 export {
@@ -24,6 +25,7 @@ export {
 	spectrumPosition,
 	describeOrigin,
 	SIGNED_BY_LABELS,
+	UNVERIFIED_SIGNER,
 };
 
 export const positionColor = (position) =>

@@ -24,6 +24,7 @@ import {
 import { addRoot } from "@provenancetracker/core-node/roots.ts";
 import { scanProject } from "@provenancetracker/core-node/scan.ts";
 import { updateSettings } from "@provenancetracker/core-node/settings.ts";
+import { noCredentials } from "../../../packages/core-node/test/helpers/readers.ts";
 import { createApp } from "../../../src/server/app.ts";
 import {
 	ApiError,
@@ -78,11 +79,12 @@ async function world() {
 	updateSettings(machine.settingsPath, (s) => {
 		s.person = "Test Person";
 	});
-	// No readers: this is about the calls, not what is read from the files.
+	// A stand-in reader: this is about the calls, not what is read from the
+	// files, but a file has to have been read before an edit is signed.
 	server = createApp({
 		env: {},
 		machine,
-		catalog: { readers: async () => [] },
+		catalog: { readers: async () => [noCredentials] },
 	}).listen(0, "127.0.0.1");
 	await new Promise((r) => server!.once("listening", r));
 	const base = `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
@@ -283,6 +285,8 @@ describe("the finished edit pages' API client", () => {
 		mkdirSync(path.join(w.mediaDir, "exports"));
 		writeFileSync(path.join(w.mediaDir, "exports", "film.mp4"), "the cut");
 		await settle(w.projectId, (await media.start(w.projectId, "scan")).job);
+		// Read too: an edit is signed only once its sources have been.
+		await settle(w.projectId, (await media.start(w.projectId, "extract")).job);
 		const film = (await assets.list(w.projectId, { q: "film" })).assets[0].id;
 		await assets.edit(w.projectId, film, { is_output: true });
 		expect(
@@ -395,6 +399,8 @@ describe("a timeline file holding several sequences (Phase 8 step 6)", () => {
 		mkdirSync(path.join(w.mediaDir, "exports"));
 		writeFileSync(path.join(w.mediaDir, "exports", "film.mp4"), "the cut");
 		await settle(w.projectId, (await media.start(w.projectId, "scan")).job);
+		// Read too: an edit is signed only once its sources have been.
+		await settle(w.projectId, (await media.start(w.projectId, "extract")).job);
 		const film = (await assets.list(w.projectId, { q: "film" })).assets[0].id;
 		await assets.edit(w.projectId, film, { is_output: true });
 		const project = new File(

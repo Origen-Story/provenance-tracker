@@ -37,7 +37,8 @@ export default defineConfig({
 		// Some tests run the whole pipeline on real disk: temporary catalogs, scans,
 		// reads, child processes. On a GitHub Windows runner that took 8.6 s for one
 		// test (virus scanning of new files is the likely cost) against the 5 s
-		// default. 30 s still stops a hang; the repo guard keeps the suite under 60 s.
+		// default. 30 s still stops a hang; the repo guard keeps the suite under 60 s
+		// (180 s in CI, scripts/lib/test-budget.mjs).
 		testTimeout: 30_000,
 	},
 });

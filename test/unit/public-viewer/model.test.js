@@ -249,6 +249,40 @@ describe("ingredientProvenance", () => {
 			}),
 		).toMatch(/metadata/);
 	});
+
+	it("never says 'signed by' of credentials whose signature did not verify (D67)", () => {
+		const unverified = {
+			signedBy: "unverified",
+			signerName: "Example AI Inc.",
+		};
+		expect(
+			ingredientProvenance({
+				...unverified,
+				credentialsInSignedFile: "present",
+				fileCredentials: "present",
+			}),
+		).toBe(
+			"Its own Content Credentials name Example AI Inc.; that signature could not be verified. They are kept inside the signed film.",
+		);
+		// Left out of the film, or not matched in its read-back.
+		expect(
+			ingredientProvenance({
+				...unverified,
+				credentialsInSignedFile: "none",
+				fileCredentials: "present",
+			}),
+		).toBe(
+			"Its own Content Credentials name Example AI Inc.; that signature could not be verified.",
+		);
+		for (const said of [
+			ingredientProvenance({
+				...unverified,
+				credentialsInSignedFile: "present",
+			}),
+			ingredientProvenance({ ...unverified, fileCredentials: "present" }),
+		])
+			expect(said).not.toMatch(/signed by/);
+	});
 });
 
 describe("the file, the signer and the identity, read apart (D57)", () => {

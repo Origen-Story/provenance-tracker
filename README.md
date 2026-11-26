@@ -61,18 +61,20 @@ The generator produces a two-step chain (a self-issued root CA + an end-entity s
 Provenance Tracker is a **local, single-user tool** with no login. What keeps it private is that only your own machine can reach it:
 
 - The server listens on `127.0.0.1` only, and so does the Vite dev server. Another device on the same network cannot connect.
-- The API answers only the tracker's own pages. A request whose `Host` is not this machine, whose `Origin` is another page, or that the browser labels cross-site gets a 403. This stops a web page you happen to visit from driving the local API.
+- The API answers only the tracker's own pages. A request whose `Host` is not this machine, that says `localhost` and comes from another machine, whose `Origin` is another page, or that the browser labels cross-site gets a 403. This stops a web page you happen to visit from driving the local API.
 - The file preview serves image, video and audio files only, by their hash.
 
 What this does and does not protect is set out in [docs/threat-model.md](docs/threat-model.md). What the tracker sends off your machine (a time-stamp request when signing, and a file you ask it to download) is listed in [docs/network.md](docs/network.md). To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 For single-user local work, `npm run dev` (development) or `npm start` (production build served from `dist/`) is the intended usage pattern.
 
-**Reaching it from another machine.** Not the intended use, and there is still no login, so you must add one. Put the app behind a reverse proxy that authenticates (nginx with basic auth, Cloudflare Access, Tailscale Serve), serve it over HTTPS, and then:
+**Reaching it from another machine.** Not the intended use, and there is still no login, so you must add one. Run a reverse proxy that authenticates (nginx with basic auth, Cloudflare Access, Tailscale Serve) on the same machine as the tracker, serve it over HTTPS, and then:
 
-- Set `HOST` to the address to listen on (`0.0.0.0` for every interface).
-- Set `ALLOWED_HOSTS` to the host name people type, for example `tracker.example.net`. Without it every request from outside is refused. It names a host; it is not a password.
+- Leave `HOST` unset. The tracker keeps listening on `127.0.0.1` only, and the proxy connects to it there (`http://127.0.0.1:3001`). Nothing but the proxy can reach the API, so nothing gets past the proxy's login.
+- Set `ALLOWED_HOSTS` to the host name people type, for example `tracker.example.net`. Without it every request under that name is refused. It names a host; it is not a password.
 - Have the proxy pass the `Host` header through unchanged. The API compares it with `Origin`.
+
+Setting `HOST` makes the tracker itself listen on the network, beside whatever proxy you run. Anyone who can reach port 3001 can then skip the proxy's login by sending a `Host` header you have allowed. Do it only when the proxy has to be on another machine, and let a firewall admit that machine alone. Some tools and containers set `HOST` for their own reasons; the tracker's first log lines say what it is listening on, and warn when that is more than this machine.
 
 Never expose port 3001 directly to the internet.
 
@@ -171,14 +173,14 @@ The dry run checks the dump (the one `dump` names, or else the newest) against i
 
 All optional. Put them in `.env` in the repository root, or in the environment:
 
-| Variable        | Description                                                                                                                                    |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`          | The server's port (default: 3001)                                                                                                              |
-| `HOST`          | Address the server listens on (default: `127.0.0.1`, this machine only). Change it only behind a proxy that adds a login; see Deployment notes |
-| `ALLOWED_HOSTS` | Comma-separated host names the API answers to beside `localhost`, for use with `HOST`                                                          |
-| `APP_CONTACT`   | Email or URL sent in the User-Agent when the tracker downloads a file you asked for (default: the project's web address)                       |
-| `NODE_ENV`      | Set to `production` to serve the built pages from `dist/` (`npm run build`, then `npm start`)                                                  |
-| `LOG_LEVEL`     | Server log verbosity: `debug`, `info`, `warn`, `error` (default: `info`)                                                                       |
+| Variable        | Description                                                                                                                        |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`          | The server's port (default: 3001)                                                                                                  |
+| `HOST`          | Address the server listens on (default: `127.0.0.1`, this machine only). Leave it unset, also behind a proxy; see Deployment notes |
+| `ALLOWED_HOSTS` | Comma-separated host names the API answers to beside `localhost`, for a proxy that adds a login                                    |
+| `APP_CONTACT`   | Email or URL sent in the User-Agent when the tracker downloads a file you asked for (default: the project's web address)           |
+| `NODE_ENV`      | Set to `production` to serve the built pages from `dist/` (`npm run build`, then `npm start`)                                      |
+| `LOG_LEVEL`     | Server log verbosity: `debug`, `info`, `warn`, `error` (default: `info`)                                                           |
 
 ## License
 

@@ -1,14 +1,17 @@
 // The projects this machine knows (its settings), and whether each is still
-// where it was. Listing reads only: each catalog is opened read-only, so it
-// never upgrades, moves or writes anything. Forgetting a project changes this
+// where it was. Listing reads only: each catalog is opened read-only, with
+// the settings every connection gets (D68), so it never upgrades, moves or
+// writes anything, and a catalog whose structure is not its format's is
+// listed as not readable. Forgetting a project changes this
 // machine's settings and nothing in the project.
 
 import { existsSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 import {
 	inspectCatalog,
 	refusalMessage,
 } from "@provenancetracker/core/catalog/format.ts";
+import { openCatalogFile, structureRefusal } from "./catalog-file.ts";
 import type { Machine } from "./machine.ts";
 import { catalogPathOf } from "./project.ts";
 import { isProjectId, readSettings, updateSettings } from "./settings.ts";
@@ -42,8 +45,11 @@ export function knownProjects(machine: Machine): KnownProject[] {
 		}
 		let db: DatabaseSync | null = null;
 		try {
-			db = new DatabaseSync(catalogPath, { readOnly: true });
-			const refusal = refusalMessage(inspectCatalog(db));
+			db = openCatalogFile(catalogPath, { readOnly: true });
+			const state = inspectCatalog(db);
+			const refusal =
+				refusalMessage(state) ??
+				("format" in state ? structureRefusal(db, state.format) : null);
 			if (refusal) {
 				out.push({ ...base, status: "not readable", detail: refusal });
 				continue;

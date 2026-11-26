@@ -337,7 +337,10 @@ function documentOf(xmlText) {
  * order ownSequences finds them; `index` is what parse's `sequence` option takes.
  */
 export function sequences(xmlText) {
-	const { fileDefs, list } = documentOf(xmlText);
+	return sequencesOf(documentOf(xmlText));
+}
+
+function sequencesOf({ fileDefs, list }) {
 	return list.map((seq, index) => {
 		const { sequence } = readSequence(seq, fileDefs, []);
 		return {
@@ -357,7 +360,23 @@ export function sequences(xmlText) {
  * whichever sequence happens to come first without saying so.
  */
 export function parse(xmlText, opts = {}) {
-	const { root, fileDefs, list } = documentOf(xmlText);
+	return parseOf(documentOf(xmlText), opts);
+}
+
+/**
+ * The file read once, for listing its sequences and then parsing the one
+ * chosen: an import does both, and a whole-project export can be tens of
+ * megabytes of XML.
+ */
+export function open(xmlText) {
+	const doc = documentOf(xmlText);
+	return {
+		sequences: () => sequencesOf(doc),
+		parse: (opts = {}) => parseOf(doc, opts),
+	};
+}
+
+function parseOf({ root, fileDefs, list }, opts) {
 	const version = root["@_version"] || "";
 	const notes = [];
 	if (!list.length) throw new Error("xmeml: no <sequence> found");

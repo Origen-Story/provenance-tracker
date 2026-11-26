@@ -7,6 +7,7 @@ import {
 	APPLICATION_ID,
 	CATALOG_FORMAT,
 	CATALOG_FORMAT_STATUS,
+	inOneRead,
 	inspectCatalog,
 	prepareConnection,
 	refusalMessage,
@@ -16,6 +17,7 @@ import { CATALOG_V1_SQL } from "../../src/catalog/schema-v1.ts";
 import { PUBLICATIONS_SQL } from "../../src/catalog/schema-v2.ts";
 import { upgradeCatalog, UPGRADES } from "../../src/catalog/upgrade.ts";
 import { editRow, removeRow } from "../../src/catalog/edit.ts";
+import { editSettings } from "../../src/catalog/edits.ts";
 import {
 	PERSON,
 	PROJECT_ID,
@@ -577,5 +579,79 @@ describe("publications (format 2)", () => {
 			db.exec("UPDATE publications SET signature_id = signature_id + 1"),
 		).toThrow(/always belongs to the signing/);
 		expect(one(db, "SELECT count(*) AS n FROM publications").n).toBe(1);
+	});
+});
+
+describe("one read of a catalog", () => {
+	const name = (db: DatabaseSync) =>
+		one(db, "SELECT value FROM meta WHERE key = 'name'").value;
+	// As a person renames a project: the setting and its history together.
+	const rename = (db: DatabaseSync, to: string) =>
+		editSettings(db, { name: to }, { ...PERSON, tool: TEST_TOOL });
+
+	it("refuses a write inside it, and leaves the connection writing as before", () => {
+		const db = track(memoryCatalog());
+		expect(() => inOneRead(db, () => rename(db, "Changed"))).toThrow(
+			/readonly/,
+		);
+		expect(name(db)).toBe("Sample project");
+		expect(db.isTransaction).toBe(false);
+		rename(db, "Renamed");
+		expect(name(db)).toBe("Renamed");
+	});
+
+	it("gives back what the function returns, and passes on what it throws", () => {
+		const db = track(memoryCatalog());
+		expect(inOneRead(db, () => name(db))).toBe("Sample project");
+		expect(() =>
+			inOneRead(db, () => {
+				throw new Error("not ready");
+			}),
+		).toThrow("not ready");
+		expect(db.isTransaction).toBe(false);
+		expect(one(db, "PRAGMA query_only").query_only).toBe(0);
+	});
+
+	it("sees one moment of the catalog, whatever another connection writes meanwhile", () => {
+		const file = path.join(tempDir(), "catalog.sqlite");
+		const db = track(new DatabaseSync(file));
+		createCatalog(db, {
+			projectId: PROJECT_ID,
+			name: "Sample project",
+			tool: TEST_TOOL,
+			now: AT,
+		});
+		prepareConnection(db);
+		const other = track(new DatabaseSync(file));
+		prepareConnection(other);
+		const renameElsewhere = () => {
+			// Refused while the read holds the file, or made beside it: either
+			// way the read must not see it.
+			try {
+				rename(other, "Changed");
+			} catch {
+				// The catalog is being read.
+			}
+		};
+		const seen = inOneRead(db, () => {
+			const first = name(db);
+			renameElsewhere();
+			return [first, name(db)];
+		});
+		expect(seen).toEqual(["Sample project", "Sample project"]);
+		// Outside a read, the same write is seen at once.
+		const first = name(db);
+		renameElsewhere();
+		expect([first, name(db)]).toEqual(["Sample project", "Changed"]);
+	});
+
+	it("inside a transaction already open, adds only the refusal", () => {
+		const db = track(memoryCatalog());
+		db.exec("BEGIN");
+		expect(inOneRead(db, () => name(db))).toBe("Sample project");
+		expect(db.isTransaction).toBe(true);
+		rename(db, "Renamed");
+		db.exec("COMMIT");
+		expect(name(db)).toBe("Renamed");
 	});
 });

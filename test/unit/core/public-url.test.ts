@@ -1,9 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { afterAll, beforeAll, describe, it, expect } from "vitest";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import {
 	isPublicAddress,
 	parsePublicUrl,
 	assertPublicHost,
 	fetchPublic,
+	requestAt,
 } from "../../../src/server/lib/core/public-url.ts";
 
 describe("isPublicAddress", () => {
@@ -29,6 +32,21 @@ describe("isPublicAddress", () => {
 		"64:ff9b::10.0.0.1",
 		"[::1]",
 		"fe80::1%eth0",
+		// IPv6 forms that carry an IPv4 address, written in hex (D70): each
+		// leads where the IPv4 address does.
+		"::ffff:7f00:1", // mapped 127.0.0.1
+		"::ffff:0:7f00:1", // translated 127.0.0.1
+		"64:ff9b::7f00:1", // NAT64 to 127.0.0.1
+		"64:ff9b::a9fe:a9fe", // NAT64 to 169.254.169.254
+		"2002:7f00:1::", // 6to4 of 127.0.0.1
+		"2002:c0a8:101::1", // 6to4 of 192.168.1.1
+		"::7f00:1", // IPv4-compatible 127.0.0.1
+		"::10.0.0.1",
+		"0:0:0:0:0:ffff:c0a8:0101", // mapped 192.168.1.1, written out
+		// Ranges that are not plain public addresses.
+		"fec0::1", // site-local
+		"64:ff9b:1::1", // local-use translation
+		"2001::1", // Teredo
 	])("refuses %s", (a) => expect(isPublicAddress(a)).toBe(false));
 
 	it.each([
@@ -37,6 +55,10 @@ describe("isPublicAddress", () => {
 		"172.32.0.1",
 		"2606:4700:4700::1111",
 		"::ffff:8.8.8.8",
+		"::ffff:808:808",
+		"64:ff9b::808:808",
+		"2002:808:808::1",
+		"2001:4860:4860::8888",
 	])("accepts %s", (a) => expect(isPublicAddress(a)).toBe(true));
 
 	it("refuses anything that is not an address", () => {
@@ -93,7 +115,16 @@ describe("assertPublicHost", () => {
 		).rejects.toThrow(/not on the public internet/);
 		await expect(
 			assertPublicHost(new URL("http://8.8.8.8/"), never),
-		).resolves.toBeUndefined();
+		).resolves.toEqual(["8.8.8.8"]);
+	});
+
+	it("answers with the addresses it checked, for the request to be made to", async () => {
+		await expect(
+			assertPublicHost(
+				new URL("https://images.example/a.jpg"),
+				resolvesTo("93.184.215.14", "2606:4700:4700::1111"),
+			),
+		).resolves.toEqual(["93.184.215.14", "2606:4700:4700::1111"]);
 	});
 
 	it("refuses a name that resolves to nothing", async () => {
@@ -171,5 +202,124 @@ describe("fetchPublic", () => {
 				{ lookup, fetchImpl: loop, maxRedirects: 3 },
 			),
 		).rejects.toThrow(/More than 3 redirects/);
+	});
+});
+
+describe("the request goes to the address that was checked (D70)", () => {
+	it("hands the checked address to the request, and never asks for the name twice", async () => {
+		// A hostile DNS server: public the first time it is asked, this machine
+		// from then on. Asking again when connecting is how rebinding works.
+		let asked = 0;
+		const rebinding = async () => [
+			{ address: asked++ === 0 ? "93.184.215.14" : "127.0.0.1" },
+		];
+		const connected: string[] = [];
+		const res = await fetchPublic(
+			"http://rebind.example/a.jpg",
+			{},
+			{
+				lookup: rebinding,
+				fetchImpl: async (_url, _init, address) => {
+					connected.push(address);
+					return new Response("bytes");
+				},
+			},
+		);
+		expect(res.status).toBe(200);
+		expect(asked).toBe(1);
+		expect(connected).toEqual(["93.184.215.14"]);
+	});
+
+	it("checks each redirect's host afresh and connects to that check's address", async () => {
+		const dns: Record<string, string> = {
+			"a.example": "93.184.215.14",
+			"b.example": "8.8.8.8",
+		};
+		const connected: Array<[string, string]> = [];
+		await fetchPublic(
+			"https://a.example/x",
+			{},
+			{
+				lookup: async (host) => [{ address: dns[host] }],
+				fetchImpl: async (url, _init, address) => {
+					connected.push([new URL(url).hostname, address]);
+					return url.includes("a.example")
+						? new Response(null, {
+								status: 302,
+								headers: { location: "https://b.example/y" },
+							})
+						: new Response("bytes");
+				},
+			},
+		);
+		expect(connected).toEqual([
+			["a.example", "93.184.215.14"],
+			["b.example", "8.8.8.8"],
+		]);
+	});
+
+	describe("requestAt, against a server on this machine", () => {
+		let server: Server;
+		let port = 0;
+		const seen: Array<{ host?: string; agent?: string; encoding?: string }> =
+			[];
+		beforeAll(async () => {
+			server = createServer((req, res) => {
+				seen.push({
+					host: req.headers.host,
+					agent: req.headers["user-agent"],
+					encoding: req.headers["accept-encoding"] as string,
+				});
+				if (req.url === "/moved") {
+					res.writeHead(302, { location: "/there" }).end("gone");
+					return;
+				}
+				res.writeHead(200, { "content-type": "image/png" }).end("png bytes");
+			}).listen(0, "127.0.0.1");
+			await new Promise((r) => server.once("listening", r));
+			port = (server.address() as AddressInfo).port;
+		});
+		afterAll(() => new Promise((r) => server.close(r)));
+
+		it("connects to the address it is given, whatever the name would resolve to", async () => {
+			// The name resolves nowhere; the connection goes to the address.
+			const res = await requestAt(
+				`http://no-such-host.invalid:${port}/a.png`,
+				{ headers: { "User-Agent": "tracker-test" } },
+				"127.0.0.1",
+			);
+			expect(res.status).toBe(200);
+			expect(res.headers.get("content-type")).toBe("image/png");
+			expect(await res.text()).toBe("png bytes");
+			// The server is still asked for the name, and for the bytes as they are.
+			expect(seen.at(-1)).toEqual({
+				host: `no-such-host.invalid:${port}`,
+				agent: "tracker-test",
+				encoding: "identity",
+			});
+		});
+
+		it("does not follow a redirect itself: the caller checks where it leads", async () => {
+			const res = await requestAt(
+				`http://no-such-host.invalid:${port}/moved`,
+				{},
+				"127.0.0.1",
+			);
+			expect(res.status).toBe(302);
+			expect(res.headers.get("location")).toBe("/there");
+		});
+
+		it("fails as an error, not a crash, when nothing answers at the address", async () => {
+			const closed = createServer().listen(0, "127.0.0.1");
+			await new Promise((r) => closed.once("listening", r));
+			const free = (closed.address() as AddressInfo).port;
+			await new Promise((r) => closed.close(r));
+			await expect(
+				requestAt(`http://no-such-host.invalid:${free}/`, {}, "127.0.0.1"),
+			).rejects.toThrow(/ECONNREFUSED/);
+			await expect(
+				requestAt("http://no-such-host.invalid/", {}, "not an address"),
+			).rejects.toThrow(/is not an address/);
+		});
 	});
 });

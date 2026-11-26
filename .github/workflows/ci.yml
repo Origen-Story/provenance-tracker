@@ -13,10 +13,11 @@ name: CI
 # installs the pinned c2patool, the C2PA library's native binary and the trust
 # lists (each checked against its SHA-256), so signing and reading are tested
 # for real with throwaway certificates, never certs/.
-# `npm ci` runs with SKIP_RUST_BUILD=1, which stops the C2PA library's install
-# script doing anything: it would otherwise download its binary unchecked, or,
-# told not to (SKIP_BINARY_DOWNLOAD) on a machine with Rust, as GitHub's are,
-# try to compile it from source and fail (docs/dependencies.md).
+# No package's install script runs (.npmrc), so the C2PA library's does not
+# download its binary unchecked. SKIP_RUST_BUILD=1 is a second stop for the
+# same script: told only not to download (SKIP_BINARY_DOWNLOAD) on a machine
+# with Rust, as GitHub's are, it would try to compile the library from source
+# and fail (docs/dependencies.md).
 # Branch protection on main requires "test (ubuntu-latest)" and
 # "test (windows-latest)"; renaming the job or the matrix changes those names.
 

@@ -56,8 +56,7 @@ export function c2patoolObservation({
 			return makeObservation({
 				...base,
 				status: "unavailable",
-				error:
-					"c2patool was not found. Run npm run tools:fetch or set C2PATOOL_PATH.",
+				error: "c2patool was not found. Run npm run tools:fetch.",
 			});
 		// A non-zero exit usually means "no manifest"; c2patool's wording tells
 		// that apart from a real failure.

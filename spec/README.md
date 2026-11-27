@@ -12,9 +12,10 @@ The formats that other people's software relies on. Each has a version number, e
 The catalog, one SQLite file per project, is also a format with a version, with its opening and upgrade rules in docs/decisions.md D26. Each format's SQL is written from its source by `npm run catalog:write`:
 
 - [`catalog/catalog.v1.sql`](catalog/catalog.v1.sql), format 1, from [`schema-v1.ts`](../packages/core/src/catalog/schema-v1.ts): the first real catalogs were written in it (D35).
-- [`catalog/catalog.v2.sql`](catalog/catalog.v2.sql), format 2, from [`schema-v2.ts`](../packages/core/src/catalog/schema-v2.ts): format 1 plus `publications`, where a signed copy is published (D56). The current format.
+- [`catalog/catalog.v2.sql`](catalog/catalog.v2.sql), format 2, from [`schema-v2.ts`](../packages/core/src/catalog/schema-v2.ts): format 1 plus `publications`, where a signed copy is published (D56).
+- [`catalog/catalog.v3.sql`](catalog/catalog.v3.sql), format 3, from [`schema-v3.ts`](../packages/core/src/catalog/schema-v3.ts): format 2 plus who saved a statement, an identifier for a credited person, each file's path folded for search, and the identity link held to https (D75). The current format.
 
-Both are released, so neither changes: a change is format 3, with an upgrade step. Opening a format 1 catalog upgrades it to format 2.
+All three are released, so none changes: a change is format 4, with an upgrade step. Opening an older catalog upgrades it to format 3, one format at a time.
 
 The origin classes used in the statement and the export are IPTC Digital Source Type codes or `unknown`; their definitions and colours are in [`docs/vocabulary.md`](../docs/vocabulary.md).
 

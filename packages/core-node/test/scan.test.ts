@@ -10,6 +10,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { listAssets } from "@provenancetracker/core/catalog/read.ts";
 import { verifyCatalog } from "@provenancetracker/core/catalog/verify.ts";
 import type { Actor } from "@provenancetracker/core/catalog/edit.ts";
 import type { Machine } from "../src/machine.ts";
@@ -144,6 +145,44 @@ describe("scanProject", () => {
 				.prepare("SELECT count(*) AS n FROM locations WHERE gone_run_id = ?")
 				.get(report.runId),
 		).toEqual({ n: 1 });
+		expect(verifyCatalog(p.db)).toEqual([]);
+	});
+
+	it("writes each place's path folded for search, where it is found and where it moves to (D75)", async () => {
+		const { m, p, media } = setup();
+		write(media, "Archivo/Señora Peña.WAV", "aaa");
+		await scanProject(p, m);
+		const folded = () =>
+			p.db
+				.prepare(
+					"SELECT path, path_folded FROM locations WHERE gone_run_id IS NULL",
+				)
+				.all();
+		expect(folded()).toEqual([
+			{
+				path: "Archivo/Señora Peña.WAV",
+				path_folded: "archivo/senora pena.wav",
+			},
+		]);
+		expect(
+			listAssets(p.db, { q: "senora pena" }).assets.map((a) => a.id),
+		).toEqual([1]);
+		mkdirSync(path.join(media, "Études"));
+		renameSync(
+			path.join(media, "Archivo", "Señora Peña.WAV"),
+			path.join(media, "Études", "Señora Peña.WAV"),
+		);
+		await scanProject(p, m);
+		expect(folded()).toEqual([
+			{
+				path: "Études/Señora Peña.WAV",
+				path_folded: "etudes/senora pena.wav",
+			},
+		]);
+		expect(listAssets(p.db, { q: "etudes" }).assets.map((a) => a.id)).toEqual([
+			1,
+		]);
+		expect(listAssets(p.db, { q: "archivo" }).assets).toEqual([]);
 		expect(verifyCatalog(p.db)).toEqual([]);
 	});
 

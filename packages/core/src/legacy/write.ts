@@ -11,6 +11,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { Tool } from "../catalog/create.ts";
 import { createRow, setMeta, type Actor } from "../catalog/edit.ts";
 import { inTransaction } from "../catalog/format.ts";
+import { placeWriter } from "../catalog/locations.ts";
 import { finishRun, startRun } from "../catalog/runs.ts";
 import type { LegacyRef, MigrationPlan, PlannedFile } from "./plan.ts";
 
@@ -203,10 +204,7 @@ export function writeMigration(
 				"SELECT asset_id FROM contents WHERE sha256 = ?",
 			);
 			const livePath = new Set<string>();
-			const insertLocation = db.prepare(
-				`INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id)
-				 VALUES (?, ?, ?, ?, ?, ?)`,
-			);
+			const insertLocation = placeWriter(db);
 			/** The content for a file, created if new; and its place, if found. */
 			const place = (file: PlannedFile, assetId: number, createdAt: string) => {
 				const fact = opts.facts(file.path);
@@ -237,14 +235,13 @@ export function writeMigration(
 					const key = `${fact.rootId}\u0000${fact.path}`;
 					if (!livePath.has(key)) {
 						livePath.add(key);
-						insertLocation.run(
-							sha,
-							fact.rootId,
-							fact.path,
-							fact.modifiedMs,
+						insertLocation({
+							sha256: sha,
+							rootId: fact.rootId,
+							path: fact.path,
+							modifiedMs: fact.modifiedMs,
 							runId,
-							runId,
-						);
+						});
 						count("locations");
 					}
 				} else if (!notFound.some((n) => n.path === file.path))
@@ -327,8 +324,8 @@ export function writeMigration(
 
 			const statementIds = new Map<number, number>();
 			const insertStatement = db.prepare(
-				`INSERT INTO statements (asset_id, text, author, organization, edited_with, saved_at)
-				 VALUES (?, ?, ?, ?, ?, ?)`,
+				`INSERT INTO statements (asset_id, text, author, organization, edited_with, saved_at, saved_by, saved_by_kind)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			);
 			for (const s of plan.statements) {
 				const result = insertStatement.run(
@@ -338,6 +335,10 @@ export function writeMigration(
 					s.organization,
 					s.editedWith,
 					s.savedAt,
+					// Who saved it in the old app was never recorded: the row says who
+					// brought it here.
+					actor.name,
+					actor.kind,
 				);
 				statementIds.set(s.legacyId, Number(result.lastInsertRowid));
 				from("statements", result.lastInsertRowid, {

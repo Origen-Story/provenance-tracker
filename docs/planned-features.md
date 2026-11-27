@@ -107,6 +107,12 @@ Note: Origen Story's projects currently use only the high-priority set. Deferred
 - **A newer c2patool** (D69, 2026-11-26). The fallback signer is pinned at 0.27.1, older than the hardening the C2PA library has had since. It only signs and reads back its own output on a machine that chooses it, and it is checked against its pinned hash before every run. Moving to a newer release is a dependency change: the version and both checksums for each machine, with the signing tests green on all three systems.
 - **Trusting an identity's issuer** (D55). No CAWG trust list is pinned, so every identity reads "valid, unrecognised issuer". Pin CAWG's interim trust list (extended to 31 Dec 2027) the way the C2PA lists are (`npm run tools:fetch`, by commit and checksum), and add a per-machine setting for extra identity anchors, beside the one planned for claim anchors. Re-check CAWG's new certificate profile first.
 
+### Credits, left after catalog format 3 (D75, 2026-11-27)
+
+- **A credited person's identifier in the signed statement and the public record.** Format 3 keeps an identifier and its scheme on a credit, in the catalog and on the asset page. Writing it into the creator statement and the public export would be a new format of each, and the public viewer would need to show it. Decide with the CAWG work below what a statement should say about a named person before adding it.
+- **A link, with a hash, from a credit to a record kept elsewhere** (a consent, a release, an agreement): two more columns on `credits`, so a later catalog format. Waiting on the CAWG discussion of statements made on someone's behalf (identity assertion issue 286), to be looked at again after 4 December 2026.
+- **The saver beside each saved statement on the page.** The Statement tab says who saved the newest one; the list of earlier versions is not shown at all yet.
+
 ### The public record, left for after Phase 8 (2026-11-25)
 
 Phase 8 makes the public record findable and checkable: where each signed copy is published (D56), an export that shows the file, the signer and the identity as separate results, a check of a downloaded copy in the viewer, review before signing and before export, and revisions and deliverables inside the tool. These were put off:

@@ -6,6 +6,7 @@ import {
 	generationFields,
 } from "../../src/catalog/classify.ts";
 import { createRow, editRow, type Actor } from "../../src/catalog/edit.ts";
+import { placeWriter } from "../../src/catalog/locations.ts";
 import { assetRecord } from "../../src/catalog/read.ts";
 import { finishRun, startRun } from "../../src/catalog/runs.ts";
 import { PERSON, TEST_TOOL, sha } from "../helpers/catalog.ts";
@@ -146,9 +147,13 @@ function world() {
 			{ sha256: content, size: 10, asset_id: id, first_run_id: scan },
 			{ actor: scanActor, now: AT },
 		);
-		db.prepare(
-			"INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id) VALUES (?, ?, ?, 0, ?, ?)",
-		).run(content, root, path, scan, scan);
+		placeWriter(db)({
+			sha256: content,
+			rootId: root,
+			path,
+			modifiedMs: 0,
+			runId: scan,
+		});
 		return { id, content };
 	};
 	const read = (

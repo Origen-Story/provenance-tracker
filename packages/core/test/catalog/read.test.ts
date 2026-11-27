@@ -6,6 +6,7 @@ import {
 	listAssets,
 	projectSummary,
 } from "../../src/catalog/read.ts";
+import { foldedLike, placeWriter } from "../../src/catalog/locations.ts";
 import { PERSON, PROJECT_ID, sha } from "../helpers/catalog.ts";
 import { catalogsForTests } from "../helpers/catalog-tests.ts";
 
@@ -14,6 +15,13 @@ const { catalog, sample } = catalogsForTests();
 // The sample: 1 street interview (produced), 2 town square photo (archival),
 // 3 title sequence (generated), 4 finished film (produced output, with a
 // signed copy), linked camera → film.
+
+describe("foldedLike", () => {
+	it("folds what was typed as the folded columns are, and takes LIKE's characters literally", () => {
+		expect(foldedLike("Peña")).toBe("%pena%");
+		expect(foldedLike("100%_a\\b")).toBe("%100\\%\\_a\\\\b%");
+	});
+});
 
 describe("projectSummary", () => {
 	it("gives the settings, counts by kind, and the newest run of each kind", () => {
@@ -135,6 +143,35 @@ describe("listAssets", () => {
 		expect(ids("%")).toEqual([]);
 		// Only the one path with a real underscore (PXL_0001), not every path.
 		expect(ids("_")).toEqual([1]);
+	});
+
+	it("finds a file by its path whatever the accents or case, in the query or the name (D75)", () => {
+		const db = sample();
+		// A second place for the photo, named as a Spanish archive names files.
+		placeWriter(db)({
+			sha256: sha("b"),
+			rootId: 1,
+			path: "Archivo/Señora_Peña Études 100%.JPG",
+			modifiedMs: 0,
+			runId: 1,
+		});
+		const ids = (q: string) => listAssets(db, { q }).assets.map((a) => a.id);
+		for (const q of [
+			"pena",
+			"PEÑA",
+			"senora_pe",
+			"Études",
+			"etudes 100%.jpg",
+			"archivo/señ",
+		])
+			expect(ids(q), q).toEqual([2]);
+		// LIKE's own characters are only ever text, folded or not.
+		expect(ids("100%")).toEqual([2]);
+		expect(ids("100_")).toEqual([]);
+		expect(ids("peno")).toEqual([]);
+		// A place that is gone is not found by.
+		db.exec("UPDATE locations SET gone_run_id = 1 WHERE path LIKE 'Archivo/%'");
+		expect(ids("pena")).toEqual([]);
 	});
 
 	it("pages with limit and offset", () => {

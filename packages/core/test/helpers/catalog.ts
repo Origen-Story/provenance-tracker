@@ -9,6 +9,7 @@ import {
 	setMeta,
 	type ChangeOptions,
 } from "../../src/catalog/edit.ts";
+import { placeWriter } from "../../src/catalog/locations.ts";
 import { finishRun, startRun } from "../../src/catalog/runs.ts";
 
 export const TEST_TOOL = { name: "provenancetracker-test", version: "0.0.0" };
@@ -122,6 +123,8 @@ export function fillSample(db: DatabaseSync): void {
 			role: "institution",
 			name: "Example Archive",
 			stated_by: "creator",
+			identifier_scheme: "isni",
+			identifier: "0000 0001 2345 6789",
 			sort_order: 1,
 		},
 		PERSON,
@@ -145,15 +148,13 @@ export function fillSample(db: DatabaseSync): void {
 			{ sha256: sha(c), size, asset_id: assetId, first_run_id: scan },
 			tool(scan),
 		);
-		sql(
-			`INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id)
-			 VALUES (?, ?, ?, 1763726400000, ?, ?)`,
-			sha(c),
-			root,
+		placeWriter(db)({
+			sha256: sha(c),
+			rootId: root,
 			path,
-			scan,
-			scan,
-		);
+			modifiedMs: 1763726400000,
+			runId: scan,
+		});
 	};
 	content("a", 45_000_000, camera, "camera/PXL_0001.mp4");
 	content("b", 2_000_000, photo, "archive/square-1910.jpg");
@@ -245,8 +246,8 @@ export function fillSample(db: DatabaseSync): void {
 
 	const statement = Number(
 		sql(
-			`INSERT INTO statements (asset_id, text, author, organization, saved_at)
-			 VALUES (?, 'Made with camera, archive and AI material.', 'A. Maker', 'Example Studio', ?)`,
+			`INSERT INTO statements (asset_id, text, author, organization, saved_at, saved_by, saved_by_kind)
+			 VALUES (?, 'Made with camera, archive and AI material.', 'A. Maker', 'Example Studio', ?, 'A. Maker', 'person')`,
 			film,
 			AT,
 		).lastInsertRowid,

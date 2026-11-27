@@ -43,6 +43,24 @@ function latestHistory(
 export function verifyCatalog(db: DatabaseSync): Problem[] {
 	const problems: Problem[] = [];
 
+	// Every place a file has carries its path folded for search (format 3,
+	// D75). Nothing in the catalog can write it, so a writer that forgot shows
+	// up here. A catalog of an earlier format has no such column yet.
+	if (columnsOf(db, "locations").has("path_folded"))
+		for (const row of db
+			.prepare("SELECT id, path, path_folded FROM locations")
+			.all() as Array<{ id: number; path: string; path_folded: string }>) {
+			const want = foldForSearch(row.path);
+			if (row.path_folded !== want)
+				problems.push({
+					check: "folded",
+					table: "locations",
+					key: String(row.id),
+					field: "path_folded",
+					detail: `is ${JSON.stringify(row.path_folded)}, should be ${JSON.stringify(want)}`,
+				});
+		}
+
 	const integrity = db.prepare("PRAGMA integrity_check").all() as Array<{
 		integrity_check: string;
 	}>;

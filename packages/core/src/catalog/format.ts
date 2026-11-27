@@ -18,15 +18,17 @@ import type { DatabaseSync } from "node:sqlite";
 export const APPLICATION_ID = 0x50765472;
 
 /** The newest catalog format this tracker writes and reads. */
-export const CATALOG_FORMAT = 2;
+export const CATALOG_FORMAT = 3;
 
 /**
  * "draft" until the first real catalog of this format is written; a draft
  * format may still change, a released one never does. Format 1 was released
  * with the Postgres migration (roadmap Phase 5, D35). Format 2 (D56, where a
  * signed copy is published) was released as it was made, since opening a
- * catalog upgrades it: a change to its SQL is format 3, with an upgrade step
- * and a sample of its own.
+ * catalog upgrades it. Format 3 (D75: who saved a statement, an identifier
+ * for a credited person, folded paths, the identity link held to https) was
+ * released the same way: a change to its SQL is format 4, with an upgrade
+ * step and a sample of its own.
  */
 export const CATALOG_FORMAT_STATUS: "draft" | "released" = "released";
 

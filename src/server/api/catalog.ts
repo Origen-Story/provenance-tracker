@@ -1450,7 +1450,7 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 		"/projects/:projectId/assets/:assetId/statements",
 		(req: Request, res: Response) => {
 			const id = idParam(req.params.assetId, "asset");
-			withEdit(machine, req, (project, _opts, fields) => {
+			withEdit(machine, req, (project, opts, fields) => {
 				const unknown = Object.keys(fields).filter(
 					(k) => !["text", "author", "organization", "edited_with"].includes(k),
 				);
@@ -1469,7 +1469,8 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 							organization: fields.organization as string | undefined,
 							editedWith: fields.edited_with as string | undefined,
 						},
-						{},
+						// Recorded with the statement: these are the words that get signed.
+						{ actor: opts.actor },
 					),
 				);
 				answerAsset(project, res, id);

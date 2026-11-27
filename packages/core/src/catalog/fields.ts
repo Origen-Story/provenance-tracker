@@ -82,6 +82,9 @@ export const EDITABLE: Readonly<Record<string, TableSpec>> = {
 			name: { type: "text", folded: "name_folded" },
 			on_behalf_of: text,
 			stated_by: text,
+			// The scheme before the identifier: an identifier always has one.
+			identifier_scheme: text,
+			identifier: text,
 			sort_order: integer,
 		},
 	},

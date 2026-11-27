@@ -2,9 +2,59 @@
 
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { IDENTIFIER_SCHEMES } from "@provenancetracker/core/catalog/identifiers.ts";
 import { assets, type AssetRecord, type Credit } from "../api.ts";
-import { Button, Card, Problem, TextField } from "../ui.tsx";
+import { Button, Card, Problem, Select, TextField } from "../ui.tsx";
 import { useTakeAnswer } from "./shared.ts";
+
+/**
+ * An identifier for who is credited, beside the name: which kind it is, and
+ * the identifier. A kind set elsewhere that is not one of the suggestions is
+ * still offered, so saving the row does not lose it.
+ */
+function IdentifierFields({
+	scheme,
+	identifier,
+	onScheme,
+	onIdentifier,
+}: {
+	scheme: string;
+	identifier: string;
+	onScheme: (v: string) => void;
+	onIdentifier: (v: string) => void;
+}) {
+	const known = IDENTIFIER_SCHEMES.find((s) => s.scheme === scheme);
+	return (
+		<div className="grid md:grid-cols-3 gap-2">
+			<Select
+				label="Identifier (optional)"
+				value={scheme}
+				onChange={(v) => {
+					onScheme(v);
+					if (!v) onIdentifier("");
+				}}
+				options={[
+					{ value: "", label: "None" },
+					...IDENTIFIER_SCHEMES.map((s) => ({
+						value: s.scheme,
+						label: s.label,
+					})),
+					...(scheme && !known ? [{ value: scheme, label: scheme }] : []),
+				]}
+			/>
+			{scheme && (
+				<div className="md:col-span-2">
+					<TextField
+						label={known ? `Their ${known.label}` : "The identifier"}
+						value={identifier}
+						onChange={onIdentifier}
+						placeholder={known?.example}
+					/>
+				</div>
+			)}
+		</div>
+	);
+}
 
 export default function Credits({
 	projectId,
@@ -45,6 +95,8 @@ function CreditRow({
 		role: credit.role,
 		name: credit.name,
 		on_behalf_of: credit.on_behalf_of,
+		identifier_scheme: credit.identifier_scheme,
+		identifier: credit.identifier,
 	});
 	const changed = Object.fromEntries(
 		Object.entries(draft).filter(
@@ -72,6 +124,12 @@ function CreditRow({
 					onChange={set("on_behalf_of")}
 				/>
 			</div>
+			<IdentifierFields
+				scheme={draft.identifier_scheme}
+				identifier={draft.identifier}
+				onScheme={set("identifier_scheme")}
+				onIdentifier={set("identifier")}
+			/>
 			{credit.stated_by && (
 				<p className="text-xs text-text-secondary">
 					Stated by {credit.stated_by}
@@ -105,7 +163,13 @@ function AddCredit({
 	assetId: number;
 }) {
 	const take = useTakeAnswer(projectId, assetId);
-	const empty = { role: "", name: "", on_behalf_of: "" };
+	const empty = {
+		role: "",
+		name: "",
+		on_behalf_of: "",
+		identifier_scheme: "",
+		identifier: "",
+	};
 	const [draft, setDraft] = useState(empty);
 	const add = useMutation({
 		mutationFn: () => assets.addCredit(projectId, assetId, draft),
@@ -141,6 +205,12 @@ function AddCredit({
 					onChange={set("on_behalf_of")}
 				/>
 			</div>
+			<IdentifierFields
+				scheme={draft.identifier_scheme}
+				identifier={draft.identifier}
+				onScheme={set("identifier_scheme")}
+				onIdentifier={set("identifier")}
+			/>
 			<Button type="submit" disabled={!draft.name.trim() || add.isPending}>
 				Add
 			</Button>

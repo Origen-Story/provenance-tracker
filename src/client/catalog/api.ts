@@ -256,6 +256,9 @@ export interface Credit {
 	name: string;
 	on_behalf_of: string;
 	stated_by: string;
+	/** An identifier for who is credited, and which kind it is ("orcid", "isni"); both empty when none (D75). */
+	identifier_scheme: string;
+	identifier: string;
 	sort_order: number;
 }
 
@@ -301,6 +304,9 @@ export interface AssetRecord {
 		organization: string;
 		editedWith: string;
 		savedAt: string;
+		/** Who saved it; empty when it was saved before that was recorded (D75). */
+		savedBy: string;
+		savedByKind: string;
 	}>;
 	signatures: Array<{
 		id: number;

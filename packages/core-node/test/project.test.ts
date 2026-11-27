@@ -283,17 +283,25 @@ describe("openProject", () => {
 		});
 	});
 
-	it("upgrades a format 1 catalog to format 2 as it opens it, after checking the copy (D56)", () => {
+	it("upgrades a format 1 catalog to the current format as it opens it, after checking the copy (D56, D75)", () => {
 		const m = t.machine();
 		const made = createProject(t.folder("film"), { name: "Film", machine: m });
 		// Format 1's committed sample stands in for a real project from before.
 		copyFileSync(V1_SAMPLE, made.catalogPath);
 		const p = t.track(openProject(made.folder, { machine: m, now: NOW }));
 		const backup = "backups/catalog.format-1.2026-11-21T12-00-00-000Z.sqlite";
-		expect(p.upgraded).toEqual({ from: 1, to: 2, backup });
+		expect(p.upgraded).toEqual({ from: 1, to: N, backup });
 		expect(p.db.prepare("PRAGMA user_version").get()).toEqual({
-			user_version: 2,
+			user_version: N,
 		});
+		// Format 3's own work: every place has its folded path.
+		expect(
+			p.db
+				.prepare(
+					"SELECT count(*) AS n FROM locations WHERE path_folded <> lower(path)",
+				)
+				.get(),
+		).toEqual({ n: 0 });
 		expect(
 			p.db.prepare("SELECT count(*) AS n FROM publications").get(),
 		).toEqual({ n: 0 });

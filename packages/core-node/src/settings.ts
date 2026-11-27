@@ -14,6 +14,12 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
+import {
+	WEB_CREDENTIAL_MODES,
+	listedHost,
+	type WebCredentialChoice,
+	type WebCredentialMode,
+} from "@provenancetracker/core/extraction/web-credentials.ts";
 
 /** The newest settings format this version reads and writes. */
 export const SETTINGS_FORMAT = 1;
@@ -41,9 +47,23 @@ export interface Settings {
 	/** The name recorded when a person edits a catalog from this machine. */
 	person?: string;
 	/**
-	 * Whether reading a file whose Content Credentials are stored on the web
-	 * (it carries only their address; Adobe Firefly video does this) fetches
-	 * them. Absent means yes (D51); docs/network.md says what goes out.
+	 * What this machine does about a file whose Content Credentials are stored
+	 * on the web (it carries only their address; Adobe Firefly video does
+	 * this): never fetch them, fetch them from hosts on a list, or from any
+	 * host (D74). No mode means the person has not chosen, and nothing is
+	 * fetched. docs/network.md says what a fetch sends out.
+	 */
+	credentialsOnTheWeb?: {
+		mode?: WebCredentialMode;
+		/** Hosts the person added to the built-in list. */
+		hosts?: string[];
+		/** Hosts the person said to leave: not fetched, not asked about again. */
+		left?: string[];
+	};
+	/**
+	 * The switch before D74 (D51), still read: false means "never". True, or
+	 * nothing, was "fetch from anywhere", which is no longer assumed: it reads
+	 * as not chosen. Taken out when a mode is set.
 	 */
 	remoteCredentials?: boolean;
 	/**
@@ -96,6 +116,31 @@ export function readSettings(file: string): Settings {
 		typeof data.remoteCredentials !== "boolean"
 	)
 		throw damaged(file, "remoteCredentials is not true or false");
+	if (data.credentialsOnTheWeb !== undefined) {
+		const c = data.credentialsOnTheWeb;
+		if (!isPlainObject(c))
+			throw damaged(file, "credentialsOnTheWeb is not an object");
+		if (
+			c.mode !== undefined &&
+			!WEB_CREDENTIAL_MODES.includes(c.mode as WebCredentialMode)
+		)
+			throw damaged(
+				file,
+				`credentialsOnTheWeb.mode is not one of ${WEB_CREDENTIAL_MODES.join(", ")}`,
+			);
+		for (const list of ["hosts", "left"] as const) {
+			const hosts = c[list];
+			if (hosts === undefined) continue;
+			if (
+				!Array.isArray(hosts) ||
+				hosts.some((h) => typeof h !== "string" || listedHost(h) !== h)
+			)
+				throw damaged(
+					file,
+					`credentialsOnTheWeb.${list} is not a list of host names`,
+				);
+		}
+	}
 	if (
 		data.signingEngine !== undefined &&
 		!SIGNING_ENGINES.includes(data.signingEngine as SigningEngineName)
@@ -148,9 +193,52 @@ export type SigningEngineName = (typeof SIGNING_ENGINES)[number];
 export const signingEngineOf = (settings: Settings): SigningEngineName =>
 	settings.signingEngine ?? "library";
 
-/** Whether this machine fetches Content Credentials a file points to on the web (D51). */
-export const fetchesRemoteCredentials = (settings: Settings): boolean =>
-	settings.remoteCredentials !== false;
+/**
+ * What this machine was told about Content Credentials stored on the web
+ * (D74). Not chosen until a mode is set; the old switch counts only when it
+ * was off.
+ */
+export function webCredentialChoiceOf(settings: Settings): WebCredentialChoice {
+	const c = settings.credentialsOnTheWeb;
+	return {
+		mode: c?.mode ?? (settings.remoteCredentials === false ? "never" : null),
+		hosts: c?.hosts ?? [],
+		left: c?.left ?? [],
+	};
+}
+
+/** Set the mode. The old switch it replaces is taken out. */
+export function setWebCredentialMode(
+	settings: Settings,
+	mode: WebCredentialMode,
+): void {
+	settings.credentialsOnTheWeb = { ...settings.credentialsOnTheWeb, mode };
+	delete settings.remoteCredentials;
+}
+
+/**
+ * Record what the person said about one host: put it on the list ("allow"),
+ * leave it ("leave": never fetched while the list is in force, and not asked
+ * about again), or take it off both ("forget": it is asked about again). A
+ * host is on one of the two or neither.
+ * @param host as listedHost gives it
+ */
+export function decideWebCredentialHost(
+	settings: Settings,
+	host: string,
+	decision: "allow" | "leave" | "forget",
+): void {
+	if (listedHost(host) !== host)
+		throw new Error(`${JSON.stringify(host)} is not a host name`);
+	const c = settings.credentialsOnTheWeb ?? {};
+	const without = (list: string[] | undefined) =>
+		(list ?? []).filter((h) => h !== host);
+	settings.credentialsOnTheWeb = {
+		...c,
+		hosts: [...without(c.hosts), ...(decision === "allow" ? [host] : [])],
+		left: [...without(c.left), ...(decision === "leave" ? [host] : [])],
+	};
+}
 
 /**
  * Write the settings whole: to a temporary file beside it, then renamed over

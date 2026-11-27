@@ -35,14 +35,26 @@ import { scanProject, type ScanReport } from "../scan.ts";
 import { describeFile } from "../show.ts";
 import { verifyProject } from "../verify.ts";
 import {
-	fetchesRemoteCredentials,
+	decideWebCredentialHost,
+	setWebCredentialMode,
+	webCredentialChoiceOf,
 	readSettings,
 	SIGNING_ENGINES,
 	signingEngineOf,
 	updateSettings,
+	type Settings,
 	type SigningEngineName,
 } from "../settings.ts";
-import { signingEngineFor } from "../sign/engines/index.ts";
+import { c2patoolRefusal, signingEngineFor } from "../sign/engines/index.ts";
+import type { WaitingHost } from "@provenancetracker/core/catalog/on-the-web.ts";
+import {
+	BUILT_IN_HOSTS,
+	WEB_CREDENTIAL_MODES,
+	hostStateNow,
+	hostsOnList,
+	listedHost,
+	type WebCredentialMode,
+} from "@provenancetracker/core/extraction/web-credentials.ts";
 import { TOOL } from "../tool.ts";
 import { signAsset } from "../sign/sign-asset.ts";
 import { signOutput } from "../sign/sign-output.ts";
@@ -103,8 +115,16 @@ Usage: npm run cli -- <command> [options]
   show <file>                         Everything the catalog knows about one file
   settings                            Show this machine's settings
   settings person <name>              Set the name your edits are recorded under
-  settings remote-credentials on|off  Whether reading a file fetches Content Credentials it
-                                      says are stored on the web (on unless turned off)
+  settings credentials-on-the-web     What this machine does about a file that keeps its
+                                      Content Credentials on the web, and its list of hosts
+  settings credentials-on-the-web never|listed|any
+                                      Never fetch them; fetch them only from hosts on the
+                                      list (recommended); or from any host. Until one is
+                                      chosen, nothing is fetched
+  settings credentials-on-the-web allow|leave|forget <host>
+                                      Put a host on the list; leave it (never fetched while
+                                      the list is in force, not asked about again); or take
+                                      it off both
   settings signing-engine library|c2patool
                                       What signs on this machine: the C2PA library (the
                                       default) or c2patool, the fallback
@@ -320,6 +340,99 @@ async function roots(io: Io, args: string[], values: Values): Promise<void> {
 	});
 }
 
+/** What a mode means, after "this machine". */
+function modeWords(mode: WebCredentialMode | null): string {
+	switch (mode) {
+		case null:
+			return "has not been told what to do, so it fetches nothing";
+		case "never":
+			return "never fetches them";
+		case "listed":
+			return "fetches them only from the hosts on its list";
+		case "any":
+			return "fetches them from any host";
+	}
+}
+
+/** This machine's setting for Content Credentials on the web, in lines. */
+function webCredentialLines(s: Settings): string[] {
+	const choice = webCredentialChoiceOf(s);
+	const lines = [
+		`Content Credentials stored on the web: this machine ${modeWords(choice.mode)}.`,
+	];
+	if (choice.mode === null)
+		lines.push(
+			"  Choose with: npm run cli -- settings credentials-on-the-web never|listed|any",
+		);
+	if (choice.mode === null || choice.mode === "listed") {
+		const on = hostsOnList(choice).filter((h) => !choice.left.includes(h));
+		lines.push(`  On the list: ${on.join(", ") || "(none)"}`);
+		if (choice.left.length) lines.push(`  Left: ${choice.left.join(", ")}`);
+	}
+	return lines;
+}
+
+/**
+ * What to say about files whose Content Credentials were not obtained
+ * (D74): one line for each host the person can decide about, naming the host
+ * and the command, and one line in all where the answer is the same for every
+ * host (no mode chosen yet, or never).
+ */
+export function waitingLines(s: Settings, waiting: WaitingHost[]): string[] {
+	const choice = webCredentialChoiceOf(s);
+	const set = "npm run cli -- settings credentials-on-the-web";
+	const stateOf = (w: WaitingHost) => hostStateNow(choice, w.address);
+	const together = (state: "choose" | "never", why: string): string[] => {
+		const hosts = waiting.filter((w) => stateOf(w) === state);
+		if (!hosts.length) return [];
+		const files = hosts.reduce((n, w) => n + w.files, 0);
+		const where =
+			hosts.length === 1
+				? `at ${hosts[0].host}`
+				: `(${hosts.map((w) => `${w.files} at ${w.host}`).join(", ")})`;
+		return [
+			`${files} file(s) keep their Content Credentials on the web ${where}; not fetched, ${why}`,
+		];
+	};
+	const each = waiting.flatMap((w): string[] => {
+		const what = `${w.files} file(s) keep their Content Credentials on the web at ${w.host ?? w.address}`;
+		switch (stateOf(w)) {
+			case "choose":
+			case "never":
+				return [];
+			case "ask":
+				return [
+					`${what}, which is not on this machine's list; not fetched. To allow it: ${set} allow ${w.host}   To leave it: ${set} leave ${w.host}`,
+				];
+			case "left":
+				return [
+					`${what}, which this machine was told to leave; not fetched. To allow it after all: ${set} allow ${w.host}`,
+				];
+			case "read":
+				return [
+					w.outcome === "failed"
+						? `${what}; they could not be fetched (${w.detail ?? "the request failed"}). extract tries again.`
+						: `${what}; this machine would fetch them now. Read them with: npm run cli -- extract`,
+				];
+			case "cannot":
+				return [
+					`${what}; not fetched: ${w.detail ?? "the address cannot be fetched"}.`,
+				];
+		}
+	});
+	return [
+		...together(
+			"choose",
+			`because this machine has not been told whether to. Choose: ${set} never|listed|any`,
+		),
+		...together(
+			"never",
+			`because this machine never fetches them. To change that: ${set} listed`,
+		),
+		...each,
+	];
+}
+
 function settings(io: Io, args: string[]): void {
 	const file = io.machine.settingsPath;
 	const [sub, ...rest] = args;
@@ -333,44 +446,88 @@ function settings(io: Io, args: string[]): void {
 		io.out(`Edits from this machine will be recorded as made by "${name}".`);
 		return;
 	}
-	if (sub === "remote-credentials") {
-		needArgs(rest, 1, "settings remote-credentials on|off");
-		const value = rest[0].trim().toLowerCase();
-		if (value !== "on" && value !== "off")
-			throw new UsageError('Say "on" or "off"');
-		updateSettings(file, (s) => {
-			s.remoteCredentials = value === "on";
-		});
-		io.out(
-			value === "on"
-				? "Reading a file fetches Content Credentials it says are stored on the web (docs/network.md)."
-				: "Reading a file no longer fetches Content Credentials stored on the web; such a file reads as unreadable, with the address it gives.",
+	if (sub === "remote-credentials")
+		throw new UsageError(
+			'"settings remote-credentials" is now "settings credentials-on-the-web never|listed|any" (off was never; on was any)',
 		);
-		return;
+	if (sub === "credentials-on-the-web") {
+		const usage =
+			"settings credentials-on-the-web [never|listed|any | allow|leave|forget <host>]";
+		const word = rest[0]?.trim().toLowerCase();
+		if (word === undefined) {
+			for (const line of webCredentialLines(readSettings(file))) io.out(line);
+			return;
+		}
+		if ((WEB_CREDENTIAL_MODES as readonly string[]).includes(word)) {
+			needArgs(rest, 1, usage);
+			const mode = word as WebCredentialMode;
+			// c2patool keeps to no setting but "any host".
+			if (mode !== "any" && signingEngineOf(readSettings(file)) === "c2patool")
+				throw new UsageError(
+					"This machine signs with c2patool, which fetches such credentials from any address whatever this setting says. Switch to the library first: npm run cli -- settings signing-engine library",
+				);
+			const s = updateSettings(file, (s) => setWebCredentialMode(s, mode));
+			for (const line of webCredentialLines(s)) io.out(line);
+			io.out(
+				mode === "never"
+					? "Files already read are not read again."
+					: "Files read before and not fetched are read again by: npm run cli -- extract",
+			);
+			return;
+		}
+		if (word === "allow" || word === "leave" || word === "forget") {
+			needArgs(rest, 2, usage);
+			const host = listedHost(rest[1]);
+			if (!host)
+				throw new UsageError(
+					`${JSON.stringify(rest[1])} is not a host name. A host is a name such as cai-manifests.adobe.com.`,
+				);
+			const s = updateSettings(file, (s) =>
+				decideWebCredentialHost(s, host, word),
+			);
+			const choice = webCredentialChoiceOf(s);
+			io.out(
+				word === "allow"
+					? `${host} is on this machine's list.`
+					: word === "leave"
+						? `${host} is left: it is not fetched from while the list is in force, and is not asked about again.`
+						: `${host} is on neither list${BUILT_IN_HOSTS.includes(host) ? " of yours; it stays on the built-in list" : ""}.`,
+			);
+			if (choice.mode !== "listed")
+				io.out(
+					`The list is in force only in the "listed" mode; this machine ${modeWords(choice.mode)}.`,
+				);
+			else if (word === "allow")
+				io.out("Read the files that name it with: npm run cli -- extract");
+			return;
+		}
+		throw new UsageError(usage);
 	}
 	if (sub === "signing-engine") {
 		needArgs(rest, 1, "settings signing-engine library|c2patool");
 		const value = engineName(rest[0]);
+		if (value === "c2patool") {
+			const refusal = c2patoolRefusal(readSettings(file));
+			if (refusal) throw new UsageError(refusal);
+		}
 		updateSettings(file, (s) => {
 			s.signingEngine = value;
 		});
 		io.out(
 			value === "library"
 				? "This machine signs with the C2PA library (the default)."
-				: "This machine signs with c2patool, the fallback. It fetches Content Credentials an ingredient says are stored on the web whatever remote-credentials says (docs/network.md). Switch back with: npm run cli -- settings signing-engine library",
+				: "This machine signs with c2patool, the fallback. It fetches Content Credentials an ingredient says are stored on the web from any address, by itself (docs/network.md). Switch back with: npm run cli -- settings signing-engine library",
 		);
 		return;
 	}
 	if (sub !== undefined)
 		throw new UsageError(
-			`Unknown settings command "${sub}". Try: settings, settings person, settings remote-credentials, settings signing-engine`,
+			`Unknown settings command "${sub}". Try: settings, settings person, settings credentials-on-the-web, settings signing-engine`,
 		);
 	const s = readSettings(file);
 	io.out(`Settings file: ${file}`);
 	io.out(`Person: ${s.person ?? "(not set)"}`);
-	io.out(
-		`Content Credentials stored on the web: ${fetchesRemoteCredentials(s) ? "fetched when a file is read" : "not fetched"}`,
-	);
+	for (const line of webCredentialLines(s)) io.out(line);
 	io.out(
 		`Signing engine: ${signingEngineOf(s) === "library" ? "the C2PA library" : "c2patool (the fallback)"}`,
 	);
@@ -497,6 +654,11 @@ async function extract(
 				io.out(
 					`${report.notHere} file(s) are in roots not on this machine; they are read when their root is here.`,
 				);
+			for (const line of waitingLines(
+				readSettings(io.machine.settingsPath),
+				report.onTheWeb,
+			))
+				io.out(line);
 			if (report.skipped.length) {
 				io.out(`${report.skipped.length} skipped:`);
 				for (const s of report.skipped.slice(0, LISTED))

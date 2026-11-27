@@ -4,12 +4,20 @@
 // by whatever holds it (holders/, D54) and never passes into the library.
 //
 // Ingredients are read by the library itself, against the same trust lists
-// and remote-credentials setting as `extract` (c2pa-library.ts): D15's "the
-// library judges camera files" holds while signing too. A source signed at
-// ingest carries its credentials in a .c2pa sidecar (D13); the library reads
-// only embedded ones, so the sidecar goes in as the ingredient's manifest
-// store, with the library's reading of it, as the c2patool engine does. The
-// sidecar is the one the caller names (the catalog's), never one found on disk.
+// as `extract` (c2pa-library.ts): D15's "the library judges camera files"
+// holds while signing too. A source signed at ingest carries its credentials
+// in a .c2pa sidecar (D13); the library reads only embedded ones, so the
+// sidecar goes in as the ingredient's manifest store, with the library's
+// reading of it, as the c2patool engine does. The sidecar is the one the
+// caller names (the catalog's), never one found on disk.
+//
+// A source that keeps its credentials on the web goes in the same way (D74):
+// the library never fetches, so the tracker's own fetch, held to this
+// machine's setting, gets the bytes and they are handed over. Each file is
+// read once per engine, and the bytes that reading checked are the bytes
+// embedded: the address is not asked a second time, so it cannot give the
+// review one thing and the film another. A source whose credentials were not
+// fetched goes in without them, which is what the review showed.
 //
 // The creator's identity (D55), when there is one, is a CAWG identity
 // assertion the library adds as it signs: it asks for a finished COSE_Sign1
@@ -19,18 +27,23 @@
 // asked for, and a copy that falls short is not kept.
 
 import { X509Certificate } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { mediaTypeForSigning } from "@provenancetracker/core/manifest/formats.ts";
 import { coseSign1 } from "@provenancetracker/core/manifest/cose.ts";
 import { readIdentity } from "@provenancetracker/core/manifest/identity.ts";
+import { notFetchedWords } from "@provenancetracker/core/extraction/web-credentials.ts";
 import {
+	CredentialsNotFetched,
 	readC2paWithLibrary,
 	readStore,
+	readWithWeb,
 	type LoadedLibrary,
+	type StoreRead,
 } from "../../extract/c2pa-library.ts";
+import { neverFetch, type WebFetch } from "../../web-credentials.ts";
 import { checkSignArgs, type SignArgs, type SigningEngine } from "../engine.ts";
 
 /** The name recorded on signatures the library made (the reader's name too). */
@@ -89,10 +102,36 @@ async function signerWithIdentity(
 	return signer;
 }
 
+/** A file's own credentials, read once: those inside it, or those it keeps on the web. */
+type OwnReading = (file: string) => Promise<StoreRead>;
+
+/**
+ * Each file's own credentials, read at most once however often they are
+ * asked for, so what a reading checked is what is embedded. A file that has
+ * changed since (a cut rendered again at the same path) is another file, and
+ * is read again.
+ */
+function readOnce(loaded: LoadedLibrary, web: WebFetch): OwnReading {
+	const met = new Map<string, Promise<StoreRead>>();
+	return (file) => {
+		const at = statSync(file, { throwIfNoEntry: false });
+		const key = `${path.resolve(file)}|${at?.size}|${at?.mtimeMs}`;
+		let reading = met.get(key);
+		if (!reading) {
+			reading = readWithWeb(loaded, file, web);
+			// A failure is kept too; whoever asks handles it.
+			reading.catch(() => {});
+			met.set(key, reading);
+		}
+		return reading;
+	};
+}
+
 async function addIngredients(
 	loaded: LoadedLibrary,
 	builder: InstanceType<LoadedLibrary["lib"]["Builder"]>,
 	args: SignArgs,
+	own: OwnReading,
 ): Promise<void> {
 	const leaveOut = new Set(args.withhold?.leaveOut ?? []);
 	for (const ing of args.ingredients) {
@@ -111,27 +150,37 @@ async function addIngredients(
 			);
 			continue;
 		}
+		type Carried = {
+			active_manifest?: string;
+			validation_results?: unknown;
+		} | null;
+		// Credentials that are not inside the file go in as its manifest store,
+		// with the library's reading of them against the file.
+		const carry = async (bytes: Buffer, reading: Carried) => {
+			if (!reading?.active_manifest) return;
+			const identifier = `${ing.label}-manifest.c2pa`;
+			await builder.addResource(identifier, {
+				buffer: bytes,
+				mimeType: "application/c2pa",
+			});
+			Object.assign(record, {
+				format: asset.mimeType,
+				manifest_data: { format: "application/c2pa", identifier },
+				active_manifest: reading.active_manifest,
+				validation_results: reading.validation_results,
+			});
+		};
+		// The file's own: inside it (the library reads those itself below), or
+		// kept on the web and fetched (D74). Not fetched, or unreadable: none.
+		const mine = await own(file).catch(() => null);
 		// Only the sidecar the catalog knows (engine.ts), never one found here.
 		const sidecar = ing.sidecarPath;
-		if (!ing.useInput && sidecar && existsSync(sidecar)) {
-			const own = await readStore(loaded, file).catch(() => null);
-			const fromSidecar = (
-				own ? null : await readStore(loaded, file, sidecar).catch(() => null)
-			) as { active_manifest?: string; validation_results?: unknown } | null;
-			if (fromSidecar?.active_manifest) {
-				const identifier = `${ing.label}-manifest.c2pa`;
-				await builder.addResource(identifier, {
-					buffer: await readFile(sidecar),
-					mimeType: "application/c2pa",
-				});
-				Object.assign(record, {
-					format: asset.mimeType,
-					manifest_data: { format: "application/c2pa", identifier },
-					active_manifest: fromSidecar.active_manifest,
-					validation_results: fromSidecar.validation_results,
-				});
-			}
-		}
+		if (mine?.web) await carry(mine.web.bytes, mine.store as Carried);
+		else if (!ing.useInput && sidecar && existsSync(sidecar) && !mine?.store)
+			await carry(
+				await readFile(sidecar),
+				(await readStore(loaded, file, sidecar).catch(() => null)) as Carried,
+			);
 		await builder.addIngredient(JSON.stringify(record), asset);
 	}
 }
@@ -144,6 +193,11 @@ async function addIngredients(
 export async function signWithLibrary(
 	loaded: LoadedLibrary,
 	args: SignArgs,
+	/**
+	 * How a file's own credentials are read. Without one, nothing is fetched:
+	 * a source that keeps its credentials on the web goes in without them.
+	 */
+	own: OwnReading = readOnce(loaded, neverFetch),
 ): Promise<{ report: Record<string, unknown> | null }> {
 	checkSignArgs(args);
 	const { lib, context } = loaded;
@@ -181,7 +235,7 @@ export async function signWithLibrary(
 				path: res.filePath,
 				mimeType: mediaTypeForSigning(res.filePath),
 			});
-		await addIngredients(loaded, builder, args);
+		await addIngredients(loaded, builder, args, own);
 		// Each withheld assertion is removed, and the file says so with a
 		// c2pa.redacted action giving the reason.
 		for (const uri of args.withhold?.redact ?? [])
@@ -234,23 +288,41 @@ export async function signWithLibrary(
 	return { report };
 }
 
-/** The library, loaded with this machine's reading settings, as the engine. */
-export function libraryEngine(loaded: LoadedLibrary): SigningEngine {
+/**
+ * The library, loaded with this machine's reading settings, as the engine.
+ * @param web this machine's fetch for credentials a source keeps on the web
+ *   (webCredentialsFor); without one, nothing is fetched
+ */
+export function libraryEngine(
+	loaded: LoadedLibrary,
+	web: WebFetch = neverFetch,
+): SigningEngine {
+	const own = readOnce(loaded, web);
 	return {
 		name: LIBRARY_ENGINE,
 		version: loaded.version,
-		sign: (args) => signWithLibrary(loaded, args),
+		sign: (args) => signWithLibrary(loaded, args, own),
 		read: (file, sidecar) =>
 			readC2paWithLibrary(
 				{
 					version: loaded.version,
-					read: (f, s) => readStore(loaded, f, s),
+					read: async (f, s) =>
+						s ? { store: await readStore(loaded, f, s) } : own(f),
 				},
 				file,
 				sidecar,
 			),
 		readEmbedded: async (file) => {
-			const store = (await readStore(loaded, file).catch(() => null)) as {
+			let read: StoreRead | null;
+			try {
+				read = await own(file);
+			} catch (err) {
+				// On the web and not here: its own all the same.
+				if (err instanceof CredentialsNotFetched)
+					return { signer: "", notFetched: notFetchedWords(err.onTheWeb) };
+				read = null;
+			}
+			const store = (read?.store ?? null) as {
 				active_manifest?: string;
 				manifests?: Record<
 					string,

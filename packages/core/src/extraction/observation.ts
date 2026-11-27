@@ -8,6 +8,7 @@
 //
 // Pure: no file or process access here.
 import { createHash } from "node:crypto";
+import type { OnTheWeb } from "./web-credentials.ts";
 
 /**
  * exif          ExifTool on the file: EXIF, XMP, IPTC, container and technical tags
@@ -46,7 +47,13 @@ export interface Observation {
 	/** That program's version; "unknown" only when it cannot be asked. */
 	version: string;
 	status: ObservationStatus;
-	/** The full data read, JSON-safe (see toJsonSafe); null unless status is "ok". */
+	/**
+	 * The full data read, JSON-safe (see toJsonSafe); null unless status is
+	 * "ok". One exception (D74): a C2PA reading that is "unreadable" because
+	 * the file keeps its credentials on the web and they were not obtained
+	 * holds { onTheWeb } (web-credentials.ts), so the address, the host and the
+	 * reason are kept as data and not only in the sentence in `error`.
+	 */
 	data: unknown;
 	/** Why the read failed; null when it did not. */
 	error: string | null;
@@ -72,16 +79,29 @@ export function makeObservation(fields: {
 	error?: string | null;
 	warnings?: string[];
 	validation?: C2paValidation | null;
+	/** Credentials on the web that were not obtained: an "unreadable" C2PA reading only. */
+	onTheWeb?: OnTheWeb;
 }): Observation {
 	if (!STATUSES.includes(fields.status))
 		throw new Error(`Unknown observation status "${fields.status}"`);
 	const ok = fields.status === "ok";
+	if (
+		fields.onTheWeb &&
+		(fields.status !== "unreadable" || fields.kind !== "c2pa")
+	)
+		throw new Error(
+			"Only an unreadable C2PA reading says its credentials are on the web",
+		);
 	const obs: Observation = {
 		kind: fields.kind,
 		extractor: fields.extractor,
 		version: fields.version || "unknown",
 		status: fields.status,
-		data: ok ? toJsonSafe(fields.data ?? null) : null,
+		data: ok
+			? toJsonSafe(fields.data ?? null)
+			: fields.onTheWeb
+				? toJsonSafe({ onTheWeb: fields.onTheWeb })
+				: null,
 		error: ok ? null : (fields.error ?? null),
 		warnings: fields.warnings ?? [],
 	};

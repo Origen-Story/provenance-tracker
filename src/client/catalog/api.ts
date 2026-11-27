@@ -89,6 +89,12 @@ export interface ProjectSummary {
 
 export const projects = {
 	list: () => api<{ projects: KnownProject[] }>("GET", "/projects"),
+	/** Files that keep their Content Credentials on the web and do not have them, by host (D74). */
+	credentialsOnTheWeb: (projectId: string) =>
+		api<{ credentialsOnTheWeb: WebCredentials; waiting: WaitingHost[] }>(
+			"GET",
+			`/projects/${projectId}/credentials-on-the-web`,
+		),
 	/**
 	 * Open a project folder. A folder holding a project this machine already
 	 * has at another folder is refused (409, with `elsewhere` in the error's
@@ -131,10 +137,61 @@ export const projects = {
 
 // --- This machine (packages/core-node/src/settings.ts) ---
 
+/**
+ * What this machine does about Content Credentials a file keeps on the web
+ * (D74; packages/core/src/extraction/web-credentials.ts).
+ */
+export type WebCredentialMode = "never" | "listed" | "any";
+
+export interface WebCredentials {
+	/** Null until the person has chosen: nothing is fetched. */
+	mode: WebCredentialMode | null;
+	/** Hosts on every machine's list. */
+	builtIn: string[];
+	/** Hosts the person added. */
+	hosts: string[];
+	/** Hosts the person said to leave. */
+	left: string[];
+}
+
+export interface MachineView {
+	person: string | null;
+	credentialsOnTheWeb: WebCredentials;
+}
+
+/**
+ * A host this project's files name for credentials they do not have, and
+ * what can be done about it as this machine is set now: choose a mode, allow
+ * or leave the host ("ask"), read the files, or nothing (left, never, cannot).
+ */
+export interface WaitingHost {
+	host: string | null;
+	/** Only when there is no host to name it by. */
+	address: string | null;
+	files: number;
+	state: "choose" | "ask" | "read" | "left" | "never" | "cannot";
+	/** Why the newest reading did not have them. */
+	outcome:
+		"not-chosen" | "never" | "not-listed" | "left" | "refused" | "failed";
+	detail: string | null;
+}
+
 export const machine = {
-	get: () => api<{ person: string | null }>("GET", "/machine"),
+	get: () => api<MachineView>("GET", "/machine"),
 	setPerson: (person: string) =>
-		api<{ person: string }>("PATCH", "/machine", { fields: { person } }),
+		api<MachineView>("PATCH", "/machine", { fields: { person } }),
+	setWebCredentialMode: (mode: WebCredentialMode) =>
+		api<{ credentialsOnTheWeb: WebCredentials }>(
+			"PUT",
+			"/machine/credentials-on-the-web",
+			{ fields: { mode } },
+		),
+	decideHost: (host: string, decision: "allow" | "leave" | "forget") =>
+		api<{ host: string; credentialsOnTheWeb: WebCredentials }>(
+			"POST",
+			"/machine/credentials-on-the-web/hosts",
+			{ fields: { host, decision } },
+		),
 };
 
 // --- Assets (packages/core/src/catalog/read.ts, edits.ts) ---

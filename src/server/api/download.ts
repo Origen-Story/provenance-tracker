@@ -1,6 +1,6 @@
 // Fetch a picture, video or sound from a web address into the project's
 // incoming folder, for placing in a root (core-node/incoming.ts). Only public
-// addresses, re-checked on every redirect (lib/core/public-url.ts); only media
+// addresses, re-checked on every redirect (core-node public-url.ts); only media
 // types, kept under a name that ends as media does (D73); at most a set size
 // and a set time; written under a temporary name and hashed as it arrives.
 // Stops when the job is cancelled.
@@ -15,7 +15,7 @@ import {
 	offeredFileName,
 	safeFileName,
 } from "@provenancetracker/core/files/names.ts";
-import { fetchPublic } from "../lib/core/public-url.ts";
+import { fetchPublic } from "@provenancetracker/core-node/public-url.ts";
 
 type Lookup = (hostname: string) => Promise<Array<{ address: string }>>;
 

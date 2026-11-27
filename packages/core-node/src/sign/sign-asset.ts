@@ -135,6 +135,10 @@ export async function signAsset(
 
 	const engine = opts.engine ?? (await signingEngineFor(machine));
 	const embedded = await engine.readEmbedded(file);
+	if (embedded?.notFetched)
+		throw new NotReadyError(
+			`${embedded.notFetched} A file with Content Credentials of its own is not signed at ingest, and a sidecar would stand in for them. To carry them into an output you sign, let this machine fetch them (Projects page, or npm run cli -- settings credentials-on-the-web), then read the project's files again.`,
+		);
 	if (embedded)
 		throw new NotReadyError(
 			`This file already carries its own Content Credentials${embedded.signer ? ` (signed by ${embedded.signer})` : ""}. It does not need signing at ingest, and a sidecar could not match it without stripping them. They are carried into any output you sign.`,

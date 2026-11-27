@@ -116,9 +116,22 @@ import {
 } from "@provenancetracker/core-node/projects.ts";
 import { listRoots } from "@provenancetracker/core-node/roots.ts";
 import {
+	decideWebCredentialHost,
 	readSettings,
+	setWebCredentialMode,
+	signingEngineOf,
 	updateSettings,
+	webCredentialChoiceOf,
+	type Settings,
 } from "@provenancetracker/core-node/settings.ts";
+import { credentialsWaiting } from "@provenancetracker/core/catalog/on-the-web.ts";
+import {
+	BUILT_IN_HOSTS,
+	WEB_CREDENTIAL_MODES,
+	hostStateNow,
+	listedHost,
+	type WebCredentialMode,
+} from "@provenancetracker/core/extraction/web-credentials.ts";
 
 /** An error with the HTTP status it should answer with. */
 export class HttpError extends Error {
@@ -263,6 +276,20 @@ function idParam(value: unknown, what: string): number {
 	return id;
 }
 
+/**
+ * What this machine does about Content Credentials a file keeps on the web
+ * (D74), as a page shows it: the mode (null until chosen), and the lists.
+ */
+function webCredentialsView(settings: Settings) {
+	const choice = webCredentialChoiceOf(settings);
+	return {
+		mode: choice.mode,
+		builtIn: [...BUILT_IN_HOSTS],
+		hosts: [...choice.hosts],
+		left: [...choice.left],
+	};
+}
+
 export interface CatalogApiOptions {
 	machine: Machine;
 	/** The jobs this server runs (one runner per server). */
@@ -352,8 +379,99 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 	// edits are recorded under. Where projects and their media are here is
 	// changed by opening, placing and forgetting, never set whole.
 	api.get("/machine", (_req: Request, res: Response) => {
-		res.json({ person: readSettings(machine.settingsPath).person ?? null });
+		const s = readSettings(machine.settingsPath);
+		res.json({
+			person: s.person ?? null,
+			credentialsOnTheWeb: webCredentialsView(s),
+		});
 	});
+
+	// What this machine does about Content Credentials a file keeps on the
+	// web (D74): the mode, and one host at a time on or off its lists.
+	api.put("/machine/credentials-on-the-web", (req: Request, res: Response) => {
+		const { fields } = editBody(req);
+		const unknown = Object.keys(fields).filter((k) => k !== "mode");
+		if (unknown.length)
+			throw new HttpError(400, `There is no field ${unknown.join(", ")} here`);
+		const mode = fields.mode;
+		if (!(WEB_CREDENTIAL_MODES as readonly unknown[]).includes(mode))
+			throw new HttpError(
+				400,
+				`The mode is one of ${WEB_CREDENTIAL_MODES.join(", ")}`,
+			);
+		// c2patool fetches from any address whatever the setting says.
+		if (
+			mode !== "any" &&
+			signingEngineOf(readSettings(machine.settingsPath)) === "c2patool"
+		)
+			throw new HttpError(
+				409,
+				"This machine signs with c2patool, which fetches such credentials from any address whatever this setting says. Switch to the C2PA library first: npm run cli -- settings signing-engine library",
+			);
+		const s = updateSettings(machine.settingsPath, (s) =>
+			setWebCredentialMode(s, mode as WebCredentialMode),
+		);
+		res.json({ credentialsOnTheWeb: webCredentialsView(s) });
+	});
+
+	api.post(
+		"/machine/credentials-on-the-web/hosts",
+		(req: Request, res: Response) => {
+			const { fields } = editBody(req);
+			const unknown = Object.keys(fields).filter(
+				(k) => k !== "host" && k !== "decision",
+			);
+			if (unknown.length)
+				throw new HttpError(
+					400,
+					`There is no field ${unknown.join(", ")} here`,
+				);
+			const decision = fields.decision;
+			if (decision !== "allow" && decision !== "leave" && decision !== "forget")
+				throw new HttpError(400, "The decision is one of allow, leave, forget");
+			const host =
+				typeof fields.host === "string" && fields.host.length <= 300
+					? listedHost(fields.host)
+					: null;
+			if (!host)
+				throw new HttpError(
+					400,
+					"That is not a host name. A host is a name such as cai-manifests.adobe.com.",
+				);
+			const s = updateSettings(machine.settingsPath, (s) =>
+				decideWebCredentialHost(s, host, decision),
+			);
+			res.json({ host, credentialsOnTheWeb: webCredentialsView(s) });
+		},
+	);
+
+	// Which of a project's files keep their Content Credentials on the web
+	// and do not have them, by host, and what the person can do about each as
+	// this machine is set now.
+	api.get(
+		"/projects/:projectId/credentials-on-the-web",
+		(req: Request, res: Response) => {
+			const settings = readSettings(machine.settingsPath);
+			const choice = webCredentialChoiceOf(settings);
+			const waiting = withProject(
+				machine,
+				String(req.params.projectId),
+				(project) => credentialsWaiting(project.db),
+			);
+			res.json({
+				credentialsOnTheWeb: webCredentialsView(settings),
+				waiting: waiting.map((w) => ({
+					host: w.host,
+					// Only when there is no host to name it by.
+					address: w.host === null ? w.address : null,
+					files: w.files,
+					state: hostStateNow(choice, w.address),
+					outcome: w.outcome,
+					detail: w.detail,
+				})),
+			});
+		},
+	);
 
 	api.patch("/machine", (req: Request, res: Response) => {
 		const { fields } = editBody(req);
@@ -374,7 +492,10 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 		const s = updateSettings(machine.settingsPath, (s) => {
 			s.person = name.trim();
 		});
-		res.json({ person: s.person });
+		res.json({
+			person: s.person,
+			credentialsOnTheWeb: webCredentialsView(s),
+		});
 	});
 
 	// Forget a project on this machine (its entry in this machine's settings);

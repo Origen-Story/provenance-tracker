@@ -432,7 +432,9 @@ describe("editing through the catalog API", () => {
 		expect(r.body.error).toMatch(/Your name on this machine/);
 
 		// The name is this machine's, set from the Projects page.
-		expect((await api.get("/api/machine")).body).toEqual({ person: null });
+		expect((await api.get("/api/machine")).body).toMatchObject({
+			person: null,
+		});
 		for (const fields of [
 			{ person: "  " },
 			{ person: 5 },
@@ -447,7 +449,7 @@ describe("editing through the catalog API", () => {
 					fields: { person: " A. Person " },
 				})
 			).body,
-		).toEqual({ person: "A. Person" });
+		).toMatchObject({ person: "A. Person" });
 		expect(readSettings(m.settingsPath).person).toBe("A. Person");
 		const again = await api.patch(`/api/projects/${projectId}/assets/1`, {
 			fields: { title: "x" },

@@ -7,6 +7,11 @@
 // and what it means is worked out from the codes (manifest/verify.js), so a
 // file signed with a certificate no list knows still reads as valid with an
 // unrecognised issuer.
+//
+// A file may keep its credentials on the web and carry only their address.
+// The library never fetches them (D74): the tracker does, when this machine's
+// setting allows, and hands them over. A reading says which happened: where
+// they were fetched from, or that they were not obtained and why.
 
 import { activeManifestOf } from "./c2patool-read.ts";
 import {
@@ -14,6 +19,7 @@ import {
 	makeObservation,
 	type Observation,
 } from "./observation.ts";
+import { notFetchedWords, type OnTheWeb } from "./web-credentials.ts";
 
 export const LIBRARY_EXTRACTOR = "c2pa-node";
 
@@ -27,7 +33,15 @@ export interface LibraryRun {
 	error?: { message?: string; code?: string } | null;
 	/** Why the library is not available here, when it is not. */
 	unavailable?: string;
+	/** The file keeps its credentials on the web, and they were not obtained. */
+	onTheWeb?: OnTheWeb;
+	/** The address the store was fetched from, when it was not inside the file. */
+	fetchedFrom?: string;
 }
+
+/** The note a reading carries when its credentials came from the web. */
+export const fetchedFromNote = (address: string): string =>
+	`These Content Credentials are not inside the file: they were fetched from ${address}`;
 
 /** A library reading (or its absence, or its failure) as an observation. */
 export function libraryObservation(run: LibraryRun): Observation {
@@ -41,6 +55,13 @@ export function libraryObservation(run: LibraryRun): Observation {
 			...base,
 			status: "unavailable",
 			error: run.unavailable,
+		});
+	if (run.onTheWeb)
+		return makeObservation({
+			...base,
+			status: "unreadable",
+			error: notFetchedWords(run.onTheWeb),
+			onTheWeb: run.onTheWeb,
 		});
 	if (run.error) {
 		const message = String(run.error.message ?? "").trim();
@@ -64,5 +85,6 @@ export function libraryObservation(run: LibraryRun): Observation {
 		status: "ok",
 		data: run.store,
 		validation: c2paValidation(run.store),
+		warnings: run.fetchedFrom ? [fetchedFromNote(run.fetchedFrom)] : [],
 	});
 }

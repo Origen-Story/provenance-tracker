@@ -126,6 +126,32 @@ describe("readSettings and writeSettings", () => {
 				'{"format": 1, "remoteCredentials": "no", "projects": {}}',
 				"remoteCredentials is not true or false",
 			],
+			[
+				'{"format": 1, "credentialsOnTheWeb": "any", "projects": {}}',
+				"credentialsOnTheWeb is not an object",
+			],
+			[
+				'{"format": 1, "credentialsOnTheWeb": {"mode": "always"}, "projects": {}}',
+				"credentialsOnTheWeb.mode is not one of never, listed, any",
+			],
+			[
+				'{"format": 1, "credentialsOnTheWeb": {"hosts": "example.org"}, "projects": {}}',
+				"credentialsOnTheWeb.hosts is not a list of host names",
+			],
+			[
+				// A host is kept as the list holds it: an address, a bare word,
+				// an IP address or capitals are not that.
+				'{"format": 1, "credentialsOnTheWeb": {"hosts": ["https://example.org/x"]}, "projects": {}}',
+				"credentialsOnTheWeb.hosts is not a list of host names",
+			],
+			[
+				'{"format": 1, "credentialsOnTheWeb": {"left": ["127.0.0.1"]}, "projects": {}}',
+				"credentialsOnTheWeb.left is not a list of host names",
+			],
+			[
+				'{"format": 1, "credentialsOnTheWeb": {"left": ["Example.org"]}, "projects": {}}',
+				"credentialsOnTheWeb.left is not a list of host names",
+			],
 		];
 		for (const [text, why] of cases) {
 			writeFileSync(file, text);

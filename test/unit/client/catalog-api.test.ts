@@ -437,9 +437,51 @@ describe("a timeline file holding several sequences (Phase 8 step 6)", () => {
 describe("the settings pages' API client", () => {
 	it("sets the person, edits the project's settings, and forgets the project", async () => {
 		const w = await world();
-		expect(await machine.get()).toEqual({ person: "Test Person" });
+		const nothingChosen = {
+			mode: null,
+			builtIn: ["cai-manifests.adobe.com"],
+			hosts: [],
+			left: [],
+		};
+		expect(await machine.get()).toEqual({
+			person: "Test Person",
+			credentialsOnTheWeb: nothingChosen,
+		});
 		expect(await machine.setPerson("Another Person")).toEqual({
 			person: "Another Person",
+			credentialsOnTheWeb: nothingChosen,
+		});
+
+		// What this machine does about Content Credentials kept on the web (D74).
+		expect(await machine.setWebCredentialMode("listed")).toEqual({
+			credentialsOnTheWeb: { ...nothingChosen, mode: "listed" },
+		});
+		expect(
+			await machine.decideHost("https://Credentials.Example.org/m", "allow"),
+		).toEqual({
+			host: "credentials.example.org",
+			credentialsOnTheWeb: {
+				...nothingChosen,
+				mode: "listed",
+				hosts: ["credentials.example.org"],
+			},
+		});
+		expect(
+			(await machine.decideHost("cai-manifests.adobe.com", "leave"))
+				.credentialsOnTheWeb.left,
+		).toEqual(["cai-manifests.adobe.com"]);
+		await expect(machine.decideHost("localhost", "allow")).rejects.toThrow(
+			/not a host name/,
+		);
+		// None of this project's files keeps its credentials on the web.
+		expect(await projects.credentialsOnTheWeb(w.projectId)).toEqual({
+			credentialsOnTheWeb: {
+				...nothingChosen,
+				mode: "listed",
+				hosts: ["credentials.example.org"],
+				left: ["cai-manifests.adobe.com"],
+			},
+			waiting: [],
 		});
 
 		const r = await projects.editSettings(

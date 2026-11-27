@@ -7,7 +7,7 @@ import {
 	assertPublicHost,
 	fetchPublic,
 	requestAt,
-} from "../../../src/server/lib/core/public-url.ts";
+} from "../src/public-url.ts";
 
 describe("isPublicAddress", () => {
 	it.each([

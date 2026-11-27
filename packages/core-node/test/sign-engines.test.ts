@@ -18,12 +18,23 @@ import { readIdentity } from "@provenancetracker/core/manifest/identity.ts";
 import { c2patoolPath } from "../src/extract/c2patool.ts";
 import {
 	PINNED_BINARY,
+	loadLibrary,
 	withTimeStampAnchors,
 } from "../src/extract/c2pa-library.ts";
-import { updateSettings } from "../src/settings.ts";
+import type { Machine } from "../src/machine.ts";
+import {
+	readSettings,
+	setWebCredentialMode,
+	updateSettings,
+} from "../src/settings.ts";
 import type { SigningEngine } from "../src/sign/engine.ts";
-import { signingEngineFor } from "../src/sign/engines/index.ts";
-import { reserveFor } from "../src/sign/engines/library.ts";
+import {
+	c2patoolRefusal,
+	signingEngineFor,
+} from "../src/sign/engines/index.ts";
+import { libraryEngine, reserveFor } from "../src/sign/engines/library.ts";
+import { neverFetch } from "../src/web-credentials.ts";
+import { toneWav, webPointingWav } from "./helpers/web-pointing.ts";
 import { signBytes } from "../src/sign/holder.ts";
 import { keyFilesHolder } from "../src/sign/holders/key-files.ts";
 import { memoryHolder } from "./helpers/holder.ts";
@@ -35,7 +46,18 @@ import {
 } from "./helpers/cert.ts";
 import { machinesForTests } from "./helpers/machine.ts";
 
-const { machine, folder } = machinesForTests();
+const { machine: bareMachine, folder } = machinesForTests();
+
+/**
+ * A machine set to fetch Content Credentials on the web from any host: the
+ * only setting c2patool signs under (D74). No file in these tests names an
+ * address but the ones a test hands its own fetch for, so nothing is fetched.
+ */
+const machine = (opts?: Parameters<typeof bareMachine>[0]): Machine => {
+	const m = bareMachine(opts);
+	updateSettings(m.settingsPath, (s) => setWebCredentialMode(s, "any"));
+	return m;
+};
 
 const haveLibrary = existsSync(PINNED_BINARY);
 const haveC2patool = (() => {
@@ -554,5 +576,152 @@ describe.skipIf(!haveOpenssl)("the creator's identity (D55)", () => {
 			}),
 		).rejects.toThrow(/c2patool cannot add your identity/);
 		expect(existsSync(out)).toBe(false);
+	});
+});
+
+describe.skipIf(!haveOpenssl || !haveLibrary)(
+	"a source that keeps its Content Credentials on the web (D74)",
+	() => {
+		const ADDRESS = "https://credentials.example.invalid/tone.c2pa";
+		const CUT = { ...DEFINITION, title: "cut.wav" };
+		const setUp = async (label: string) => {
+			const dir = folder(label);
+			const cert = devCertificate(dir)!;
+			const loaded = await loadLibrary({});
+			if ("unavailable" in loaded) throw new Error(loaded.unavailable);
+			const source = await webPointingWav(loaded, cert, dir, ADDRESS);
+			const cut = path.join(dir, "cut.wav");
+			writeFileSync(cut, toneWav(11));
+			const holder = await keyFilesHolder({
+				certificatePath: cert.certificate,
+				privateKeyPath: cert.privateKey,
+			});
+			const sign = (engine: SigningEngine, out: string) =>
+				engine.sign({
+					inputPath: cut,
+					outputPath: path.join(dir, out),
+					definition: CUT,
+					ingredients: [
+						{
+							label: "src1",
+							relationship: "componentOf",
+							title: "pointing.wav",
+							filePath: source.file,
+						},
+					],
+					holder,
+				});
+			return { dir, loaded, source, sign };
+		};
+		type Store = {
+			active_manifest: string;
+			manifests: Record<
+				string,
+				{ ingredients?: Array<{ title?: string; active_manifest?: string }> }
+			>;
+		};
+		const ingredientsOf = (report: unknown) => {
+			const store = report as Store;
+			return {
+				manifests: Object.keys(store.manifests).length,
+				ingredients: (
+					store.manifests[store.active_manifest].ingredients ?? []
+				).map((i) => ({ title: i.title, carried: !!i.active_manifest })),
+			};
+		};
+
+		it("goes into a signed film with its credentials when this machine fetched them, asked for once", async () => {
+			const { loaded, source, sign } = await setUp("web-source");
+			const asked: string[] = [];
+			const engine = libraryEngine(loaded, async (address) => {
+				asked.push(address);
+				return { bytes: source.manifest };
+			});
+			// Signing a finished edit reads each source first (the review).
+			const reading = await engine.read(source.file);
+			expect(reading.status).toBe("ok");
+			const { report } = await sign(engine, "cut.signed.wav");
+			expect(ingredientsOf(report)).toEqual({
+				manifests: 2,
+				ingredients: [{ title: "pointing.wav", carried: true }],
+			});
+			// The bytes the reading checked are the bytes embedded: the address
+			// was not asked a second time.
+			expect(asked).toEqual([ADDRESS]);
+			expect((interpretReport(report) as { status: string }).status).toBe(
+				"unrecognised_issuer",
+			);
+		}, 120000);
+
+		it("is embedded as the reading saw it, even if the address would answer differently a second time", async () => {
+			const { loaded, source, sign } = await setUp("web-source-twice");
+			let times = 0;
+			const engine = libraryEngine(loaded, async () =>
+				times++ === 0
+					? { bytes: source.manifest }
+					: { bytes: Buffer.from("something else entirely") },
+			);
+			expect((await engine.read(source.file)).status).toBe("ok");
+			const { report } = await sign(engine, "cut.signed.wav");
+			expect(times).toBe(1);
+			expect(ingredientsOf(report).ingredients).toEqual([
+				{ title: "pointing.wav", carried: true },
+			]);
+		}, 120000);
+
+		it("goes in without its credentials when this machine did not fetch them, and the reading says so", async () => {
+			const { loaded, source, sign } = await setUp("web-source-held");
+			const engine = libraryEngine(loaded, neverFetch);
+			const reading = await engine.read(source.file);
+			expect(reading.status).toBe("unreadable");
+			expect(reading.data).toMatchObject({
+				onTheWeb: { address: ADDRESS, outcome: "never" },
+			});
+			const { report } = await sign(engine, "cut.signed.wav");
+			expect(ingredientsOf(report)).toEqual({
+				manifests: 1,
+				ingredients: [{ title: "pointing.wav", carried: false }],
+			});
+			// With no fetch named at all, nothing is fetched either.
+			const bare = await sign(libraryEngine(loaded), "cut.signed.2.wav");
+			expect(ingredientsOf(bare.report).manifests).toBe(1);
+		}, 120000);
+
+		it("counts as a file with credentials of its own, fetched or not: not one to sign at ingest", async () => {
+			const { loaded, source } = await setUp("web-source-own");
+			expect(
+				await libraryEngine(loaded, neverFetch).readEmbedded(source.file),
+			).toEqual({
+				signer: "",
+				notFetched: `Its Content Credentials are stored on the web, at ${ADDRESS}. They were not fetched: this machine never fetches them.`,
+			});
+			const fetched = await libraryEngine(loaded, async () => ({
+				bytes: source.manifest,
+			})).readEmbedded(source.file);
+			expect(fetched?.notFetched).toBeUndefined();
+			expect(fetched?.signer).toMatch(DEV_CERT_NAME);
+		}, 120000);
+	},
+);
+
+describe("c2patool and credentials on the web (D74)", () => {
+	it("signs only on a machine set to fetch from any host, because it fetches from any host itself", async () => {
+		const m = bareMachine();
+		await expect(signingEngineFor(m, "c2patool")).rejects.toThrow(
+			/c2patool fetches Content Credentials a source keeps on the web from any address.*has not been told/s,
+		);
+		for (const [mode, words] of [
+			["never", /is set never to fetch them/],
+			["listed", /only from the hosts on its list/],
+		] as const) {
+			updateSettings(m.settingsPath, (s) => setWebCredentialMode(s, mode));
+			await expect(signingEngineFor(m, "c2patool")).rejects.toThrow(words);
+			expect(c2patoolRefusal(readSettings(m.settingsPath))).toMatch(
+				/settings credentials-on-the-web any$/,
+			);
+		}
+		updateSettings(m.settingsPath, (s) => setWebCredentialMode(s, "any"));
+		expect(c2patoolRefusal(readSettings(m.settingsPath))).toBeNull();
+		expect((await signingEngineFor(m, "c2patool")).name).toBe("c2patool");
 	});
 });

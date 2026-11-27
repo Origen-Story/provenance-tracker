@@ -308,7 +308,7 @@ const DEFINITION = (title: string, format: string) => ({
 	],
 });
 
-const loaded = await loadLibrary({}, { remoteManifests: false });
+const loaded = await loadLibrary({}, {});
 const ready = haveOpenssl && !("unavailable" in loaded);
 
 describe.skipIf(!ready)("the signing certificate in a signed file", () => {

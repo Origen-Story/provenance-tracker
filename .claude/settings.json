@@ -3,7 +3,6 @@
     "allow": [
       "Bash(npm test*)",
       "Bash(npm run test:run*)",
-      "Bash(npm run test:integration*)",
       "Bash(npm run build*)",
       "Bash(npx vitest run*)",
       "Bash(git status*)",
@@ -18,7 +17,6 @@
       "Bash(node_modules/exiftool-vendored.exe/bin/exiftool.exe *)",
       "PowerShell(npm test*)",
       "PowerShell(npm run test:run*)",
-      "PowerShell(npm run test:integration*)",
       "PowerShell(npm run build*)",
       "PowerShell(npx vitest run*)",
       "PowerShell(git status*)",

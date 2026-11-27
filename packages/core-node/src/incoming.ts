@@ -6,13 +6,13 @@
 
 import {
 	constants,
-	copyFileSync,
 	existsSync,
 	linkSync,
 	mkdirSync,
 	statSync,
 	unlinkSync,
 } from "node:fs";
+import { copyFile } from "node:fs/promises";
 import path from "node:path";
 import {
 	fromCatalogPath,
@@ -69,6 +69,15 @@ export function targetFolder(
 			: fromCatalogPath(root.folder, sub, machine.platform);
 	if (!isWithin(root.folder, folder, machine.platform))
 		throw new Error(`"${subfolder}" is not inside the root "${rootName}"`);
+	// A media folder may be the project folder, or hold it. The catalog's own
+	// folder is still never a place for a file that arrives: a file named as
+	// the catalog's journal, put beside it, would be replayed into the catalog
+	// the next time it opened, with no history of any of it.
+	const own = path.join(project.folder, PROJECT_DIR);
+	if (isWithin(own, folder, machine.platform))
+		throw new Error(
+			`Files are not added inside the project's own ${PROJECT_DIR} folder, which holds its catalog`,
+		);
 	if (existsSync(folder) && !statSync(folder).isDirectory())
 		throw new Error(`${folder} is a file, not a folder`);
 	mkdirSync(folder, { recursive: true });
@@ -88,14 +97,16 @@ export interface Placed {
  * Move a received file into the target folder under a free form of its name,
  * never replacing a file: a hard link that fails if the name is taken (then
  * the next free name), or, across drives, a copy that refuses an existing
- * file. The received file is removed once it is in place.
+ * file. The received file is removed once it is in place. The copy is not
+ * a blocking one: a film of several gigabytes going to another drive would
+ * otherwise stop the server answering anything until it was done.
  */
-export function placeFile(
+export async function placeFile(
 	received: string,
 	target: Target,
 	offeredName: string,
 	machine: Machine,
-): Placed {
+): Promise<Placed> {
 	const wanted = safeFileName(offeredName);
 	for (let attempt = 0; attempt < 20; attempt++) {
 		const name = freeName(wanted, (n) =>
@@ -110,7 +121,7 @@ export function placeFile(
 				if (code === "EEXIST") throw err;
 				// Across drives there are no hard links; a copy that refuses an
 				// existing file does the same job.
-				copyFileSync(received, dest, constants.COPYFILE_EXCL);
+				await copyFile(received, dest, constants.COPYFILE_EXCL);
 			}
 		} catch (err) {
 			// Someone else took the name between the look and the link: try the next.

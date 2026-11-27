@@ -141,7 +141,19 @@ describe("checkLocalRequest", () => {
 	it("refuses what the browser labels cross-site, even with no Origin (an <img> or a link on another site)", () => {
 		refused({ host: "localhost:3001", secFetchSite: "cross-site" });
 		ok({ host: "localhost:3001", secFetchSite: "none" });
-		ok({ host: "localhost:3001", secFetchSite: "same-site" });
+		// A page on another port of this machine is some other program's page:
+		// the tracker's own are same-origin (D85).
+		refused({ host: "localhost:3001", secFetchSite: "same-site" });
+		refused({
+			host: "localhost:3001",
+			origin: "http://localhost:3001",
+			secFetchSite: "Same-Site",
+		});
+		ok({ host: "localhost:3001", secFetchSite: "same-origin" });
+		// An address typed, or a link followed from outside a page.
+		ok({ host: "localhost:3001", secFetchSite: "none" });
+		// No such header: not a browser page (a script, the command line).
+		ok({ host: "localhost:3001" });
 	});
 
 	it("accepts a named host only when it is on the allowed list", () => {

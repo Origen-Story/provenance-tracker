@@ -21,9 +21,14 @@ name: CI
 # Branch protection on main requires "test (ubuntu-latest)",
 # "test (windows-latest)" and "test (macos-latest)"; renaming the job or the
 # matrix changes those names.
+# It runs for pull requests and for what lands on main, not for every pushed
+# branch: a branch with a pull request open would otherwise run everything
+# twice for each push. A branch without one can be run by hand
+# (workflow_dispatch).
 
 on:
-  push: {}
+  push:
+    branches: [main]
   pull_request: {}
   workflow_dispatch: {}
 

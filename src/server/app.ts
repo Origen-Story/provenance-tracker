@@ -16,6 +16,37 @@ import { createLogger } from "./lib/logger.js";
 
 const log = createLogger("server");
 
+/**
+ * Headers on everything the app sends, pages and API alike (D85). The pages
+ * load nothing from anywhere else and nothing else has any business showing
+ * them, so both are said outright:
+ * - no other site can put the app in a frame (clickjacking);
+ * - a page runs scripts only from the app itself, and nothing inline;
+ * - a file is never guessed to be a type the server did not say;
+ * - no address of the app is sent on to a site a link leads to;
+ * - no other site's page can embed what the app serves, a project's pictures
+ *   and films included.
+ * Styles may be inline: the pages set a few by attribute (a bar's width).
+ */
+export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
+	"Content-Security-Policy": [
+		"default-src 'self'",
+		"script-src 'self'",
+		"style-src 'self' 'unsafe-inline'",
+		"img-src 'self' data: blob:",
+		"media-src 'self' blob:",
+		"connect-src 'self'",
+		"object-src 'none'",
+		"base-uri 'self'",
+		"form-action 'self'",
+		"frame-ancestors 'none'",
+	].join("; "),
+	"X-Frame-Options": "DENY",
+	"X-Content-Type-Options": "nosniff",
+	"Referrer-Policy": "no-referrer",
+	"Cross-Origin-Resource-Policy": "same-origin",
+};
+
 export function createApp(opts: {
 	env: NodeJS.ProcessEnv;
 	machine: Machine;
@@ -25,6 +56,12 @@ export function createApp(opts: {
 	catalog?: Omit<CatalogApiOptions, "machine">;
 }): Express {
 	const app = express();
+	app.disable("x-powered-by");
+	app.use((_req: Request, res: Response, next: NextFunction) => {
+		for (const [name, value] of Object.entries(SECURITY_HEADERS))
+			res.setHeader(name, value);
+		next();
+	});
 
 	// Before any body is parsed: refuse API requests that do not come from the
 	// tracker's own pages on this machine (another site's form, DNS rebinding).

@@ -1123,15 +1123,17 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 			upload.array("files")(req, res, (err: unknown) =>
 				err ? next(new HttpError(400, (err as Error).message)) : next(),
 			),
-		(req: Request, res: Response) => {
+		async (req: Request, res: Response) => {
 			const files = (req.files ?? []) as Express.Multer.File[];
 			const t = (req as Request & { target: ReturnType<typeof target> }).target;
 			try {
 				if (!files.length)
 					throw new HttpError(400, 'Send the files as form field "files"');
-				const placed = files.map((f) =>
-					placeFile(f.path, t, f.originalname, machine),
-				);
+				// One after another, so two files offered under one name get
+				// "name" and "name (2)" in the order they were sent.
+				const placed = [];
+				for (const f of files)
+					placed.push(await placeFile(f.path, t, f.originalname, machine));
 				const projectId = String(req.params.projectId);
 				// Work that started while the files arrived leaves them placed but
 				// not imported: say so, rather than an error for files that are in.
@@ -1185,7 +1187,7 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 				fetchImpl: opts.fetchImpl,
 				signal: ctx.signal,
 			});
-			const placed = placeFile(got.file, t, got.name, machine);
+			const placed = await placeFile(got.file, t, got.name, machine);
 			const imported = await runImport(project, [t.root], ctx);
 			const content = project.db
 				.prepare("SELECT asset_id FROM contents WHERE sha256 = ?")

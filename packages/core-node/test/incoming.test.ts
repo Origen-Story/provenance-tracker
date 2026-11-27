@@ -62,12 +62,59 @@ describe("targetFolder", () => {
 	});
 });
 
+describe("a media folder that is, or holds, the project folder", () => {
+	/** A project whose one media folder is the project folder itself, or the folder above it. */
+	function withRoot(which: "project" | "above") {
+		const m = machine();
+		const outer = tempDir();
+		const folder = path.join(outer, "Demo");
+		mkdirSync(folder, { recursive: true });
+		createProject(folder, { name: "Demo", machine: m });
+		const p = track(openProject(folder, { machine: m }));
+		addRoot(p, m, {
+			name: which,
+			folder: which === "project" ? folder : outer,
+			actor: ME,
+		});
+		return { m, p, folder, outer };
+	}
+
+	it("never takes a file into the project's own catalog folder", () => {
+		const own = /not added inside the project's own \.provenancetracker folder/;
+		const a = withRoot("project");
+		for (const sub of [
+			".provenancetracker",
+			".provenancetracker/backups",
+			".provenancetracker/incoming",
+			".provenancetracker/anything/new",
+		])
+			expect(() => targetFolder(a.p, a.m, "project", sub), sub).toThrow(own);
+		// Nothing was made by the refused ones, and beside the catalog's folder is fine.
+		expect(
+			existsSync(path.join(a.folder, ".provenancetracker", "anything")),
+		).toBe(false);
+		expect(targetFolder(a.p, a.m, "project", "media").folder).toBe(
+			path.join(a.folder, "media"),
+		);
+
+		const b = withRoot("above");
+		for (const sub of [
+			"Demo/.provenancetracker",
+			"Demo/.provenancetracker/anything/new",
+		])
+			expect(() => targetFolder(b.p, b.m, "above", sub), sub).toThrow(own);
+		expect(targetFolder(b.p, b.m, "above", "Demo/day 1").folder).toBe(
+			path.join(b.outer, "Demo", "day 1"),
+		);
+	});
+});
+
 describe("placeFile", () => {
-	it("moves a received file in under a safe, free name, never replacing one", () => {
+	it("moves a received file in under a safe, free name, never replacing one", async () => {
 		const { m, p, media } = project();
 		writeFileSync(path.join(media, "take.wav"), "first");
 		const t = targetFolder(p, m, "media");
-		const a = placeFile(received(p, "second"), t, "take.wav", m);
+		const a = await placeFile(received(p, "second"), t, "take.wav", m);
 		expect(a).toMatchObject({
 			root: "media",
 			path: "take (2).wav",
@@ -77,7 +124,7 @@ describe("placeFile", () => {
 		expect(readFileSync(path.join(media, "take (2).wav"), "utf8")).toBe(
 			"second",
 		);
-		const b = placeFile(
+		const b = await placeFile(
 			received(p, "third"),
 			targetFolder(p, m, "media", "day 1"),
 			"../../Peña.wav",

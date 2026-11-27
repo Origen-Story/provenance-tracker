@@ -144,9 +144,22 @@ export function checkLocalRequest({
 				reason: `Origin "${from.host}" is not the page this server serves`,
 			};
 	}
-	if (String(secFetchSite || "").toLowerCase() === "cross-site") {
+	// What the browser itself says about where the request came from. The
+	// tracker's own pages are same-origin (the dev pages reach the API through
+	// their own server), and an address typed or a link followed is "none".
+	// "same-site" is a page on another port of this machine: some other
+	// program's page, not the tracker's. A request with no such header is not
+	// from a browser page at all (a script, the command line), which the Host
+	// rules above already hold to this machine.
+	const site = String(secFetchSite || "").toLowerCase();
+	if (site === "cross-site")
 		return { ok: false, reason: "the browser marked the request cross-site" };
-	}
+	if (site === "same-site")
+		return {
+			ok: false,
+			reason:
+				"the browser marked the request same-site: a page on this machine that is not the tracker's",
+		};
 	return { ok: true };
 }
 

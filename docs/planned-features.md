@@ -94,6 +94,13 @@ Each of these was deferred in a decision or admitted in a document, with no entr
 - **History that shows tampering.** Every change the tracker makes is in the catalog's history, but someone who can write the file can rewrite the history too (`docs/threat-model.md`). Chaining each entry to the one before it by a hash, with the newest hash written into each signing, would let a later reader see that the history is the one that was signed over.
 - **A Firefly prompt from the file name.** Adobe Firefly names a download after its prompt (`Firefly_a lighthouse at dusk 983684.png`), and its credentials do not carry the prompt. The parser leaves the name alone. Offering it as the prompt, marked as taken from the name and not from the file's own record, would save typing; it must never be recorded as if the file said it.
 
+### Hardening put off (D85, 2026-11-27)
+
+- **Links and junctions inside a media folder.** An upload's target folder and a preview's path are checked as text to be inside their media folder. A link or junction inside the folder that leads elsewhere is followed. That is the person's own arrangement of their disk, and no way to plant one through the tracker was found; resolving the real path before writing or serving would hold it regardless.
+- **Windows' reserved names in catalog paths.** A path may hold a segment such as `NUL`, a name with a trailing dot, or a `name:stream`. Windows treats these specially. No escape was found through them. Refuse them where a path is made (`packages/core/src/catalog/paths.ts`), on every system so a catalog reads the same everywhere.
+- **What an error says to the page.** A job that fails reports the failing step's own message, which can carry the last lines of a helper program's output or a temp file's path. The key files no longer do (D85). Give each kind of failure its own words and keep the raw message for the server's log.
+- **Pin Renovate's shared settings.** `renovate.json5` extends a preset in another repository at whatever that repository holds. Name a tag or a commit, so a change there reaches this repository only by a change here.
+
 ### Signing, left for after Phase 7 (2026-11-24)
 
 - **A thumbnail taken from the film** (updated 2026-11-25). The claim thumbnail is an image the person picks from the project's files (D52).

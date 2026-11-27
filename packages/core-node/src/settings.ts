@@ -248,8 +248,11 @@ export function writeSettings(file: string, settings: Settings): void {
 	mkdirSync(path.dirname(file), { recursive: true });
 	const temp = `${file}.${randomBytes(6).toString("hex")}.tmp`;
 	try {
+		// Readable and writable by this person only, where the system has such
+		// a thing (it names where the signing key is kept).
 		writeFileSync(temp, `${JSON.stringify(settings, null, "\t")}\n`, {
 			flag: "wx",
+			mode: 0o600,
 		});
 		renameSync(temp, file);
 	} finally {

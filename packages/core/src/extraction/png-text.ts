@@ -6,6 +6,9 @@ import { inflateSync } from "node:zlib";
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
+/** The most text one compressed chunk may inflate to: 8 MiB, far more than any prompt or settings block. */
+export const MAX_TEXT_BYTES = 8 * 1024 * 1024;
+
 interface Chunk {
 	name: string;
 	data: Buffer;
@@ -52,7 +55,11 @@ export function parseITxt(
 	if (!compressed) text = body.toString("utf8");
 	else if (method === 0) {
 		try {
-			text = inflateSync(body).toString("utf8");
+			// A few kilobytes of compressed text can claim to be gigabytes. Text
+			// longer than the limit is not a prompt or a setting; it is left unread.
+			text = inflateSync(body, {
+				maxOutputLength: MAX_TEXT_BYTES,
+			}).toString("utf8");
 		} catch {
 			return null;
 		}

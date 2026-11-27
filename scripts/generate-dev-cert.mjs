@@ -31,7 +31,14 @@
 
 import { execFileSync } from "child_process";
 import { randomBytes } from "crypto";
-import { mkdirSync, existsSync, writeFileSync, readFileSync, rmSync } from "fs";
+import {
+	chmodSync,
+	mkdirSync,
+	existsSync,
+	writeFileSync,
+	readFileSync,
+	rmSync,
+} from "fs";
 import path from "path";
 import { findOpenssl, OPENSSL_MISSING } from "./lib/openssl.mjs";
 
@@ -42,14 +49,24 @@ const KEY_TYPES = {
 	ps256: ["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"],
 	ed25519: ["genpkey", "-algorithm", "ED25519"],
 };
-// Options: --key-type <type>, --name <subject name>, --org <organisation>.
+// Options: --key-type <type>, --name <subject name>, --org <organisation>,
+// and --keep-ca-key.
 // A name or organisation goes into an openssl config file, so it is held to
 // letters, digits, spaces and simple punctuation, and cannot start a new line.
 const SAFE = /^[\p{L}\p{N} .,'()&-]{1,64}$/u;
 const opts = { "--key-type": "es256", "--name": "", "--org": "" };
+// The made-up authority's key is deleted once it has issued the one
+// certificate: whoever holds it can issue more in the same authority's name,
+// and this script never uses it again. --keep-ca-key leaves it, unencrypted,
+// for someone who means to issue more by hand.
+let keepCaKey = false;
 const positional = [];
 const args = process.argv.slice(2);
 for (let i = 0; i < args.length; i++) {
+	if (args[i] === "--keep-ca-key") {
+		keepCaKey = true;
+		continue;
+	}
 	if (args[i] in opts) {
 		opts[args[i]] = args[++i] ?? "";
 		continue;
@@ -110,7 +127,10 @@ const signingCsrPath = path.join(outDir, "_signing.csr");
 const signingCertOnlyPath = path.join(outDir, "_signing-cert-only.pem");
 const chainPath = path.join(outDir, "c2pa-dev-cert.pem");
 
-for (const p of [signingKeyPath, chainPath]) {
+// Everything this run would write is checked before anything is written:
+// a key or a certificate already there is never replaced, the authority's
+// included.
+for (const p of [signingKeyPath, chainPath, caKeyPath, caCertPath]) {
 	if (existsSync(p)) {
 		console.error(
 			`Refusing to overwrite existing ${p}. Delete it first if you want to regenerate.`,
@@ -244,13 +264,25 @@ try {
 	writeFileSync(chainPath, signingPem.trimEnd() + "\n" + caPem);
 } catch (err) {
 	console.error(`\n${err.message}`);
-	for (const tmp of [
+	// A run that failed leaves nothing: no key without its certificate. None
+	// of these was there before (checked above), so all are this run's.
+	for (const made of [
+		caKeyPath,
+		signingKeyPath,
+		caCertPath,
+		chainPath,
 		caCnfPath,
 		signingCnfPath,
 		signingCsrPath,
 		signingCertOnlyPath,
-	])
-		rmSync(tmp, { force: true });
+		path.join(outDir, "_ca-cert.srl"),
+	]) {
+		try {
+			rmSync(made, { force: true });
+		} catch {
+			// One that cannot be removed does not stop the rest being removed.
+		}
+	}
 	process.exit(1);
 }
 
@@ -260,8 +292,12 @@ for (const tmp of [
 	signingCsrPath,
 	signingCertOnlyPath,
 	path.join(outDir, "_ca-cert.srl"),
+	...(keepCaKey ? [] : [caKeyPath]),
 ])
 	rmSync(tmp, { force: true });
+// The private keys are this person's only, where the system has such a thing.
+for (const key of [signingKeyPath, ...(keepCaKey ? [caKeyPath] : [])])
+	chmodSync(key, 0o600);
 
 console.log(`\n✓ Dev cert chain generated at ${outDir}:`);
 console.log(
@@ -271,7 +307,9 @@ console.log(
 	`  key:   ${signingKeyPath}   (signing private key — point private_key_path here)`,
 );
 console.log(
-	`  (_ca-cert.pem and _ca-key.pem are the dev root; keep them for re-issuing more certs)\n`,
+	keepCaKey
+		? `  (_ca-cert.pem and _ca-key.pem are the made-up authority; its key is unencrypted, and whoever holds it can issue more certificates in its name)\n`
+		: `  (_ca-cert.pem is the made-up authority that issued it; the authority's key was deleted, so nothing more can be issued in its name)\n`,
 );
 console.log(
 	`Use them for a project on its Settings page, or with: npm run cli -- signing --certificate <chain> --key <key>`,

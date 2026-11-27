@@ -27,6 +27,7 @@ import { addRoot } from "@provenancetracker/core-node/roots.ts";
 import { scanProject } from "@provenancetracker/core-node/scan.ts";
 import { updateSettings } from "@provenancetracker/core-node/settings.ts";
 import { createApp } from "../../../src/server/app.ts";
+import { expectSoundCatalogs } from "../../../packages/core-node/test/helpers/verify-catalogs.ts";
 
 const SAMPLE = readFileSync(
 	path.resolve("packages/core/test/fixtures/timeline/sample.xmeml.xml"),
@@ -67,6 +68,9 @@ afterEach(async () => {
 			retryDelay: 100,
 		});
 });
+// Registered after the clean-up above, so it runs before it: every catalog a
+// test left behind is held to its own rules while its folder is still there.
+afterEach(() => expectSoundCatalogs(temps));
 
 async function world() {
 	const dir = realpathSync.native(mkdtempSync(path.join(tmpdir(), "pt-tl-")));

@@ -9,14 +9,22 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Env, Machine } from "../../src/machine.ts";
 import type { OpenProject } from "../../src/project.ts";
+import { expectSoundCatalogs } from "./verify-catalogs.ts";
 
 export function machinesForTests() {
 	const temps: string[] = [];
 	const projects: OpenProject[] = [];
+	const unchecked = new Set<string>();
 	afterEach(() => {
 		for (const p of projects.splice(0)) if (p.db.isOpen) p.db.close();
-		for (const dir of temps.splice(0))
-			rmSync(dir, { recursive: true, force: true });
+		try {
+			// Every catalog a test left behind is held to its own rules.
+			expectSoundCatalogs(temps, unchecked);
+		} finally {
+			unchecked.clear();
+			for (const dir of temps.splice(0))
+				rmSync(dir, { recursive: true, force: true });
+		}
 	});
 	const tempDir = (): string => {
 		// realpath: on macOS the temp folder is reached through a link.
@@ -39,6 +47,14 @@ export function machinesForTests() {
 				home,
 				settingsPath: path.join(dir, "settings", "settings.json"),
 			};
+		},
+		/**
+		 * This catalog file was changed around the edit functions on purpose
+		 * (a test of what the tracker does with such a catalog): leave it out of
+		 * the check after the test.
+		 */
+		writtenAround: (catalogPath: string): void => {
+			unchecked.add(path.resolve(catalogPath));
 		},
 		/** Close this project after the test. */
 		track: (project: OpenProject): OpenProject => {

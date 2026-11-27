@@ -356,7 +356,7 @@ function sequencesOf({ fileDefs, list }) {
 /**
  * Parse one sequence of the file: the one `opts.sequence` names by its index
  * in sequences(), or the first. Choosing among several is the caller's
- * (timeline/sequence-choice.js), so a whole-project export is never read as
+ * (timeline/sequence-choice.ts), so a whole-project export is never read as
  * whichever sequence happens to come first without saying so.
  */
 export function parse(xmlText, opts = {}) {

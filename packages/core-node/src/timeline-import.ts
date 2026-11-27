@@ -23,7 +23,7 @@ import { fromCatalogPath } from "@provenancetracker/core/catalog/paths.ts";
 import { segmentsFromTimeline } from "@provenancetracker/core/timeline/breakdown.js";
 import { openTimeline } from "@provenancetracker/core/timeline/formats/index.js";
 import { mayOpenSourcePath } from "@provenancetracker/core/timeline/source-paths.ts";
-import { chooseSequence } from "@provenancetracker/core/timeline/sequence-choice.js";
+import { chooseSequence } from "@provenancetracker/core/timeline/sequence-choice.ts";
 import {
 	buildMatchIndex,
 	matchClips,

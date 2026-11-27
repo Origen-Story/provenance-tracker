@@ -24,6 +24,7 @@ import { createProject } from "@provenancetracker/core-node/project.ts";
 import { updateSettings } from "@provenancetracker/core-node/settings.ts";
 import { createApp } from "../../../src/server/app.ts";
 import { JobRunner } from "../../../src/server/api/jobs.ts";
+import { expectSoundCatalogs } from "../../../packages/core-node/test/helpers/verify-catalogs.ts";
 
 const temps: string[] = [];
 const servers: Server[] = [];
@@ -38,6 +39,9 @@ afterEach(async () => {
 			retryDelay: 100,
 		});
 });
+// Registered after the clean-up above, so it runs before it: every catalog a
+// test left behind is held to its own rules while its folder is still there.
+afterEach(() => expectSoundCatalogs(temps));
 
 const EXIF: Reader = {
 	kind: "exif",

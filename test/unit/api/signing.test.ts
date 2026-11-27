@@ -35,6 +35,7 @@ import { devCertificate, haveOpenssl } from "../helpers/cert.ts";
 import { soundReport } from "../../../packages/core-node/test/helpers/readers.ts";
 import { createApp } from "../../../src/server/app.ts";
 import { JobRunner } from "../../../src/server/api/jobs.ts";
+import { expectSoundCatalogs } from "../../../packages/core-node/test/helpers/verify-catalogs.ts";
 
 const temps: string[] = [];
 const servers: Server[] = [];
@@ -48,6 +49,9 @@ afterEach(async () => {
 			retryDelay: 100,
 		});
 });
+// Registered after the clean-up above, so it runs before it: every catalog a
+// test left behind is held to its own rules while its folder is still there.
+afterEach(() => expectSoundCatalogs(temps));
 
 const stub: SigningEngine = {
 	name: "stub",
@@ -66,7 +70,8 @@ const stub: SigningEngine = {
 	},
 };
 
-async function world() {
+/** @param filmName the finished edit's file name in its media folder */
+async function world(filmName = "film.mp4") {
 	const dir = realpathSync.native(
 		mkdtempSync(path.join(tmpdir(), "pt-sign-api-")),
 	);
@@ -82,7 +87,7 @@ async function world() {
 	const folder = path.join(dir, "Demo");
 	const media = path.join(folder, "media");
 	mkdirSync(media, { recursive: true });
-	writeFileSync(path.join(media, "film.mp4"), "the cut");
+	writeFileSync(path.join(media, filmName), "the cut");
 	writeFileSync(path.join(media, "take.wav"), "a take");
 	writeFileSync(path.join(media, "notes.txt"), "words");
 	const { projectId } = createProject(folder, { name: "Demo", machine });
@@ -105,7 +110,7 @@ async function world() {
 					"SELECT c.asset_id AS id, c.sha256 FROM contents c JOIN locations l ON l.content_sha256 = c.sha256 WHERE l.path = ?",
 				)
 				.get(n) as { id: number; sha256: string };
-		film = byPath("film.mp4");
+		film = byPath(filmName);
 		take = byPath("take.wav");
 		writeTimeline(
 			p.db,
@@ -189,6 +194,39 @@ async function world() {
 }
 
 describe.skipIf(!haveOpenssl)("signing through the API", () => {
+	it("gives the public export of a film named in any script, under that name", async () => {
+		// A header carries Latin-1 only: this name answered 500 before the
+		// download sent it encoded.
+		const name = "Фильм 映画 ☀";
+		const w = await world(`${name}.mp4`);
+		const cert = devCertificate(w.dir)!;
+		await w.call("PUT", "/signing", {
+			fields: { certificate: cert.certificate, private_key: cert.privateKey },
+		});
+		const started = await w.json(
+			await w.call("POST", `/assets/${w.film.id}/sign`),
+		);
+		const job = await w.jobs.settled(started.job.id);
+		expect(job).toMatchObject({
+			state: "done",
+			result: { path: `${name}.signed.v1.mp4` },
+		});
+		const signatureId = (job!.result as { signatureId: number }).signatureId;
+		const exp = await w.call("GET", `/signatures/${signatureId}/public-export`);
+		expect(exp.status).toBe(200);
+		const header = exp.headers.get("content-disposition")!;
+		// The name itself, encoded as RFC 5987 has it, beside a plain stand-in
+		// for a program that reads only the old form.
+		const encoded = /filename\*=UTF-8''([^;]+)/.exec(header)?.[1];
+		expect(decodeURIComponent(encoded!)).toBe(
+			`${name}.signed.v1.provenance.json`,
+		);
+		expect(header).toMatch(/^attachment; filename="[\x20-\x7e]+";/);
+		expect(await w.json(exp)).toMatchObject({
+			signedFile: { fileName: `${name}.signed.v1.mp4` },
+		});
+	});
+
 	it("sets up signing without ever sending a path back, signs an output as a job, and gives its public export", async () => {
 		const w = await world();
 		expect(await w.json(await w.call("GET", "/signing"))).toMatchObject({
@@ -221,8 +259,9 @@ describe.skipIf(!haveOpenssl)("signing through the API", () => {
 
 		const exp = await w.call("GET", `/signatures/${signatureId}/public-export`);
 		expect(exp.headers.get("content-disposition")).toBe(
-			'attachment; filename="film.signed.v1.provenance.json"',
+			"attachment; filename=film.signed.v1.provenance.json",
 		);
+		expect(exp.headers.get("content-type")).toMatch(/^application\/json/);
 		expect(await w.json(exp)).toMatchObject({
 			statement: { text: "One take.", author: "A. Maker" },
 			ingredients: [{ fileName: "take.wav" }],

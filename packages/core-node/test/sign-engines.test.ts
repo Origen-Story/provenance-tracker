@@ -397,45 +397,6 @@ describe.skipIf(!haveOpenssl)("key files on this machine", () => {
 	});
 });
 
-describe.skipIf(!haveOpenssl)("key files on this machine", () => {
-	it("open as a holder only when the key belongs to the certificate, and say why not", async () => {
-		const dir = folder("key-files");
-		const cert = devCertificate(dir)!;
-		const other = devCertificate(folder("key-files-other"))!;
-		const holder = await keyFilesHolder({
-			certificatePath: cert.certificate,
-			privateKeyPath: cert.privateKey,
-		});
-		expect(holder).toMatchObject({
-			kind: "key-files",
-			alg: "es256",
-			keyFiles: {
-				certificatePath: cert.certificate,
-				privateKeyPath: cert.privateKey,
-			},
-		});
-		expect(holder.chain).toContain("BEGIN CERTIFICATE");
-		await expect(
-			keyFilesHolder({
-				certificatePath: cert.certificate,
-				privateKeyPath: other.privateKey,
-			}),
-		).rejects.toThrow(/does not belong to the signing certificate/);
-		await expect(
-			keyFilesHolder({
-				certificatePath: cert.certificate,
-				privateKeyPath: cert.certificate,
-			}),
-		).rejects.toThrow(/does not read as a private key/);
-		await expect(
-			keyFilesHolder({
-				certificatePath: cert.certificate,
-				privateKeyPath: path.join(dir, "gone.pem"),
-			}),
-		).rejects.toThrow(/signing key is not there/);
-	});
-});
-
 /** A definition carrying everything the identity vouches for (decision 5b). */
 const FULL_DEFINITION = {
 	...DEFINITION,

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { DatabaseSync } from "node:sqlite";
+import { createHash } from "node:crypto";
 import { copyFileSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +22,7 @@ import {
 import { CATALOG_V3_SQL, FORMAT_3_SQL } from "../../src/catalog/schema-v3.ts";
 import { foldForSearch } from "../../src/catalog/fields.ts";
 import { verifyCatalog } from "../../src/catalog/verify.ts";
+import { RELEASED_SQL } from "../../src/catalog/schema-check.ts";
 import { upgradeCatalog, UPGRADES } from "../../src/catalog/upgrade.ts";
 import { editRow, removeRow } from "../../src/catalog/edit.ts";
 import { editSettings } from "../../src/catalog/edits.ts";
@@ -497,6 +499,29 @@ describe("the sample catalog of every format", () => {
 				sql,
 			);
 		}
+	});
+
+	// The test above compares two copies of the SQL that would be edited
+	// together. This one holds each released format to a hash recorded when it
+	// was released: the SHA-256 of its SQL, with LF line ends. A released
+	// format never changes, so neither does its line here; a new format adds a
+	// line when it is released.
+	const RELEASED_SQL_SHA256: Record<number, string> = {
+		1: "e922d367f71ad986e88c30e21579c60a6e2a895f7f947264e651f8a40c44d871",
+		2: "30ae94774ead290751fd9858c00687f6c4dc8cd99c9f23ed93e1375183c1b7b6",
+		3: "56980b70370b534d0254f6118ec9bd60d6c37d6b42147a1e0ce42705da7ca58f",
+	};
+
+	it("holds every released format's SQL to the hash recorded at its release", () => {
+		const formats = Object.keys(RELEASED_SQL).map(Number);
+		expect(Object.keys(RELEASED_SQL_SHA256).map(Number)).toEqual(formats);
+		if (CATALOG_FORMAT_STATUS === "released")
+			expect(formats).toContain(CATALOG_FORMAT);
+		for (const n of formats)
+			expect(
+				createHash("sha256").update(RELEASED_SQL[n]).digest("hex"),
+				`format ${n}: a released format's SQL never changes; a change is a new format`,
+			).toBe(RELEASED_SQL_SHA256[n]);
 	});
 });
 

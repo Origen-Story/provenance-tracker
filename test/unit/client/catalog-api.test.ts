@@ -25,6 +25,7 @@ import { addRoot } from "@provenancetracker/core-node/roots.ts";
 import { scanProject } from "@provenancetracker/core-node/scan.ts";
 import { updateSettings } from "@provenancetracker/core-node/settings.ts";
 import { noCredentials } from "../../../packages/core-node/test/helpers/readers.ts";
+import { expectSoundCatalogs } from "../../../packages/core-node/test/helpers/verify-catalogs.ts";
 import { createApp } from "../../../src/server/app.ts";
 import {
 	ApiError,
@@ -50,7 +51,12 @@ afterEach(async () => {
 	vi.unstubAllGlobals();
 	if (server) await new Promise((r) => server!.close(r));
 	server = null;
-	rmSync(dir, { recursive: true, force: true });
+	try {
+		// Every catalog a test left behind is held to its own rules.
+		expectSoundCatalogs([dir]);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 /** A machine with a person set, a project with two files, and the client pointed at its server. */

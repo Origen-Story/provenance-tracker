@@ -71,6 +71,37 @@ const SAMPLES = path.resolve(
 	"catalog",
 );
 
+describe("a catalog the tracker refuses", () => {
+	it("is left exactly as it was: the same files beside it, the same bytes", () => {
+		for (const [what, sql, words] of [
+			[
+				"a table of its own",
+				"CREATE TABLE extra (x TEXT)",
+				/Nothing was changed/,
+			],
+			["a newer format", "PRAGMA user_version = 99", /Nothing was changed/],
+			[
+				"another program's mark",
+				"PRAGMA application_id = 42",
+				/Nothing was changed/,
+			],
+		] as const) {
+			const { m, folder, catalogPath } = made();
+			tamper(catalogPath, `${sql}; PRAGMA wal_checkpoint(TRUNCATE);`);
+			const dir = path.dirname(catalogPath);
+			const before = {
+				files: readdirSync(dir).sort(),
+				bytes: readFileSync(catalogPath),
+			};
+			expect(() => openProject(folder, { machine: m }), what).toThrow(words);
+			// "Nothing was changed" is the whole truth: no journal or shared
+			// memory file is left beside it either.
+			expect(readdirSync(dir).sort(), what).toEqual(before.files);
+			expect(readFileSync(catalogPath).equals(before.bytes), what).toBe(true);
+		}
+	});
+});
+
 describe("a catalog's structure against its format's (D68)", () => {
 	it("is the same for a new catalog, and for each released format's sample", () => {
 		const { catalogPath } = made();
@@ -231,6 +262,7 @@ describe("what a catalog says, taken with care (D68)", () => {
 		const { m, p } = await scanned();
 		// The catalog's own rules let "." through; the tracker's resolver does not.
 		// A second place for the same bytes, written as no scan would write it.
+		t.writtenAround(p.catalogPath);
 		p.db
 			.prepare(
 				`INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id)
@@ -317,6 +349,7 @@ describe("what a catalog says, taken with care (D68)", () => {
 			project.catalogPath,
 			"INSERT INTO meta (key, value) VALUES ('cawg_identity_url', 'http://example.org/me')",
 		);
+		t.writtenAround(project.catalogPath);
 		const p = t.track(
 			openProject(project.folder, { machine: m, takeOver: true }),
 		);

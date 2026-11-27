@@ -4,7 +4,7 @@ import path from "node:path";
 import {
 	chooseSequence,
 	lengthTolerance,
-} from "../../src/timeline/sequence-choice.js";
+} from "../../src/timeline/sequence-choice.ts";
 import {
 	listSequences,
 	parseTimeline,

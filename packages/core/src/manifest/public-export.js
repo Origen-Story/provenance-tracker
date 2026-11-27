@@ -325,9 +325,13 @@ export function buildPublicExport({
 			roles: identity.roles,
 		},
 		withheld: {
-			fromRecord: Array.isArray(publication?.withheld)
-				? publication.withheld.length
-				: 0,
+			// Details left out of this record itself. Nothing here leaves any
+			// out: the review before export became the review before signing
+			// (D62), so a publication's `withheld` list is never applied to what
+			// is built above, and counting it would tell a reader that details
+			// were kept back when none were (D76). Zero until something applies
+			// the list.
+			fromRecord: 0,
 			// Assertions redacted, and sources whose credentials were left out (D62).
 			fromSignedFile:
 				(Array.isArray(definition?.redactions)

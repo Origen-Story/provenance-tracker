@@ -41,8 +41,11 @@ const app = createApp({
 			const distPath = path.resolve(__dirname, "../../dist");
 			app.use(express.static(distPath));
 			// Express 5 path syntax: a bare "*" is no longer valid; a named splat is.
+			// Sent by name from the folder, not by its full path: a full path with
+			// a folder whose name starts with a dot anywhere in it is refused as a
+			// hidden file, so a checkout under such a folder served no page but /.
 			app.get("/{*splat}", (req, res) => {
-				res.sendFile(path.join(distPath, "index.html"));
+				res.sendFile("index.html", { root: distPath });
 			});
 		}
 	},

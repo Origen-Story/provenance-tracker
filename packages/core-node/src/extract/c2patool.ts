@@ -1,5 +1,6 @@
-// c2patool, the pinned C2PA reader and signer (npm run tools:fetch). Reads a
-// manifest store in a file, or a .c2pa sidecar checked against its file.
+// c2patool, the pinned signer a machine can choose (npm run tools:fetch):
+// where it is, whether it is the pinned program, and its version. It no
+// longer reads files for the catalog: the C2PA library does (D15, D51).
 //
 // Only the copy in tools/ is ever run, and only while its bytes are the
 // pinned ones (D69): no setting names another program, and there is no
@@ -8,14 +9,7 @@
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
-import {
-	c2patoolObservation,
-	parseToolVersion,
-} from "@provenancetracker/core/extraction/c2patool-read.ts";
-import {
-	makeObservation,
-	type Observation,
-} from "@provenancetracker/core/extraction/observation.ts";
+import { parseToolVersion } from "@provenancetracker/core/extraction/c2patool-read.ts";
 import type { Env } from "../machine.ts";
 import { notPinned, pinOf } from "../pinned.ts";
 
@@ -82,43 +76,4 @@ export async function c2patoolVersion(tool: string): Promise<string | null> {
 	} catch {
 		return null;
 	}
-}
-
-/**
- * Read the C2PA manifest store of `file`, or, given `sidecar`, the .c2pa
- * file beside it, validated against `file`'s bytes.
- */
-export async function readC2pa(
-	file: string,
-	opts: { tool: string; sidecar?: string },
-): Promise<Observation> {
-	const version = await c2patoolVersion(opts.tool);
-	const args = opts.sidecar
-		? ["--external-manifest", opts.sidecar, file]
-		: [file];
-	let observation: Observation;
-	try {
-		const { stdout } = await execFileP(opts.tool, args, {
-			maxBuffer: 64 * 1024 * 1024,
-			timeout: 60000,
-		});
-		observation = c2patoolObservation({ stdout, version });
-	} catch (err) {
-		observation = c2patoolObservation({
-			err: err as { code?: string; stderr?: string; message?: string },
-			version,
-		});
-	}
-	if (!opts.sidecar) return observation;
-	// The same reading, recorded as the sidecar's.
-	return makeObservation({
-		kind: "c2pa-sidecar",
-		extractor: observation.extractor,
-		version: observation.version,
-		status: observation.status,
-		data: observation.data,
-		error: observation.error,
-		warnings: observation.warnings,
-		validation: observation.validation,
-	});
 }

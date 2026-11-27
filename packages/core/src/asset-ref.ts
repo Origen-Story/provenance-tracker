@@ -5,14 +5,11 @@
 // refs, use them as map keys and never look inside. Where a ref comes from is
 // the caller's business.
 //
-// Today the caller is the old app, whose assets live in three tables, so a ref
-// is "<table kind>:<row id>" ("produced:12"), the same text the manifest
-// builder's assetKey() produced before refs existed, so ingredient order and
-// labels are unchanged. The catalog (roadmap Phase 4) gives every asset one
-// stable id, and that id becomes the ref; nothing in the pure modules changes.
-//
-// Only the old app's adapters (timelines.js, signing.js, relationships.js)
-// call the functions below.
+// In a catalog every asset has one stable id, and that id, as text, is its
+// ref (catalog/timelines.ts, core-node's signing). Before the catalogs the
+// app kept assets in three tables, and a ref was "<table kind>:<row id>"
+// ("produced:12"): the Postgres migration and its tests still read refs of
+// that shape, which is what the functions below are for.
 
 export type AssetRef = string;
 

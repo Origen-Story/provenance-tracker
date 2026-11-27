@@ -2,7 +2,7 @@
 	"name": "@provenancetracker/core",
 	"version": "0.2.0",
 	"private": true,
-	"description": "The pure logic of Provenance Tracker: origin vocabulary and classifier, platform parsers, timeline formats, matching and composition, the manifest builder and the public export. No HTTP, no database, no file access.",
+	"description": "The pure logic of Provenance Tracker: origin vocabulary and classifier, platform parsers, timeline formats, matching and composition, the manifest builder, the public export and the catalog format. No HTTP and no file access: it runs SQL on a database it is handed.",
 	"license": "Apache-2.0",
 	"type": "module",
 	"exports": {

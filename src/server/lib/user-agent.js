@@ -1,17 +1,17 @@
 /**
- * Centralized User-Agent string for outbound HTTP requests.
+ * The User-Agent for requests the app makes when a person adds a file by its
+ * address (src/server/api/download.ts): the tracker's name and version, and a
+ * contact. Many servers throttle or refuse a client that does not say what it
+ * is.
  *
- * Wikimedia's User-Agent policy (https://meta.wikimedia.org/wiki/User-Agent_policy)
- * requires bots/scripts to identify themselves with app name + contact info.
- * Unidentified clients are throttled more aggressively and may be blocked.
- *
- * Set APP_CONTACT in .env to override the default (recommended: your email or
- * a URL pointing at the project repo).
+ * Set APP_CONTACT in .env to say who runs this copy (an email address, or a
+ * web address). Without it the contact is the project's own address.
  */
 
+import { TOOL } from "@provenancetracker/core-node/tool.ts";
+
 const APP_NAME = "ProvenanceTracker";
-const APP_VERSION = "1.0";
 const DEFAULT_CONTACT = "https://provenancetracker.org";
 const contact = process.env.APP_CONTACT || DEFAULT_CONTACT;
 
-export const USER_AGENT = `${APP_NAME}/${APP_VERSION} (${contact})`;
+export const USER_AGENT = `${APP_NAME}/${TOOL.version} (${contact})`;

@@ -19,13 +19,17 @@ All three are released, so none changes: a change is format 4, with an upgrade s
 
 The origin classes used in the statement and the export are IPTC Digital Source Type codes or `unknown`; their definitions and colours are in [`docs/vocabulary.md`](../docs/vocabulary.md).
 
+## An example
+
+[`public-viewer/example/example.provenance.json`](../public-viewer/example/example.provenance.json) is a public export of a made-up film, in the current format. It is written by a script beside it that runs the real builders, and a test holds it to what that script writes and to the schema.
+
 ## How the schemas are kept true
 
 Tests build each format from fixtures and validate it against its schema, which forbids fields it does not describe (`additionalProperties: false`), so a builder and its schema cannot drift apart without a failing test. The statements signed into the project's own films were also checked against the creator statement schema when it was written (docs/decisions.md D25).
 
 ## Changing a format
 
-A change that a reader of the current version could misread (a field removed, renamed or given a new meaning) is a new version: bump the version constant in the builder, add a new schema file, and leave the old one. Adding an optional field is not a new version.
+A change that a reader of the current version could misread (a field removed, renamed or given a new meaning) is a new version: bump the version constant in the builder, add a new schema file, and leave the old one. So is adding a field, even an optional one: every object in these schemas forbids fields it does not describe, so a reader holding the current schema would refuse a file that carried one more. A new version keeps the old schema beside the new one, and a reader says which versions it reads.
 
 ## Addresses
 

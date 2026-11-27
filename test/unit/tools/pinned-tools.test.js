@@ -25,14 +25,14 @@ describe("assetFor", () => {
 
 	it("keeps every asset name on the pinned version, so a half-done bump fails here", () => {
 		for (const [name, tool] of Object.entries(TOOLS)) {
-			// "…/c2patool-v0.27.1/" or "…%40contentauth%2Fc2pa-node%400.10.1/"
+			// "…/c2patool-v0.27.1/" or "…%40contentauth%2Fc2pa-node%400.12.1/"
 			const v = tool.version;
 			expect(
 				tool.releaseUrl.endsWith(`v${v}/`) || tool.releaseUrl.endsWith(`%40${v}/`),
 				`${name}: ${tool.releaseUrl}`,
 			).toBe(true);
 			for (const asset of Object.values(tool.assets)) {
-				// "c2patool-v0.27.1-x86_64…" or "c2pa-node_x86_64…-v0.10.1.zip"
+				// "c2patool-v0.27.1-x86_64…" or "c2pa-node_x86_64…-v0.12.1.zip"
 				expect(
 					asset.file.includes(`v${tool.version}-`) ||
 						asset.file.includes(`v${tool.version}.`),

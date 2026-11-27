@@ -1,6 +1,6 @@
 # Publishing a signed film
 
-How a signed film and its public record reach an audience, and stay checkable. Platforms re-encode uploads and usually drop Content Credentials, so the copy most people watch carries none. What connects that copy to the record is a link: the page link in the video's description, the page, and the signed file you host beside it (roadmap, "Stripping survival", rung 1).
+How a signed film and its public record reach an audience, and stay checkable. Platforms re-encode uploads and usually drop Content Credentials, so the copy most people watch carries none. What connects that copy to the record is a link: the page link in the video's description, the page, and the signed file you host beside it. This is the first of three ways a copy can lead back to its record after a platform has stripped it; the second and third, a published fingerprint and a mark in the film itself, are in [planned-features.md](planned-features.md).
 
 ## The checklist
 

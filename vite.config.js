@@ -15,7 +15,8 @@ export default defineConfig({
 	plugins: [react(), tailwindcss()],
 	server: {
 		port: 5173,
-		// The client imports the vocabulary from src/shared, outside `root`.
+		// The client imports from packages/core (the vocabulary, a few pure
+		// helpers), which is outside `root`; workspaces link it under node_modules.
 		fs: {
 			allow: [path.join(repoRoot, "src"), path.join(repoRoot, "node_modules")],
 		},

@@ -18,7 +18,7 @@ A project is a folder. Its catalog is one SQLite file, `<project>/.provenancetra
 packages/
   core/          # @provenancetracker/core: pure logic, no file access (D24; lint enforces it)
     src/
-      catalog/   # the catalog format (schema-v1.ts, spec/catalog/), reading, edits with history, timelines, signatures, rescan
+      catalog/   # the catalog formats (schema-v1.ts to schema-v3.ts, spec/catalog/), upgrades, reading, edits with history, timelines, signatures, rescan
       extraction/# observations, platform parsers and their dispatch
       origin/    # the origin classifier; origin-vocabulary.js holds the classes
       timeline/  # timeline formats, matching, composition, breakdown

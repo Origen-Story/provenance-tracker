@@ -64,7 +64,7 @@ Provenance Tracker is a **local, single-user tool** with no login. What keeps it
 - The API answers only the tracker's own pages. A request whose `Host` is not this machine, that says `localhost` and comes from another machine, whose `Origin` is another page, or that the browser labels cross-site gets a 403. This stops a web page you happen to visit from driving the local API.
 - The file preview serves image, video and audio files only, by their hash.
 
-What this does and does not protect is set out in [docs/threat-model.md](docs/threat-model.md). What the tracker sends off your machine (a time-stamp request when signing, and a file you ask it to download) is listed in [docs/network.md](docs/network.md). To report a vulnerability, see [SECURITY.md](SECURITY.md).
+What this does and does not protect is set out in [docs/threat-model.md](docs/threat-model.md). What the tracker sends off your machine (a time-stamp request when signing, a file you ask it to download, and, only once you have allowed it, a request for Content Credentials a file keeps on the web) is listed in [docs/network.md](docs/network.md). To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 For single-user local work, `npm run dev` (development) or `npm start` (production build served from `dist/`) is the intended usage pattern.
 

@@ -136,7 +136,7 @@ describe("webCredentialsFor (D74)", () => {
 		const m = t.machine();
 		updateSettings(m.settingsPath, (s) => setWebCredentialMode(s, "listed"));
 		const n = network((url) =>
-			url.startsWith("https://cai-manifests.adobe.com")
+			new URL(url).host === "cai-manifests.adobe.com"
 				? new Response(null, {
 						status: 302,
 						headers: { location: "https://elsewhere.example.net/m" },
@@ -151,7 +151,7 @@ describe("webCredentialsFor (D74)", () => {
 		// To plain http: refused under every mode.
 		updateSettings(m.settingsPath, (s) => setWebCredentialMode(s, "any"));
 		const down = network((url) =>
-			url.startsWith("https://")
+			new URL(url).protocol === "https:"
 				? new Response(null, {
 						status: 301,
 						headers: { location: "http://cai-manifests.adobe.com/m" },
@@ -166,7 +166,7 @@ describe("webCredentialsFor (D74)", () => {
 		const m = t.machine();
 		updateSettings(m.settingsPath, (s) => setWebCredentialMode(s, "listed"));
 		const n = network((url) =>
-			url.endsWith("/abc-123")
+			new URL(url).pathname === "/manifests/abc-123"
 				? new Response(null, {
 						status: 302,
 						headers: { location: "/manifests/abc-123.c2pa" },

@@ -21,7 +21,7 @@ Each time a rule above was not kept, with the date, what, and why. The list shou
 
 ## Removed with the app cutover
 
-`pg`, `drizzle-orm` and `drizzle-kit` went when the app moved onto the project catalogs, which use SQLite through Node's built-in `node:sqlite` with plain SQL (D14, D49). `@notionhq/client` went with the parked Notion sync, and `c2pa-node` 0.5.26 with the old reader, taking the `sharp` advisories that `scripts/audit.mjs` allowed with it: reading and signing are c2patool's. `png-chunk-text` and `png-chunks-extract` went earlier: nothing imported them (`packages/core-node/src/extract/png-text.ts` reads PNG chunks itself).
+`pg`, `drizzle-orm` and `drizzle-kit` went when the app moved onto the project catalogs, which use SQLite through Node's built-in `node:sqlite` with plain SQL (D14, D49). `@notionhq/client` went with the parked Notion sync, and `c2pa-node` 0.5.26 with the old reader, taking the `sharp` advisories that `scripts/audit.mjs` allowed with it: reading and signing were c2patool's at the time. (The C2PA library has read since D51 and signed since D53; c2patool signs only on a machine that chooses it.) `png-chunk-text` and `png-chunks-extract` went earlier: nothing imported them (`packages/core-node/src/extract/png-text.ts` reads PNG chunks itself).
 
 ## The C2PA library
 

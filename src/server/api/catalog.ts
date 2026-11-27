@@ -294,7 +294,7 @@ export interface CatalogApiOptions {
 	machine: Machine;
 	/** The jobs this server runs (one runner per server). */
 	jobs?: JobRunner;
-	/** What extract reads files with; this machine's ExifTool and c2patool when not given. */
+	/** What extract reads files with; this machine's ExifTool and the C2PA library when not given. */
 	readers?: () => Promise<Reader[]>;
 	/** For downloads; tests give their own, so no test reaches the network. */
 	fetchImpl?: (url: string, init: RequestInit) => Promise<globalThis.Response>;
@@ -1574,7 +1574,7 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 		);
 	}
 
-	// Sign an output: a job, since c2patool reads the whole film and each source.
+	// Sign an output: a job, since the engine reads the whole film and each source.
 	api.post(
 		"/projects/:projectId/assets/:assetId/sign",
 		(req: Request, res: Response) => {

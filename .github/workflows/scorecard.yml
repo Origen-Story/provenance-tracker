@@ -2,8 +2,9 @@ name: Scorecard
 
 # OpenSSF Scorecard: a public checklist of security practice (branch
 # protection, pinned dependencies, code review, signed releases and so on).
-# Results are published to the public Scorecard service so the README can show
-# the badge, and uploaded to the Security tab. It runs on main only.
+# Results are published to the public Scorecard service, where anyone can
+# look the repository up (the README does not show a badge yet), and uploaded
+# to the Security tab. It runs on main only.
 # The scorecard action refuses to publish if this workflow gains top-level
 # env or defaults, or job-level permissions beyond the ones below.
 

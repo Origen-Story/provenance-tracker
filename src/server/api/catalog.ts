@@ -1693,10 +1693,9 @@ export function catalogApi(opts: CatalogApiOptions): Router {
 						generator: { name: "provenance-tracker", version: TOOL.version },
 					}),
 				);
-				res.setHeader(
-					"Content-Disposition",
-					`attachment; filename="${fileName.replace(/["\\]/g, "_")}"`,
-				);
+				// Any name: one with letters a header cannot carry as they are
+				// (outside Latin-1) is sent encoded, with a plain fallback.
+				res.attachment(fileName);
 				res.json(data);
 			});
 		},

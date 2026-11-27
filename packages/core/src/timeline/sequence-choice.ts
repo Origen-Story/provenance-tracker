@@ -9,22 +9,37 @@
 //   - otherwise the tracker refuses to guess and lists them, so the person
 //     can choose.
 
+/** One sequence of a timeline file, as the formats' sequences() lists them. */
+export interface SequenceInfo {
+	index: number;
+	name: string;
+	/** Its length; null when the file does not say. */
+	seconds: number | null;
+	fps?: number | null;
+}
+
+/** The sequence to use and why, or a refusal to guess with the sequences to choose from. */
+export type SequenceChoice<S extends SequenceInfo = SequenceInfo> =
+	| { index: number; by: "chosen" | "only" | "length" }
+	| { refuse: string; choices: S[] };
+
 /** How far a sequence's length may be from the file's and still be "the same": half a second, or a frame if longer. */
-export function lengthTolerance(fps) {
+export function lengthTolerance(fps?: number | null): number {
 	return Math.max(0.5, fps ? 1 / fps : 0);
 }
 
-const secondsText = (s) =>
+const secondsText = (s: number | null | undefined): string =>
 	s == null ? "unknown length" : `${Math.round(s * 10) / 10} s`;
 
 /**
- * @param {Array<{ index: number, name: string, seconds: number|null, fps?: number }>} list
- *   the file's sequences (formats' sequences())
- * @param {{ requested?: number|null, outputSeconds?: number|null }} [opts]
- *   the sequence a person chose, and the length of the edit's own file
- * @returns {{ index: number, by: "chosen"|"only"|"length" } | { refuse: string, choices: Array }}
+ * @param list the file's sequences
+ * @param opts.requested the sequence a person chose
+ * @param opts.outputSeconds the length of the edit's own file
  */
-export function chooseSequence(list, opts = {}) {
+export function chooseSequence<S extends SequenceInfo>(
+	list: S[],
+	opts: { requested?: number | null; outputSeconds?: number | null } = {},
+): SequenceChoice<S> {
 	const requested = opts.requested ?? null;
 	const outputSeconds = opts.outputSeconds ?? null;
 	if (!list.length)
@@ -39,7 +54,7 @@ export function chooseSequence(list, opts = {}) {
 				};
 	}
 	if (list.length === 1) return { index: list[0].index, by: "only" };
-	if (outputSeconds > 0) {
+	if (outputSeconds !== null && outputSeconds > 0) {
 		const close = list.filter(
 			(s) =>
 				s.seconds != null &&

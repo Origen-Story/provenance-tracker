@@ -1,10 +1,11 @@
 // Writes example.provenance.json: a made-up 96-second film, run through the
 // real statement and export builders so the demo always matches the format.
-//   node public-viewer/example/make-example.mjs
+//   node public-viewer/example/make-example.mjs [output file]
 // Every name, signer and hash here is invented.
 import { writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { argv } from "node:process";
 import { buildCreatorStatement } from "@provenancetracker/core/manifest/build.js";
 import { buildPublicExport } from "@provenancetracker/core/manifest/public-export.js";
 import { sourceTypeUri } from "@provenancetracker/core/origin-vocabulary.js";
@@ -311,6 +312,9 @@ const report = {
 		activeManifest: {
 			success: [
 				{ code: "claimSignature.validated" },
+				// The made-up signer is on the trust list. A report that does not
+				// say so reads as unchecked, never as trusted (D67).
+				{ code: "signingCredential.trusted" },
 				{ code: "assertion.bmffHash.match" },
 				{
 					code: "timeStamp.validated",
@@ -352,6 +356,9 @@ const exported = buildPublicExport({
 	generator: { name: "provenance-tracker", version: "example" },
 });
 
-const out = path.join(import.meta.dirname, "example.provenance.json");
+// Written beside this script, or to the path given (the test gives one, so
+// it can compare without touching the checkout).
+const out =
+	argv[2] || path.join(import.meta.dirname, "example.provenance.json");
 writeFileSync(out, JSON.stringify(exported, null, 2) + "\n");
 console.log("wrote", out);

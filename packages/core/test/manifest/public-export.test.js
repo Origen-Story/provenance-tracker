@@ -396,6 +396,41 @@ describe("buildPublicExport", () => {
 		});
 	});
 
+	it("still reads a copy signed with a version 2 statement, the first to carry the timeline", () => {
+		// Version 2 as it was written: version 3 added a class and a spectrum
+		// position to each clip the tracker could not match, and nothing else.
+		expect(statement.unresolved.length).toBeGreaterThan(0);
+		const v2 = {
+			...statement,
+			version: 2,
+			unresolved: statement.unresolved.map(
+				// Taken out, as version 2 had neither.
+				({ originClass, position, ...rest }) => rest,
+			),
+		};
+		const old = buildPublicExport({
+			signature: { ...signature, statementJson: JSON.stringify(v2) },
+			generatedAt: "2026-11-14T10:00:00Z",
+			generator: GENERATOR,
+		});
+		expect(validate(SCHEMA, old)).toEqual([]);
+		expect(old.statement.statementVersion).toBe(2);
+		// Everything the page draws is the same as from a version 3 statement,
+		// but for what version 3 added.
+		expect(old.composition).toEqual(e.composition);
+		expect(old.ingredients).toEqual(e.ingredients);
+		expect(old.statement).toEqual({ ...e.statement, statementVersion: 2 });
+		// A clip the tracker could not match has no class in version 2: the
+		// record says unknown, never a guess.
+		expect(old.untracked).toEqual(
+			e.untracked.map((u) => ({
+				...u,
+				originClass: "unknown",
+				position: "unknown",
+			})),
+		);
+	});
+
 	it("refuses a copy signed before the statement carried the timeline", () => {
 		const old = {
 			...signature,
@@ -504,8 +539,14 @@ describe("export format 2's additions (D57)", () => {
 			"https://media.example.org/film.signed.v2.mp4",
 		);
 		expect(published.page.url).toBe("https://example.org/films/film");
-		// How many details were left out, never which.
-		expect(published.withheld).toEqual({ fromRecord: 2, fromSignedFile: 0 });
+		// The record leaves nothing out, so it does not say it left two things
+		// out because a list names two: nothing applies that list (D76). The
+		// note the list names is still in the record.
+		expect(published.withheld).toEqual({ fromRecord: 0, fromSignedFile: 0 });
+		expect(published.ingredients).toEqual(e.ingredients);
+		expect(JSON.stringify(published)).toContain(
+			"Credentials missing after a phone update.",
+		);
 		expect(JSON.stringify(published)).not.toContain("ingredient.note");
 		for (const bad of [
 			"http://media.example.org/film.mp4",

@@ -1,26 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { c2patoolObservation } from "../../src/extraction/c2patool-read.ts";
+import {
+	activeManifestOf,
+	parseToolVersion,
+} from "../../src/extraction/c2patool-read.ts";
 
-describe("c2patoolObservation", () => {
-	it("calls a file type C2PA cannot be embedded in absent, keeping c2patool's reason", () => {
-		const obs = c2patoolObservation({
-			err: { code: "1", stderr: "Error: Unsupported file type\n" },
-			version: "0.27.1",
-		});
-		expect(obs).toMatchObject({
-			status: "absent",
-			error:
-				"c2patool does not read this file type (Error: Unsupported file type)",
-			data: null,
-		});
+describe("parseToolVersion", () => {
+	it("reads the version out of what the tool prints, or nothing", () => {
+		expect(parseToolVersion("c2patool 0.27.1\n")).toBe("0.27.1");
+		expect(parseToolVersion("c2patool v0.28.0-rc.1")).toBe("0.28.0-rc.1");
+		expect(parseToolVersion("no number here")).toBeNull();
+		expect(parseToolVersion(undefined)).toBeNull();
+	});
+});
+
+describe("activeManifestOf", () => {
+	const manifest = { title: "film.mp4" };
+
+	it("follows a label into the store's manifests, as current readers give it", () => {
+		expect(
+			activeManifestOf({
+				active_manifest: "urn:m",
+				manifests: { "urn:m": manifest },
+			}),
+		).toBe(manifest);
 	});
 
-	it("still calls any other failure unreadable", () => {
+	it("takes the manifest itself, as an older reader gave it", () => {
+		expect(activeManifestOf({ active_manifest: manifest })).toBe(manifest);
+	});
+
+	it("is nothing for a store with no active manifest, a label that leads nowhere, or no store", () => {
+		expect(activeManifestOf({ manifests: { "urn:m": manifest } })).toBeNull();
 		expect(
-			c2patoolObservation({
-				err: { code: "1", stderr: "Error: claim signature is not valid" },
-				version: "0.27.1",
-			}).status,
-		).toBe("unreadable");
+			activeManifestOf({ active_manifest: "urn:x", manifests: {} }),
+		).toBeNull();
+		expect(activeManifestOf(null)).toBeNull();
+		expect(activeManifestOf("text")).toBeNull();
 	});
 });

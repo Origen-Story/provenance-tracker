@@ -1,5 +1,5 @@
 // Signing a finished edit: the certificate this machine signs the project
-// with, signing a new copy (a job: c2patool reads the film and each source),
+// with, signing a new copy (a job: the engine reads the film and each source),
 // and the signed copies so far.
 
 import { useState } from "react";
@@ -314,10 +314,9 @@ function SignedCopies({
 						</div>
 						{full && (
 							<p className="text-xs text-text-secondary break-all">
-								Check it yourself, from the tracker's folder:{" "}
-								<code className="bg-border/40 px-1 rounded select-all">
-									tools\c2patool\c2patool.exe "{full}"
-								</code>
+								The status above is the tracker's own reading of this copy, made
+								with the C2PA library as it was signed. The file is at{" "}
+								<span className="select-all">{full}</span>.
 							</p>
 						)}
 					</Card>

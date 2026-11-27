@@ -30,13 +30,20 @@ import {
 } from "@provenancetracker/core-node/settings.ts";
 import { createApp } from "../../../src/server/app.ts";
 import { JobRunner } from "../../../src/server/api/jobs.ts";
+import { expectSoundCatalogs } from "../../../packages/core-node/test/helpers/verify-catalogs.ts";
 
 const ME = { kind: "person" as const, name: "Test Person" };
 const temps: string[] = [];
 const servers: Server[] = [];
 afterEach(async () => {
 	for (const s of servers.splice(0)) await new Promise((r) => s.close(r));
-	for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true });
+	try {
+		// Every catalog a test left behind is held to its own rules.
+		expectSoundCatalogs(temps);
+	} finally {
+		for (const d of temps.splice(0))
+			rmSync(d, { recursive: true, force: true });
+	}
 });
 
 function tempDir(): string {

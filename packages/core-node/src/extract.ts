@@ -4,6 +4,11 @@
 // that never changes. Sidecars (.xmp, .c2pa) are read as part of the file
 // they sit beside. Running it again reads nothing; a new reader version
 // reads again, beside the old rows.
+//
+// One reading is not final (D74): a file that keeps its Content Credentials
+// on the web, when they were not obtained. It is read again once this
+// machine's setting would fetch that address, and a new row is written only
+// when what it says has changed.
 
 import { statSync } from "node:fs";
 import {
@@ -16,10 +21,18 @@ import {
 	fromCatalogPath,
 	isCatalogPath,
 } from "@provenancetracker/core/catalog/paths.ts";
+import {
+	credentialsWaiting,
+	type WaitingHost,
+} from "@provenancetracker/core/catalog/on-the-web.ts";
 import { finishRun, startRun } from "@provenancetracker/core/catalog/runs.ts";
 import { LIBRARY_EXTRACTOR } from "@provenancetracker/core/extraction/c2pa-library-read.ts";
 import type { Observation } from "@provenancetracker/core/extraction/observation.ts";
 import { pairSidecars } from "@provenancetracker/core/extraction/sidecars.ts";
+import {
+	decideFetch,
+	onTheWebOfReading,
+} from "@provenancetracker/core/extraction/web-credentials.ts";
 import {
 	loadLibraryReader,
 	readC2paWithLibrary,
@@ -27,7 +40,8 @@ import {
 import { exiftoolVersion, readExif } from "./extract/exiftool.ts";
 import { observePngText } from "./extract/png-text.ts";
 import type { Machine } from "./machine.ts";
-import { fetchesRemoteCredentials, readSettings } from "./settings.ts";
+import { readSettings, webCredentialChoiceOf } from "./settings.ts";
+import { webCredentialsFor } from "./web-credentials.ts";
 import type { OpenProject } from "./project.ts";
 import { listRoots } from "./roots.ts";
 import { UNSORTED } from "./scan.ts";
@@ -55,9 +69,7 @@ export interface Reader {
 export async function machineReaders(machine: Machine): Promise<Reader[]> {
 	const exif = await exiftoolVersion();
 	const library = await loadLibraryReader(machine.env, {
-		remoteManifests: fetchesRemoteCredentials(
-			readSettings(machine.settingsPath),
-		),
+		web: webCredentialsFor(machine),
 	});
 	const c2pa = "unavailable" in library ? null : library.version;
 	return [
@@ -108,6 +120,11 @@ export interface ExtractReport {
 	skipped: Array<{ root: string; path: string; reason: string }>;
 	/** Contents with no live file on this machine; read when their root is here. */
 	notHere: number;
+	/**
+	 * Hosts that hold Content Credentials this project's files name and do not
+	 * have, after this run (D74): what was not fetched, and why.
+	 */
+	onTheWeb: WaitingHost[];
 }
 
 interface LiveFile {
@@ -171,6 +188,7 @@ export async function extractProject(
 		sidecars: 0,
 		skipped: [],
 		notHere: 0,
+		onTheWeb: [],
 	};
 	try {
 		// Every live file in the roots that are here, by root.
@@ -221,11 +239,47 @@ export async function extractProject(
 			   status, data, error, warnings, validation, observed_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		);
+		// The newest reading of a file's own credentials by this reader.
+		const newest = db.prepare(
+			`SELECT status, data, error FROM observations
+			 WHERE content_sha256 = ? AND kind = ? AND extractor = ? AND extractor_version = ?
+			   AND source_sha256 IS NULL ORDER BY id DESC LIMIT 1`,
+		);
+		type Stored = { status: string; data: string | null; error: string | null };
+		const newestOf = (sha: string, r: Reader) =>
+			newest.get(sha, r.kind, r.extractor, r.version ?? "unknown") as
+				Stored | undefined;
+		const choice = webCredentialChoiceOf(readSettings(machine.settingsPath));
+		/** Whether a reading already made says credentials on the web that would be fetched now. */
+		const dueAgain = (sha: string, r: Reader): boolean => {
+			if (r.kind !== "c2pa") return false;
+			const row = newestOf(sha, r);
+			const w =
+				row &&
+				onTheWebOfReading({
+					status: row.status,
+					data: row.data ? JSON.parse(row.data) : null,
+					error: row.error,
+				});
+			return !!w && decideFetch(choice, w.address).fetch;
+		};
 		const done = (sha: string, source: string | null, r: Reader) =>
 			!opts.again &&
 			Boolean(
 				seen.get(sha, r.kind, r.extractor, r.version ?? "unknown", source),
+			) &&
+			!(source === null && dueAgain(sha, r));
+		/** A reading that says again, word for word, that credentials on the web were not obtained. */
+		const saysTheSame = (sha: string, r: Reader, o: Observation): boolean => {
+			if (o.kind !== "c2pa" || o.status !== "unreadable" || o.data === null)
+				return false;
+			const row = newestOf(sha, r);
+			return (
+				row?.status === o.status &&
+				row.error === o.error &&
+				row.data === JSON.stringify(o.data)
 			);
+		};
 		const record = (sha: string, source: string | null, o: Observation) => {
 			insert.run(
 				sha,
@@ -304,6 +358,15 @@ export async function extractProject(
 				skip(job.file, "changed while it was being read; scan again");
 				continue;
 			}
+			// A failed fetch tried again and failing the same way adds no row.
+			if (
+				!opts.again &&
+				!job.sidecar &&
+				saysTheSame(job.file.sha256, job.reader, observation)
+			) {
+				finished++;
+				continue;
+			}
 			inTransaction(db, () =>
 				record(job.file.sha256, job.sidecar?.sha256 ?? null, observation),
 			);
@@ -343,6 +406,7 @@ export async function extractProject(
 				counted.add(sidecar.assetId);
 			}
 			report.sidecars = counted.size;
+			report.onTheWeb = credentialsWaiting(db);
 			finishRun(db, runId, {
 				outcome: report.outcome,
 				summary: {
@@ -350,6 +414,11 @@ export async function extractProject(
 					written: report.written,
 					sidecars: report.sidecars,
 					notHere: report.notHere,
+					onTheWeb: report.onTheWeb.map((w) => ({
+						host: w.host,
+						files: w.files,
+						outcome: w.outcome,
+					})),
 					skipped: report.skipped.slice(0, 100),
 					skippedCount: report.skipped.length,
 				},

@@ -11,12 +11,14 @@
 // pinned C2PA trust lists (tools/trust-lists/), checked the same way and
 // given as text, so nothing is fetched to load them: the signing list for
 // claims, and the time-stamp list for time stamps.
-// What reading may send out (docs/network.md): only a request for Content
-// Credentials a file says are stored on the web (Adobe Firefly video), and
-// only while this machine's setting allows it (on unless turned off). OCSP is
-// off, the trust lists are given as text, and the library is handed a fetch
-// that refuses, so it can never fetch a trust list. Signing uses the same
-// settings, so the same switch covers ingredients read while signing.
+// What the library may send out (docs/network.md): nothing when it reads.
+// OCSP is off, the trust lists are given as text, it is handed a fetch that
+// refuses, so it can never fetch a trust list, and its fetching of Content
+// Credentials a file says are stored on the web is off for good (D74). For
+// such a file it names the address and stops; the tracker fetches, when this
+// machine's setting allows that host (web-credentials.ts), and hands the
+// bytes back to be checked against the file, as it does for a .c2pa sidecar.
+// Signing uses the same settings and the same fetch.
 
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -27,8 +29,14 @@ import {
 	type LibraryRun,
 } from "@provenancetracker/core/extraction/c2pa-library-read.ts";
 import type { Observation } from "@provenancetracker/core/extraction/observation.ts";
+import {
+	hostOfAddress,
+	remoteAddressOf,
+	type OnTheWeb,
+} from "@provenancetracker/core/extraction/web-credentials.ts";
 import type { Env } from "../machine.ts";
 import { notPinned, pinOf, pinnedTrustLists } from "../pinned.ts";
+import type { WebFetch } from "../web-credentials.ts";
 
 /** The repository's tools/ folder, from this file (packages/core-node/src/extract/). */
 const TOOLS = path.resolve(
@@ -55,9 +63,27 @@ export const TSA_TRUST_LIST = path.join(
 export type Lib = typeof import("@contentauth/c2pa-node");
 type Context = InstanceType<Lib["Context"]>;
 
+/** What a file's credentials read as, and where they came from when not from the file. */
+export interface StoreRead {
+	/** The manifest store; null when the file has none. */
+	store: LibraryRun["store"];
+	/** Set when the file keeps its credentials on the web and they were fetched. */
+	web?: { address: string; bytes: Buffer };
+}
+
+/** The file keeps its credentials on the web, and this machine does not have them. */
+export class CredentialsNotFetched extends Error {
+	readonly onTheWeb: OnTheWeb;
+	constructor(onTheWeb: OnTheWeb) {
+		super(`Content Credentials at ${onTheWeb.address} were not fetched`);
+		this.onTheWeb = onTheWeb;
+	}
+}
+
 export interface LibraryReader {
 	version: string;
-	read: (file: string, sidecar?: string) => Promise<LibraryRun["store"]>;
+	/** Throws CredentialsNotFetched for credentials on the web it does not have. */
+	read: (file: string, sidecar?: string) => Promise<StoreRead>;
 }
 
 /** The loaded library, its version, and the settings every reading and signing uses. */
@@ -120,12 +146,13 @@ export function versionMismatch(
 }
 
 /**
- * The settings every reading uses: the pinned trust list, no OCSP, and
- * remote manifests fetched only when this machine allows it.
+ * The settings every reading uses: the pinned trust list, no OCSP, and no
+ * fetching of credentials a file keeps on the web (the tracker fetches those
+ * itself, D74).
  */
 export function readerSettings(
 	trustAnchors: string,
-	opts: { userAnchors?: string; remoteManifests: boolean },
+	opts: { userAnchors?: string } = {},
 ) {
 	return {
 		trust: {
@@ -134,7 +161,7 @@ export function readerSettings(
 		},
 		verify: {
 			verifyTrust: true,
-			remoteManifestFetch: opts.remoteManifests,
+			remoteManifestFetch: false,
 			ocspFetch: false,
 		},
 	};
@@ -186,16 +213,14 @@ const loaded = new Map<
  * Load the library once per process (and once per set of options), with the
  * settings every reading and signing uses. Its binary path is read by the
  * library on first use, so it is set before the first import.
- * @param opts.remoteManifests fetch Content Credentials a file says are
- *   stored on the web (the machine's setting; tests pass false)
  * @param opts.userAnchors certificates this machine also trusts, as PEM text:
  *   the library reports a file signed under one as trusted by a "User" anchor
  */
 export function loadLibrary(
 	env: Env,
-	opts: { remoteManifests: boolean; userAnchors?: string },
+	opts: { userAnchors?: string } = {},
 ): Promise<LoadedLibrary | { unavailable: string }> {
-	const key = `${opts.remoteManifests}|${opts.userAnchors ?? ""}`;
+	const key = opts.userAnchors ?? "";
 	const known = loaded.get(key);
 	if (known) return known;
 	const attempt = (async () => {
@@ -263,7 +288,11 @@ export function loadLibrary(
 	return attempt;
 }
 
-/** Read one file, or a .c2pa sidecar against its file, with the loaded library. */
+/**
+ * Read one file, or a .c2pa sidecar against its file, with the loaded
+ * library alone. A file that keeps its credentials on the web makes it throw,
+ * naming the address: readWithWeb is the reading that follows it.
+ */
 export async function readStore(
 	loaded: LoadedLibrary,
 	file: string,
@@ -280,16 +309,65 @@ export async function readStore(
 	return reader ? reader.json() : null;
 }
 
-/** The library as a reader, for `extract`. */
+/**
+ * Read one file's own credentials: those inside it, or, when it carries only
+ * an address for them, what `web` gives for that address, checked against the
+ * file by the library exactly as a .c2pa sidecar is.
+ * @throws CredentialsNotFetched when they are on the web and `web` did not
+ *   give them, or gave something that is not Content Credentials
+ */
+export async function readWithWeb(
+	loaded: LoadedLibrary,
+	file: string,
+	web: WebFetch,
+): Promise<StoreRead> {
+	try {
+		return { store: await readStore(loaded, file) };
+	} catch (err) {
+		const address = remoteAddressOf(err as Error);
+		if (!address) throw err;
+		const got = await web(address);
+		if ("onTheWeb" in got) throw new CredentialsNotFetched(got.onTheWeb);
+		const { lib, context } = loaded;
+		try {
+			const reader = await lib.Reader.fromManifestDataAndAsset(
+				got.bytes,
+				{ path: file },
+				context,
+			);
+			return {
+				store: reader ? reader.json() : null,
+				web: { address, bytes: got.bytes },
+			};
+		} catch (unread) {
+			const at = hostOfAddress(address);
+			throw new CredentialsNotFetched({
+				address,
+				host: "host" in at ? at.host : null,
+				outcome: "failed",
+				detail: `what the address returned could not be read as Content Credentials (${String((unread as Error).message).trim() || "unknown error"})`,
+			});
+		}
+	}
+}
+
+/**
+ * The library as a reader, for `extract`.
+ * @param opts.web this machine's fetch for credentials a file keeps on the
+ *   web (webCredentialsFor); tests give one that never reaches the network
+ */
 export async function loadLibraryReader(
 	env: Env,
-	opts: { remoteManifests: boolean; userAnchors?: string },
+	opts: { web: WebFetch; userAnchors?: string },
 ): Promise<LibraryReader | { unavailable: string }> {
-	const loaded = await loadLibrary(env, opts);
+	const loaded = await loadLibrary(env, { userAnchors: opts.userAnchors });
 	if ("unavailable" in loaded) return loaded;
 	return {
 		version: loaded.version,
-		read: (file, sidecar) => readStore(loaded, file, sidecar),
+		read: async (file, sidecar) =>
+			sidecar
+				? { store: await readStore(loaded, file, sidecar) }
+				: readWithWeb(loaded, file, opts.web),
 	};
 }
 
@@ -307,9 +385,20 @@ export async function readC2paWithLibrary(
 			unavailable: reader.unavailable,
 		});
 	try {
-		const store = await reader.read(file, sidecar);
-		return libraryObservation({ kind, version: reader.version, store });
+		const { store, web } = await reader.read(file, sidecar);
+		return libraryObservation({
+			kind,
+			version: reader.version,
+			store,
+			fetchedFrom: web?.address,
+		});
 	} catch (err) {
+		if (err instanceof CredentialsNotFetched)
+			return libraryObservation({
+				kind,
+				version: reader.version,
+				onTheWeb: err.onTheWeb,
+			});
 		return libraryObservation({
 			kind,
 			version: reader.version,

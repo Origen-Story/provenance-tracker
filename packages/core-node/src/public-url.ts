@@ -1,12 +1,15 @@
 // Fetch a web address only if it leads to the public internet.
 //
-// The tracker downloads a file from an address a person types (adding a file
-// by its address). Without a check, such an address could point the server
-// at this machine or the local network ("server-side request forgery"):
-// http://localhost:5432, a router's admin page, a cloud metadata address. The
+// The tracker fetches two kinds of address it did not choose: one a person
+// types (adding a file by its address, src/server/api/download.ts), and one a
+// file gives for Content Credentials it keeps on the web (web-credentials.ts,
+// D74). Without a check, either could point this machine at itself or the
+// local network ("server-side request forgery"): http://localhost:5432, a
+// router's admin page, a cloud metadata address. For the typed address the
 // API only answers this machine (local-only.js), so only the person at the
 // keyboard can send one; this is the second line, and it is what CodeQL's
-// js/request-forgery asks for.
+// js/request-forgery asks for. An address inside a file has no such first
+// line: anyone who made the file chose it.
 //
 // What it checks, on the first request and on every redirect: the scheme is
 // http or https, the address carries no user name or password, and every
@@ -255,6 +258,8 @@ export const requestAt: FetchAt = (href, init, address) =>
  * Fetch a web address, refusing any address (first or redirected) that is
  * not public, and connecting to the address that was checked. `lookup` and
  * `fetchImpl` are injectable for tests.
+ * @param eachHop called with the first address and every address it
+ *   redirects to, before anything is asked of it; it throws to refuse one
  */
 export async function fetchPublic(
 	raw: string,
@@ -263,10 +268,17 @@ export async function fetchPublic(
 		lookup,
 		fetchImpl = requestAt,
 		maxRedirects = 5,
-	}: { lookup: Lookup; fetchImpl?: FetchAt; maxRedirects?: number },
+		eachHop,
+	}: {
+		lookup: Lookup;
+		fetchImpl?: FetchAt;
+		maxRedirects?: number;
+		eachHop?: (url: URL) => void;
+	},
 ): Promise<Response> {
 	let url = parsePublicUrl(raw);
 	for (let hop = 0; ; hop++) {
+		eachHop?.(url);
 		const [address] = await assertPublicHost(url, lookup);
 		const res = await fetchImpl(
 			url.href,

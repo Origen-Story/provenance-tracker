@@ -33,6 +33,7 @@ import {
 } from "../src/project.ts";
 import { addRoot } from "../src/roots.ts";
 import { scanProject } from "../src/scan.ts";
+import { setWebCredentialMode, updateSettings } from "../src/settings.ts";
 import { extractProject } from "../src/extract.ts";
 import { certificateInfo } from "../src/sign/certificates.ts";
 import { signingEngineFor } from "../src/sign/engines/index.ts";
@@ -135,6 +136,9 @@ function tinyPng(file: string, rgb: number[]) {
 /** A project whose output (export.png) has a timeline placing a still and a sound, and a saved statement. */
 async function world(opts: { signing?: boolean; statement?: boolean } = {}) {
 	const m = machine();
+	// c2patool signs only on a machine set to fetch Content Credentials on the
+	// web from any host (D74). No file here names an address, so nothing is.
+	updateSettings(m.settingsPath, (s) => setWebCredentialMode(s, "any"));
 	const dir = folder("w");
 	const media = path.join(dir, "Demo", "media");
 	mkdirSync(media, { recursive: true });
@@ -956,7 +960,7 @@ async function readWith(
 				{ encoding: "utf8" },
 			).stdout,
 		);
-	const loaded = await loadLibrary({}, { remoteManifests: false });
+	const loaded = await loadLibrary({});
 	if ("unavailable" in loaded) throw new Error(loaded.unavailable);
 	return readStore(loaded, file, sidecar);
 }
@@ -1349,7 +1353,7 @@ describe("keeping a source's details out of the signed film (D62)", () => {
 		"lists what a source's credentials reveal, redacts it or leaves them out, records the choice, and carries it to the next signing",
 		async () => {
 			const w = await world();
-			const loaded = await loadLibrary({}, { remoteManifests: false });
+			const loaded = await loadLibrary({});
 			if ("unavailable" in loaded) throw new Error(loaded.unavailable);
 			// still.png gains credentials of its own, naming its author, as a
 			// camera app or a generator would sign it; a rescan sees a re-render.
@@ -1473,7 +1477,7 @@ describe("keeping a source's details out of the signed film (D62)", () => {
 
 describe("what a signing remembers, and what it reads first (D63)", () => {
 	const library = async () => {
-		const loaded = await loadLibrary({}, { remoteManifests: false });
+		const loaded = await loadLibrary({});
 		if ("unavailable" in loaded) throw new Error(loaded.unavailable);
 		return loaded;
 	};
@@ -1728,7 +1732,7 @@ describe("what a signing remembers, and what it reads first (D63)", () => {
 
 describe("everything a source says is reviewed, and the signed copy is checked (D64)", () => {
 	const library = async () => {
-		const loaded = await loadLibrary({}, { remoteManifests: false });
+		const loaded = await loadLibrary({});
 		if ("unavailable" in loaded) throw new Error(loaded.unavailable);
 		return loaded;
 	};

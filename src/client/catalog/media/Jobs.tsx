@@ -35,6 +35,9 @@ export function useJobs(projectId: string) {
 			qc.invalidateQueries({ queryKey: ["catalog", projectId, "summary"] });
 			qc.invalidateQueries({ queryKey: ["catalog", projectId, "assets"] });
 			qc.invalidateQueries({ queryKey: ["catalog", projectId, "asset"] });
+			qc.invalidateQueries({
+				queryKey: ["catalog", projectId, "credentials-on-the-web"],
+			});
 		}
 	}, [q.data, projectId, qc]);
 	return q;

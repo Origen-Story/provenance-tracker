@@ -5,7 +5,9 @@ import path from "node:path";
 import { crc32 } from "node:zlib";
 import { editRow, type Actor } from "@provenancetracker/core/catalog/edit.ts";
 import { verifyCatalog } from "@provenancetracker/core/catalog/verify.ts";
+import { libraryObservation } from "@provenancetracker/core/extraction/c2pa-library-read.ts";
 import { makeObservation } from "@provenancetracker/core/extraction/observation.ts";
+import { decideFetch } from "@provenancetracker/core/extraction/web-credentials.ts";
 import { endExifTool } from "../src/extract/exiftool.ts";
 import {
 	extractProject,
@@ -21,6 +23,14 @@ import {
 } from "../src/project.ts";
 import { addRoot } from "../src/roots.ts";
 import { scanProject } from "../src/scan.ts";
+import {
+	decideWebCredentialHost,
+	readSettings,
+	setWebCredentialMode,
+	updateSettings,
+	webCredentialChoiceOf,
+	type Settings,
+} from "../src/settings.ts";
 import { machinesForTests } from "./helpers/machine.ts";
 
 const t = machinesForTests();
@@ -357,5 +367,245 @@ describe("extractProject", () => {
 		// No manifest in the file, or the library not installed here (npm run tools:fetch).
 		expect(["absent", "unavailable"]).toContain(c2pa.status);
 		expect(report.written["exif ok"]).toBe(1);
+	});
+});
+
+describe("files that keep their Content Credentials on the web (D74)", () => {
+	const ADDRESS = "https://credentials.example.org/m/clip";
+	const HOST = "credentials.example.org";
+	/**
+	 * A stand-in for the library: clip.png keeps its credentials on the web,
+	 * and `web` says what asking for them gives, as this machine is set.
+	 */
+	function webReader(
+		m: Machine,
+		web: () => "ok" | { failed: string },
+		calls: string[] = [],
+	): Reader[] {
+		const base = { kind: "c2pa" as const, version: "9.9.9" };
+		return [
+			{
+				kind: "c2pa",
+				extractor: "c2pa-node",
+				version: "9.9.9",
+				read: async (f) => {
+					calls.push(path.basename(f));
+					if (path.basename(f) !== "clip.png")
+						return libraryObservation({ ...base, store: null });
+					const decision = decideFetch(
+						webCredentialChoiceOf(readSettings(m.settingsPath)),
+						ADDRESS,
+					);
+					if (!decision.fetch)
+						return libraryObservation({ ...base, onTheWeb: decision.onTheWeb });
+					const got = web();
+					return got === "ok"
+						? libraryObservation({
+								...base,
+								store: { active_manifest: "m", manifests: { m: {} } },
+								fetchedFrom: ADDRESS,
+							})
+						: libraryObservation({
+								...base,
+								onTheWeb: {
+									address: ADDRESS,
+									host: HOST,
+									outcome: "failed",
+									detail: got.failed,
+								},
+							});
+				},
+			},
+		];
+	}
+	const c2paRows = (p: OpenProject, bytes: Buffer) =>
+		observations(p)
+			.filter((o) => o.kind === "c2pa" && o.sha256 === sha(bytes))
+			.map((o) => ({
+				status: o.status,
+				outcome: o.data ? JSON.parse(o.data).onTheWeb?.outcome : undefined,
+			}));
+
+	it("records one not fetched, reports its host, and reads it again only once this machine would fetch it", async () => {
+		const { m, p, media } = setup();
+		const clip = png({ which: "clip" });
+		put(media, "clip.png", clip);
+		put(media, "plain.png", png({ which: "plain" }));
+		await scanProject(p, m);
+		const calls: string[] = [];
+		const rs = await readers(
+			m,
+			webReader(m, () => "ok", calls),
+		);
+
+		// Nothing chosen: not fetched, and said so.
+		const first = await extractProject(p, m, { readers: rs });
+		expect(first.written["c2pa unreadable"]).toBe(1);
+		expect(first.onTheWeb).toEqual([
+			{
+				host: HOST,
+				files: 1,
+				address: ADDRESS,
+				outcome: "not-chosen",
+				detail: null,
+			},
+		]);
+		expect(c2paRows(p, clip)).toEqual([
+			{ status: "unreadable", outcome: "not-chosen" },
+		]);
+
+		// Still nothing chosen: nothing is due, nothing is read.
+		calls.length = 0;
+		const idle = await extractProject(p, m, { readers: rs });
+		expect(idle.contents).toBe(0);
+		expect(calls).toEqual([]);
+		expect(idle.onTheWeb).toHaveLength(1);
+
+		// The list is in force and the host is not on it: still not due.
+		updateSettings(m.settingsPath, (s) => setWebCredentialMode(s, "listed"));
+		expect((await extractProject(p, m, { readers: rs })).contents).toBe(0);
+		expect(calls).toEqual([]);
+
+		// The host is allowed: that file, and only that file, is read again.
+		updateSettings(m.settingsPath, (s) =>
+			decideWebCredentialHost(s, HOST, "allow"),
+		);
+		const read = await extractProject(p, m, { readers: rs });
+		expect(calls).toEqual(["clip.png"]);
+		expect(read.written).toEqual({ "c2pa ok": 1 });
+		expect(read.onTheWeb).toEqual([]);
+		// Both readings are kept: what was said then, and what is said now.
+		expect(c2paRows(p, clip)).toEqual([
+			{ status: "unreadable", outcome: "not-chosen" },
+			{ status: "ok", outcome: undefined },
+		]);
+		const kept = observations(p).filter(
+			(o) => o.kind === "c2pa" && o.sha256 === sha(clip) && o.status === "ok",
+		);
+		expect(kept).toHaveLength(1);
+		expect(
+			p.db
+				.prepare(
+					"SELECT warnings FROM observations WHERE kind = 'c2pa' AND status = 'ok' AND content_sha256 = ?",
+				)
+				.get(sha(clip)),
+		).toEqual({
+			warnings: JSON.stringify([
+				`These Content Credentials are not inside the file: they were fetched from ${ADDRESS}`,
+			]),
+		});
+
+		// Read in full: never due again.
+		calls.length = 0;
+		expect((await extractProject(p, m, { readers: rs })).contents).toBe(0);
+		expect(calls).toEqual([]);
+		expect(verifyCatalog(p.db)).toEqual([]);
+	});
+
+	it("tries a failed fetch again each time, and adds a row only when what it says changes", async () => {
+		const { m, p, media } = setup();
+		const clip = png({ which: "clip" });
+		put(media, "clip.png", clip);
+		await scanProject(p, m);
+		updateSettings(m.settingsPath, (s) => setWebCredentialMode(s, "any"));
+		let answer: "ok" | { failed: string } = {
+			failed: "the server answered with status 503",
+		};
+		const calls: string[] = [];
+		const rs = await readers(
+			m,
+			webReader(m, () => answer, calls),
+		);
+
+		const first = await extractProject(p, m, { readers: rs });
+		expect(first.onTheWeb).toMatchObject([
+			{
+				host: HOST,
+				outcome: "failed",
+				detail: "the server answered with status 503",
+			},
+		]);
+		// The same failure again: tried, and nothing new to keep.
+		const again = await extractProject(p, m, { readers: rs });
+		expect(calls).toEqual(["clip.png", "clip.png"]);
+		expect(again.written).toEqual({});
+		expect(c2paRows(p, clip)).toEqual([
+			{ status: "unreadable", outcome: "failed" },
+		]);
+		// A different failure is a different thing said.
+		answer = { failed: "the server answered with status 404" };
+		await extractProject(p, m, { readers: rs });
+		expect(c2paRows(p, clip)).toHaveLength(2);
+		// Then it works.
+		answer = "ok";
+		const read = await extractProject(p, m, { readers: rs });
+		expect(read.written).toEqual({ "c2pa ok": 1 });
+		expect(read.onTheWeb).toEqual([]);
+	});
+
+	it("does not read again what this machine was told to leave, or never fetches", async () => {
+		const { m, p, media } = setup();
+		put(media, "clip.png", png({ which: "clip" }));
+		await scanProject(p, m);
+		const calls: string[] = [];
+		const rs = await readers(
+			m,
+			webReader(m, () => "ok", calls),
+		);
+		await extractProject(p, m, { readers: rs });
+		for (const change of [
+			(s: Settings) => setWebCredentialMode(s, "never"),
+			(s: Settings) => {
+				setWebCredentialMode(s, "listed");
+				decideWebCredentialHost(s, HOST, "leave");
+			},
+		]) {
+			updateSettings(m.settingsPath, change);
+			calls.length = 0;
+			const r = await extractProject(p, m, { readers: rs });
+			expect(calls).toEqual([]);
+			// What the catalog holds is what was said when it was read.
+			expect(r.onTheWeb).toMatchObject([{ host: HOST, outcome: "not-chosen" }]);
+		}
+	});
+
+	it("reads again one recorded before D74, with fetching switched off", async () => {
+		const { m, p, media } = setup();
+		const clip = png({ which: "clip" });
+		put(media, "clip.png", clip);
+		await scanProject(p, m);
+		const legacy: Reader[] = [
+			{
+				kind: "c2pa",
+				extractor: "c2pa-node",
+				version: "9.9.9",
+				read: async () =>
+					libraryObservation({
+						kind: "c2pa",
+						version: "9.9.9",
+						error: {
+							message: `must fetch remote manifests from url ${ADDRESS}`,
+						},
+					}),
+			},
+		];
+		await extractProject(p, m, { readers: await readers(m, legacy) });
+		expect(c2paRows(p, clip)).toEqual([
+			{ status: "unreadable", outcome: undefined },
+		]);
+		const calls: string[] = [];
+		const rs = await readers(
+			m,
+			webReader(m, () => "ok", calls),
+		);
+		// Not chosen: it waits, counted with what the old switch meant.
+		expect(
+			(await extractProject(p, m, { readers: rs })).onTheWeb,
+		).toMatchObject([{ host: HOST, files: 1, outcome: "never" }]);
+		expect(calls).toEqual([]);
+		updateSettings(m.settingsPath, (s) => setWebCredentialMode(s, "any"));
+		expect((await extractProject(p, m, { readers: rs })).written).toEqual({
+			"c2pa ok": 1,
+		});
 	});
 });

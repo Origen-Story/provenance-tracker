@@ -4,10 +4,11 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { verifyCatalog } from "@provenancetracker/core/catalog/verify.ts";
 import { fillSample } from "../../core/test/helpers/catalog.ts";
-import { run, type Io } from "../src/cli/run.ts";
+import type { WaitingHost } from "@provenancetracker/core/catalog/on-the-web.ts";
+import { run, waitingLines, type Io } from "../src/cli/run.ts";
 import type { Machine } from "../src/machine.ts";
 import { catalogPathOf } from "../src/project.ts";
-import { readSettings } from "../src/settings.ts";
+import { readSettings, type Settings } from "../src/settings.ts";
 import { devCertificate, haveOpenssl } from "./helpers/cert.ts";
 import { machinesForTests, peek } from "./helpers/machine.ts";
 
@@ -95,22 +96,166 @@ describe("the command line", () => {
 		expect(shown).toContain("0 root(s) outside the project folder placed here");
 	});
 
-	it("turns fetching Content Credentials stored on the web off and on (D51)", async () => {
+	it("chooses what this machine does about Content Credentials stored on the web: nothing until told (D74)", async () => {
 		const m = t.machine();
 		const c = cli(m, t.tempDir());
-		expect((await c.run("settings")).out).toContain(
-			"Content Credentials stored on the web: fetched when a file is read",
+		const shown = (await c.run("settings")).out;
+		expect(shown).toContain(
+			"Content Credentials stored on the web: this machine has not been told what to do, so it fetches nothing.",
 		);
-		expect((await c.run("settings", "remote-credentials", "off")).code).toBe(0);
-		expect(readSettings(m.settingsPath).remoteCredentials).toBe(false);
-		expect((await c.run("settings")).out).toContain(
-			"Content Credentials stored on the web: not fetched",
+		expect(shown).toContain(
+			"Choose with: npm run cli -- settings credentials-on-the-web never|listed|any",
 		);
+		expect(shown).toContain("On the list: cai-manifests.adobe.com");
+
+		const listed = await c.run("settings", "credentials-on-the-web", "LISTED");
+		expect(listed.code).toBe(0);
+		expect(listed.out).toContain(
+			"this machine fetches them only from the hosts on its list.",
+		);
+		expect(listed.out).toContain("npm run cli -- extract");
+		expect(readSettings(m.settingsPath).credentialsOnTheWeb).toEqual({
+			mode: "listed",
+		});
+
+		// A host is added, left, and forgotten; a whole address is taken for its host.
 		expect(
-			await c.run("settings", "remote-credentials", "maybe"),
-		).toMatchObject({ code: 2 });
-		await c.run("settings", "remote-credentials", "on");
-		expect(readSettings(m.settingsPath).remoteCredentials).toBe(true);
+			(
+				await c.run(
+					"settings",
+					"credentials-on-the-web",
+					"allow",
+					"https://Credentials.Example.org/m/1",
+				)
+			).out,
+		).toContain("credentials.example.org is on this machine's list.");
+		expect((await c.run("settings", "credentials-on-the-web")).out).toContain(
+			"On the list: cai-manifests.adobe.com, credentials.example.org",
+		);
+		await c.run(
+			"settings",
+			"credentials-on-the-web",
+			"leave",
+			"cai-manifests.adobe.com",
+		);
+		const after = (await c.run("settings", "credentials-on-the-web")).out;
+		expect(after).toContain("On the list: credentials.example.org");
+		expect(after).toContain("Left: cai-manifests.adobe.com");
+		expect(
+			(
+				await c.run(
+					"settings",
+					"credentials-on-the-web",
+					"forget",
+					"cai-manifests.adobe.com",
+				)
+			).out,
+		).toContain("it stays on the built-in list");
+		expect(readSettings(m.settingsPath).credentialsOnTheWeb).toEqual({
+			mode: "listed",
+			hosts: ["credentials.example.org"],
+			left: [],
+		});
+
+		for (const mode of ["never", "any"] as const) {
+			const set = await c.run("settings", "credentials-on-the-web", mode);
+			expect(set.code).toBe(0);
+			expect(readSettings(m.settingsPath).credentialsOnTheWeb?.mode).toBe(mode);
+		}
+		expect((await c.run("settings")).out).toContain(
+			"this machine fetches them from any host.",
+		);
+		// The list is kept, and said to be out of force.
+		expect(
+			(
+				await c.run(
+					"settings",
+					"credentials-on-the-web",
+					"allow",
+					"example.net",
+				)
+			).out,
+		).toContain('in force only in the "listed" mode');
+
+		for (const bad of [
+			["maybe"],
+			["allow"],
+			["allow", "localhost"],
+			["allow", "10.0.0.1"],
+			["listed", "extra"],
+		])
+			expect(
+				await c.run("settings", "credentials-on-the-web", ...bad),
+				bad.join(" "),
+			).toMatchObject({ code: 2 });
+		// The command before D74 says what replaced it, and changes nothing.
+		const old = await c.run("settings", "remote-credentials", "off");
+		expect(old.code).toBe(2);
+		expect(old.err).toContain("settings credentials-on-the-web");
+		expect(readSettings(m.settingsPath).credentialsOnTheWeb?.mode).toBe("any");
+	});
+
+	it("says, for each host whose files were not fetched, what the person can do (D74)", () => {
+		const waiting = (
+			host: string | null,
+			outcome: WaitingHost["outcome"] = "not-chosen",
+			detail: string | null = null,
+		): WaitingHost => ({
+			host,
+			files: 2,
+			address: host ? `https://${host}/m/1` : "http://plain.example.org/m",
+			outcome,
+			detail,
+		});
+		const settings = (c: Settings["credentialsOnTheWeb"]): Settings => ({
+			format: 1,
+			projects: {},
+			credentialsOnTheWeb: c,
+		});
+		const set = "npm run cli -- settings credentials-on-the-web";
+		expect(
+			waitingLines(settings(undefined), [waiting("a.example.org")]),
+		).toEqual([
+			`2 file(s) keep their Content Credentials on the web at a.example.org; not fetched, because this machine has not been told whether to. Choose: ${set} never|listed|any`,
+		]);
+		// The choice is one for every host, so it is asked for once.
+		expect(
+			waitingLines(settings(undefined), [
+				waiting("a.example.org"),
+				{ ...waiting("b.example.org"), files: 1 },
+			]),
+		).toEqual([
+			`3 file(s) keep their Content Credentials on the web (2 at a.example.org, 1 at b.example.org); not fetched, because this machine has not been told whether to. Choose: ${set} never|listed|any`,
+		]);
+		expect(
+			waitingLines(settings({ mode: "listed", left: ["b.example.org"] }), [
+				waiting("a.example.org"),
+				waiting("b.example.org"),
+				waiting("cai-manifests.adobe.com"),
+				waiting(
+					"cai-manifests.adobe.com",
+					"failed",
+					"the server answered with status 503",
+				),
+				waiting(
+					null,
+					"refused",
+					"only https addresses are fetched, and this one is http",
+				),
+			]),
+		).toEqual([
+			`2 file(s) keep their Content Credentials on the web at a.example.org, which is not on this machine's list; not fetched. To allow it: ${set} allow a.example.org   To leave it: ${set} leave a.example.org`,
+			`2 file(s) keep their Content Credentials on the web at b.example.org, which this machine was told to leave; not fetched. To allow it after all: ${set} allow b.example.org`,
+			"2 file(s) keep their Content Credentials on the web at cai-manifests.adobe.com; this machine would fetch them now. Read them with: npm run cli -- extract",
+			"2 file(s) keep their Content Credentials on the web at cai-manifests.adobe.com; they could not be fetched (the server answered with status 503). extract tries again.",
+			"2 file(s) keep their Content Credentials on the web at http://plain.example.org/m; not fetched: only https addresses are fetched, and this one is http.",
+		]);
+		expect(
+			waitingLines(settings({ mode: "never" }), [waiting("a.example.org")]),
+		).toEqual([
+			`2 file(s) keep their Content Credentials on the web at a.example.org; not fetched, because this machine never fetches them. To change that: ${set} listed`,
+		]);
+		expect(waitingLines(settings({ mode: "any" }), [])).toEqual([]);
 	});
 
 	it("chooses what signs on this machine: the C2PA library unless set to c2patool (D53)", async () => {
@@ -119,10 +264,26 @@ describe("the command line", () => {
 		expect((await c.run("settings")).out).toContain(
 			"Signing engine: the C2PA library",
 		);
+		// c2patool fetches Content Credentials on the web from any address by
+		// itself, so it is taken only by a machine set to do the same (D74).
+		const refused = await c.run("settings", "signing-engine", "c2patool");
+		expect(refused.code).toBe(2);
+		expect(refused.err).toContain("settings credentials-on-the-web any");
+		expect(readSettings(m.settingsPath).signingEngine).toBeUndefined();
+		await c.run("settings", "credentials-on-the-web", "any");
 		expect((await c.run("settings", "signing-engine", "c2patool")).code).toBe(
 			0,
 		);
 		expect(readSettings(m.settingsPath).signingEngine).toBe("c2patool");
+		// Nor is the setting narrowed while c2patool signs.
+		const narrowed = await c.run(
+			"settings",
+			"credentials-on-the-web",
+			"listed",
+		);
+		expect(narrowed.code).toBe(2);
+		expect(narrowed.err).toContain("settings signing-engine library");
+		expect(readSettings(m.settingsPath).credentialsOnTheWeb?.mode).toBe("any");
 		expect((await c.run("settings")).out).toContain(
 			"Signing engine: c2patool (the fallback)",
 		);

@@ -78,9 +78,13 @@ export interface SigningEngine {
 	sign: (args: SignArgs) => Promise<{ report: Record<string, unknown> | null }>;
 	/**
 	 * The credentials a file carries itself, if any, and who signed them; null
-	 * when it has none. A file that has them is not signed at ingest.
+	 * when it has none. A file that has them is not signed at ingest. So is a
+	 * file that keeps them on the web, fetched or not: `notFetched` then says,
+	 * in words, where they are and why this machine does not have them.
 	 */
-	readEmbedded: (file: string) => Promise<{ signer: string } | null>;
+	readEmbedded: (
+		file: string,
+	) => Promise<{ signer: string; notFetched?: string } | null>;
 	/**
 	 * Read a file's own Content Credentials (or a .c2pa sidecar against it) as
 	 * `extract` does, with the reader this engine embeds ingredients by. Signing

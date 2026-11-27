@@ -6,6 +6,7 @@ import { useParams } from "react-router";
 import { projects } from "./api.ts";
 import { AddFiles } from "./media/AddFiles.tsx";
 import { JobsPanel } from "./media/Jobs.tsx";
+import { OnTheWeb } from "./media/OnTheWeb.tsx";
 import { Roots } from "./media/Roots.tsx";
 import { Loading, PageTitle, Problem, Section } from "./ui.tsx";
 
@@ -25,7 +26,10 @@ export default function MediaPage() {
 				description="Where this project's files are, adding more, and finding and reading what is there."
 			/>
 			<Section title="Work">
-				<JobsPanel projectId={projectId!} />
+				<div className="space-y-4">
+					<JobsPanel projectId={projectId!} />
+					<OnTheWeb projectId={projectId!} />
+				</div>
 			</Section>
 			<Section title="Media folders">
 				<Roots projectId={projectId!} roots={data.roots} />

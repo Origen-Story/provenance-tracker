@@ -17,8 +17,9 @@
 //
 // What c2patool may send out (docs/network.md): the time-stamp request, and a
 // request for Content Credentials an ingredient says are stored on the web,
-// which c2patool makes whatever this machine's remote-credentials setting
-// says. The library engine follows the setting.
+// which c2patool makes to any address, unguarded, whatever this machine's
+// setting says. So c2patool signs only on a machine set to fetch from any
+// host (D74, engines/index.ts). The library engine keeps to the setting.
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";

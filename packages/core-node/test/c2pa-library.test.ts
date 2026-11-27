@@ -19,22 +19,26 @@ import { interpretReport } from "@provenancetracker/core/manifest/verify.js";
 import {
 	PINNED_BINARY,
 	libraryBinary,
+	loadLibrary,
 	loadLibraryReader,
 	readC2paWithLibrary,
+	readStore,
 	readerSettings,
 	versionMismatch,
 } from "../src/extract/c2pa-library.ts";
 import { c2patoolPath, c2patoolProblem } from "../src/extract/c2patool.ts";
 import { notPinned, pinOf } from "../src/pinned.ts";
+import { neverFetch, type WebFetch } from "../src/web-credentials.ts";
 import { signWithC2patool } from "../src/sign/engines/c2patool.ts";
 import { keyFilesHolder } from "../src/sign/holders/key-files.ts";
 import { devCertificate, haveOpenssl } from "./helpers/cert.ts";
+import { webPointingWav } from "./helpers/web-pointing.ts";
 
 const haveC2patool =
 	spawnSync(c2patoolPath({}, process.platform), ["--version"]).status === 0;
 const haveLibrary = existsSync(PINNED_BINARY);
 // Tests use no network: these files carry their credentials inside them anyway.
-const NO_REMOTE = { remoteManifests: false };
+const NO_REMOTE = { web: neverFetch };
 
 /** A silent 16-bit mono WAV of a tenth of a second. */
 function wav(): Buffer {
@@ -76,19 +80,18 @@ const DEFINITION = {
 };
 
 describe("readerSettings", () => {
-	it("fetches remote credentials only as the machine's setting says, never OCSP, trust given as text", () => {
-		const on = readerSettings("-----BEGIN CERTIFICATE-----", {
-			remoteManifests: true,
-		});
-		expect(on.verify).toMatchObject({
-			remoteManifestFetch: true,
+	it("never lets the library fetch credentials from the web (D74) or ask OCSP, and gives trust as text", () => {
+		const settings = readerSettings("-----BEGIN CERTIFICATE-----");
+		expect(settings.verify).toEqual({
+			remoteManifestFetch: false,
 			ocspFetch: false,
 			verifyTrust: true,
 		});
-		expect(on.trust.trustAnchors).toMatch(/^-----BEGIN/);
-		expect(on.trust).not.toHaveProperty("userAnchors");
+		expect(settings.trust.trustAnchors).toMatch(/^-----BEGIN/);
+		expect(settings.trust).not.toHaveProperty("userAnchors");
+		// No option turns the library's own fetching on.
 		expect(
-			readerSettings("x", { remoteManifests: false }).verify
+			readerSettings("x", { remoteManifests: true } as never).verify
 				.remoteManifestFetch,
 		).toBe(false);
 	});
@@ -246,10 +249,7 @@ describe.skipIf(!haveOpenssl || !haveC2patool || !haveLibrary)(
 				"utf8",
 			);
 			const o = await readC2paWithLibrary(
-				await loadLibraryReader(
-					{},
-					{ remoteManifests: false, userAnchors: ca },
-				),
+				await loadLibraryReader({}, { web: neverFetch, userAnchors: ca }),
 				file,
 			);
 			expect(o.validation!.failures).toEqual([]);
@@ -300,6 +300,126 @@ describe.skipIf(!haveOpenssl || !haveC2patool || !haveLibrary)(
 			);
 			expect(o.status).toBe("unreadable");
 			expect(o.error).toMatch(/^C2PA library: /);
+		}, 60000);
+	},
+);
+
+describe.skipIf(!haveOpenssl || !haveLibrary)(
+	"a file that keeps its Content Credentials on the web (D74)",
+	() => {
+		const dir = mkdtempSync(path.join(tmpdir(), "pt-c2pa-web-"));
+		afterAll(() =>
+			rmSync(dir, { recursive: true, force: true, maxRetries: 10 }),
+		);
+		const ADDRESS = "https://credentials.example.invalid/tone.c2pa";
+		const made = (async () => {
+			const loaded = await loadLibrary({});
+			if ("unavailable" in loaded) throw new Error(loaded.unavailable);
+			const cert = devCertificate(dir)!;
+			return { loaded, ...(await webPointingWav(loaded, cert, dir, ADDRESS)) };
+		})();
+		/** A fetch that gives `bytes` and records the addresses it was asked for. */
+		const giving =
+			(bytes: Buffer, asked: string[] = []): WebFetch =>
+			async (address) => {
+				asked.push(address);
+				return { bytes };
+			};
+
+		it("is read by the library without a request: it names the address and stops", async () => {
+			const { loaded, file, manifest } = await made;
+			// The file holds the address and no manifest.
+			expect(readFileSync(file).includes(Buffer.from(ADDRESS))).toBe(true);
+			expect(manifest.length).toBeGreaterThan(1000);
+			await expect(readStore(loaded, file)).rejects.toThrow(
+				`must fetch remote manifests from url ${ADDRESS}`,
+			);
+		}, 60000);
+
+		it("reads as not fetched, with the address and the reason, when this machine holds it back", async () => {
+			const { file } = await made;
+			const o = await readC2paWithLibrary(
+				await loadLibraryReader({}, NO_REMOTE),
+				file,
+			);
+			expect(o.status).toBe("unreadable");
+			expect(o.data).toEqual({
+				onTheWeb: {
+					address: ADDRESS,
+					host: "credentials.example.invalid",
+					outcome: "never",
+				},
+			});
+			expect(o.error).toBe(
+				`Its Content Credentials are stored on the web, at ${ADDRESS}. They were not fetched: this machine never fetches them.`,
+			);
+		}, 60000);
+
+		it("reads in full from what the tracker fetched, checked against the file, and says where it came from", async () => {
+			const { file, manifest } = await made;
+			const asked: string[] = [];
+			const o = await readC2paWithLibrary(
+				await loadLibraryReader({}, { web: giving(manifest, asked) }),
+				file,
+			);
+			expect(asked).toEqual([ADDRESS]);
+			expect(o.status).toBe("ok");
+			expect(o.warnings).toEqual([
+				`These Content Credentials are not inside the file: they were fetched from ${ADDRESS}`,
+			]);
+			// The signature holds and the content is the file's: only the
+			// throwaway issuer is unknown.
+			expect(interpretReport(o.data as object).status).toBe(
+				"unrecognised_issuer",
+			);
+			expect(o.validation!.failures).toEqual(["signingCredential.untrusted"]);
+		}, 60000);
+
+		it("does not pass off credentials that belong to another file", async () => {
+			const { file, manifest } = await made;
+			const other = path.join(dir, "other.wav");
+			const bytes = Buffer.from(readFileSync(file));
+			bytes.writeInt16LE(1234, bytes.length - 40);
+			writeFileSync(other, bytes);
+			const o = await readC2paWithLibrary(
+				await loadLibraryReader({}, { web: giving(manifest) }),
+				other,
+			);
+			expect(o.status).toBe("ok");
+			expect(o.validation!.failures).toContain("assertion.dataHash.mismatch");
+			expect(interpretReport(o.data as object).status).toBe("hash_mismatch");
+		}, 60000);
+
+		it("says the address gave something that is not Content Credentials, as a failed fetch", async () => {
+			const { file } = await made;
+			const o = await readC2paWithLibrary(
+				await loadLibraryReader(
+					{},
+					{ web: giving(Buffer.from("<html>Not found</html>")) },
+				),
+				file,
+			);
+			expect(o.status).toBe("unreadable");
+			expect(o.data).toMatchObject({
+				onTheWeb: {
+					address: ADDRESS,
+					outcome: "failed",
+					detail: expect.stringMatching(
+						/^what the address returned could not be read as Content Credentials/,
+					),
+				},
+			});
+		}, 60000);
+
+		it("never asks about a file that carries its credentials inside it, or has none", async () => {
+			const asked: string[] = [];
+			const reader = await loadLibraryReader(
+				{},
+				{ web: giving(Buffer.alloc(1), asked) },
+			);
+			const plain = path.join(dir, "plain-pointing.wav");
+			expect((await readC2paWithLibrary(reader, plain)).status).toBe("absent");
+			expect(asked).toEqual([]);
 		}, 60000);
 	},
 );

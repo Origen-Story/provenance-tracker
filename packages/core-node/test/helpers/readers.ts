@@ -29,7 +29,9 @@ export const noCredentials: Reader = {
 export function libraryReaders(loaded: LoadedLibrary): Reader[] {
 	const reader = {
 		version: loaded.version,
-		read: (file: string, sidecar?: string) => readStore(loaded, file, sidecar),
+		read: async (file: string, sidecar?: string) => ({
+			store: await readStore(loaded, file, sidecar),
+		}),
 	};
 	return (["c2pa", "c2pa-sidecar"] as const).map((kind) => ({
 		kind,

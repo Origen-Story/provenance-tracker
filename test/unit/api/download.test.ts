@@ -16,7 +16,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { download } from "../../../src/server/api/download.ts";
-import { requestAt } from "../../../src/server/lib/core/public-url.ts";
+import { requestAt } from "@provenancetracker/core-node/public-url.ts";
 
 const temps: string[] = [];
 afterEach(() => {

@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
 import { ApiError, projects, type KnownProject } from "./api.ts";
 import PersonForm from "./Person.tsx";
+import WebCredentialsForm from "./WebCredentials.tsx";
 import {
 	Button,
 	Card,
@@ -43,8 +44,9 @@ export default function ProjectPicker() {
 				</div>
 			)}
 			<OpenOrCreate />
-			<div className="mt-8">
+			<div className="mt-8 space-y-4">
 				<PersonForm />
+				<WebCredentialsForm />
 			</div>
 		</div>
 	);

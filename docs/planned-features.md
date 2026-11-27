@@ -109,6 +109,13 @@ Note: Origen Story's projects currently use only the high-priority set. Deferred
 - **A newer c2patool** (D69, 2026-11-26). The fallback signer is pinned at 0.27.1, older than the hardening the C2PA library has had since. It only signs and reads back its own output on a machine that chooses it, and it is checked against its pinned hash before every run. Moving to a newer release is a dependency change: the version and both checksums for each machine, with the signing tests green on all three systems.
 - **Trusting an identity's issuer** (D55). No CAWG trust list is pinned, so every identity reads "valid, unrecognised issuer". Pin CAWG's interim trust list (extended to 31 Dec 2027) the way the C2PA lists are (`npm run tools:fetch`, by commit and checksum), and add a per-machine setting for extra identity anchors, beside the one planned for claim anchors. Re-check CAWG's new certificate profile first.
 
+### What a signed file carries, against the current specifications (D82, 2026-11-27)
+
+- **Move the author, title, software and source type to `cawg.metadata`.** The tracker writes them in a Creative Work assertion (`stds.schema-org.CreativeWork`), which is no longer in C2PA 2.5's table of standard assertions. First settle what happened to it: read the specification's appendix of deprecated constructs (not reachable on 27 Nov 2026) and see what the pinned library and the public verifiers do with it. Then decide whether to write `cawg.metadata` instead, or both for a while. It changes what every signed file carries, the labels the identity assertion covers (D55), and what the public viewer reads from a copy.
+- **Check the training-and-mining assertion's label.** The tracker writes `c2pa.training-mining`. Confirm against the current C2PA and CAWG specifications that this is still the label a reader looks for.
+- **Read the Metadata Assertion's next version** (a 1.2 draft was listed on 27 Nov 2026) before building either of the above.
+- **Record which trust lists a reading was made against** (D81). A reading keeps the reader's version, and the lists are pinned per tracker version, so it can be worked out; a field on the reading would say it outright.
+
 ### Credits, left after catalog format 3 (D75, 2026-11-27)
 
 - **A credited person's identifier in the signed statement and the public record.** Format 3 keeps an identifier and its scheme on a credit, in the catalog and on the asset page. Writing it into the creator statement and the public export would be a new format of each, and the public viewer would need to show it. Decide with the CAWG work below what a statement should say about a named person before adding it.

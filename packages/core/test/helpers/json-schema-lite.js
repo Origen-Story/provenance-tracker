@@ -14,6 +14,41 @@ const typeOf = (v) =>
 const matchesType = (v, t) =>
 	t === typeOf(v) || (t === "number" && typeof v === "number");
 
+/** The keywords `validate` enforces. */
+export const CHECKED = [
+	"$ref",
+	"type",
+	"const",
+	"enum",
+	"minimum",
+	"pattern",
+	"required",
+	"properties",
+	"additionalProperties",
+	"items",
+];
+/** Keywords that say something about a schema and constrain nothing. */
+const ANNOTATIONS = ["$schema", "$id", "$defs", "title", "description"];
+
+/**
+ * Every keyword in a schema that `validate` would pass over without a word,
+ * with where it is. A schema that uses one has a rule no test here enforces.
+ */
+export function uncheckedKeywords(schema, at = "$") {
+	if (!schema || typeof schema !== "object" || Array.isArray(schema)) return [];
+	const found = [];
+	for (const [k, v] of Object.entries(schema)) {
+		if (!CHECKED.includes(k) && !ANNOTATIONS.includes(k))
+			found.push(`${at}: ${k}`);
+		if (k === "properties" || k === "$defs")
+			for (const [name, sub] of Object.entries(v ?? {}))
+				found.push(...uncheckedKeywords(sub, `${at}.${k}.${name}`));
+		else if (k === "items" || k === "additionalProperties")
+			found.push(...uncheckedKeywords(v, `${at}.${k}`));
+	}
+	return found;
+}
+
 export function validate(schema, value, root = schema, at = "$") {
 	const errors = [];
 	if (schema.$ref) {

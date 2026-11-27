@@ -762,7 +762,8 @@ export function removeTimeline(
 /**
  * Save a creator statement for an output: the words and who says them. Each
  * save is a new row and the newest is the current one, so a statement signed
- * earlier is never changed underneath its signature.
+ * earlier is never changed underneath its signature. The row says who saved
+ * it (format 3, D75): these are the words that get signed.
  */
 export function saveStatement(
 	db: DatabaseSync,
@@ -773,8 +774,10 @@ export function saveStatement(
 		organization?: string;
 		editedWith?: string;
 	},
-	opts: { now?: string },
+	opts: { now?: string; actor: Actor },
 ): number {
+	if (!opts.actor?.name?.trim())
+		throw new EditError("A statement is saved under somebody's name");
 	const asset = db
 		.prepare("SELECT is_output FROM assets WHERE id = ?")
 		.get(assetId) as { is_output: number } | undefined;
@@ -792,8 +795,8 @@ export function saveStatement(
 	return Number(
 		db
 			.prepare(
-				`INSERT INTO statements (asset_id, text, author, organization, edited_with, saved_at)
-				 VALUES (?, ?, ?, ?, ?, ?)`,
+				`INSERT INTO statements (asset_id, text, author, organization, edited_with, saved_at, saved_by, saved_by_kind)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			)
 			.run(
 				assetId,
@@ -802,6 +805,8 @@ export function saveStatement(
 				clip(statement.organization, 500),
 				clip(statement.editedWith, 500),
 				opts.now ?? new Date().toISOString(),
+				opts.actor.name.trim(),
+				opts.actor.kind,
 			).lastInsertRowid,
 	);
 }

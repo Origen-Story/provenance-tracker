@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import { createRow, type Actor } from "../../src/catalog/edit.ts";
+import { placeWriter } from "../../src/catalog/locations.ts";
 import {
 	addCredit,
 	editAsset,
@@ -244,6 +245,87 @@ describe("credits", () => {
 			NotFoundError,
 		);
 	});
+
+	it("keeps an identifier for who is credited, always with its scheme, with history (D75)", () => {
+		const { db, id } = withAsset();
+		const c = addCredit(
+			db,
+			id,
+			{
+				role: "composer",
+				name: "A. Composer",
+				identifier_scheme: " ORCID ",
+				identifier: " 0000-0002-1825-0097 ",
+			},
+			ME,
+		);
+		expect(row(db, "credits", c)).toMatchObject({
+			identifier_scheme: "orcid",
+			identifier: "0000-0002-1825-0097",
+		});
+		// A scheme the pages do not suggest is taken too.
+		expect(
+			editCredit(
+				db,
+				id,
+				c,
+				{ identifier_scheme: "ipi", identifier: "00052210040" },
+				ME,
+			).sort(),
+		).toEqual(["identifier", "identifier_scheme"]);
+		expect(
+			db
+				.prepare(
+					"SELECT field, new_value, actor FROM history WHERE table_name = 'credits' AND row_key = ? AND field LIKE 'identifier%' ORDER BY id",
+				)
+				.all(String(c)),
+		).toEqual([
+			{ field: "identifier_scheme", new_value: '"orcid"', actor: "A. Maker" },
+			{
+				field: "identifier",
+				new_value: '"0000-0002-1825-0097"',
+				actor: "A. Maker",
+			},
+			{ field: "identifier_scheme", new_value: '"ipi"', actor: "A. Maker" },
+			{ field: "identifier", new_value: '"00052210040"', actor: "A. Maker" },
+		]);
+		// One without the other is refused, counting what the credit has.
+		expect(() =>
+			addCredit(db, id, { role: "x", name: "y", identifier: "Q42" }, ME),
+		).toThrow(/An identifier needs its scheme/);
+		expect(() =>
+			addCredit(
+				db,
+				id,
+				{ role: "x", name: "y", identifier_scheme: "wikidata" },
+				ME,
+			),
+		).toThrow(/A scheme needs the identifier/);
+		expect(() => editCredit(db, id, c, { identifier: "" }, ME)).toThrow(
+			/A scheme needs the identifier/,
+		);
+		expect(() => editCredit(db, id, c, { identifier_scheme: "" }, ME)).toThrow(
+			/An identifier needs its scheme/,
+		);
+		expect(() =>
+			editCredit(db, id, c, { identifier: "two\nlines" }, ME),
+		).toThrow(/on one line/);
+		expect(() =>
+			editCredit(db, id, c, { identifier: "x".repeat(501) }, ME),
+		).toThrow(/up to 500 characters/);
+		expect(() => editCredit(db, id, c, { identifier: 42 }, ME)).toThrow(
+			/takes text/,
+		);
+		// The identifier alone can change, and both can be taken away together.
+		expect(editCredit(db, id, c, { identifier: "00052210041" }, ME)).toEqual([
+			"identifier",
+		]);
+		editCredit(db, id, c, { identifier: "", identifier_scheme: "" }, ME);
+		expect(row(db, "credits", c)).toMatchObject({
+			identifier_scheme: "",
+			identifier: "",
+		});
+	});
 });
 
 describe("setGeneration", () => {
@@ -335,9 +417,13 @@ describe("the thumbnail an edit is shown by (D52)", () => {
 			{ sha256: sha(n), size: 10, asset_id: id, first_run_id: run },
 			{ actor: { kind: "tool", name: "t", runId: run }, now: AT },
 		);
-		db.prepare(
-			"INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id) VALUES (?, ?, ?, 0, ?, ?)",
-		).run(sha(n), root, name, run, run);
+		placeWriter(db)({
+			sha256: sha(n),
+			rootId: root,
+			path: name,
+			modifiedMs: 0,
+			runId: run,
+		});
 		finishRun(db, run, { outcome: "ok", now: AT });
 		return id;
 	}

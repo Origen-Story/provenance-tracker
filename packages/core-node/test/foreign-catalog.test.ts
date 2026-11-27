@@ -278,7 +278,7 @@ describe("what a catalog says, taken with care (D68)", () => {
 		expect(verified.checked).toBe(1);
 	});
 
-	it("signs the identity link only when it is an https address, however it got into the catalog", async () => {
+	it("takes an identity link only when it is an https address, even written straight into the file (D75)", async () => {
 		const { p } = await scanned();
 		expect(identityUrlOf(p)).toBe("");
 		const set = (value: string) =>
@@ -289,19 +289,41 @@ describe("what a catalog says, taken with care (D68)", () => {
 				.run(value);
 		set("https://example.org/me");
 		expect(identityUrlOf(p)).toBe("https://example.org/me");
-		// Written straight into the file, past the edit that checks it.
+		// Past the edit that checks it: the catalog itself refuses now.
 		for (const bad of [
 			"javascript:alert(1)",
 			"http://example.org/me",
 			"file:///C:/x",
-		]) {
-			set(bad);
-			expect(() => identityUrlOf(p), bad).toThrow(
-				/identity link is not a web address starting https:\/\//,
+		])
+			expect(() => set(bad), bad).toThrow(
+				/identity link is a web address starting https:\/\//,
 			);
-		}
+		expect(identityUrlOf(p)).toBe("https://example.org/me");
 		// Leave the catalog as its own check expects it.
 		p.db.prepare("DELETE FROM meta WHERE key = 'cawg_identity_url'").run();
+	});
+
+	it("does not sign an identity link that is not https, left in a catalog from before it was refused", () => {
+		const m = t.machine();
+		const project = createProject(t.folder("film"), {
+			name: "Film",
+			machine: m,
+		});
+		// A format 2 catalog had nothing to stop this; format 3's rule is for
+		// what is written from now on, so the link is still there after the
+		// upgrade, and signing is what refuses it.
+		cpSync(path.join(SAMPLES, "v2.sqlite"), project.catalogPath);
+		tamper(
+			project.catalogPath,
+			"INSERT INTO meta (key, value) VALUES ('cawg_identity_url', 'http://example.org/me')",
+		);
+		const p = t.track(
+			openProject(project.folder, { machine: m, takeOver: true }),
+		);
+		expect(p.upgraded).toMatchObject({ from: 2, to: CATALOG_FORMAT });
+		expect(() => identityUrlOf(p)).toThrow(
+			/identity link is not a web address starting https:\/\//,
+		);
 	});
 });
 

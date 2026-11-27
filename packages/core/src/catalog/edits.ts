@@ -220,7 +220,48 @@ export function setRemoved(
 	editRow(db, "assets", id, { removed_at: removed ? at : null }, change(opts));
 }
 
-const CREDIT_FIELDS = ["role", "name", "on_behalf_of", "sort_order"];
+const CREDIT_FIELDS = [
+	"role",
+	"name",
+	"on_behalf_of",
+	"identifier_scheme",
+	"identifier",
+	"sort_order",
+];
+
+/**
+ * A credit's identifier and its scheme, as they are kept: trimmed, the scheme
+ * in lower case, each on one line. An identifier needs its scheme and a
+ * scheme its identifier, counting what the credit already has.
+ */
+function identifierFields(
+	fields: Record<string, unknown>,
+	current: { identifier: string; identifier_scheme: string },
+): void {
+	for (const f of ["identifier", "identifier_scheme"] as const) {
+		if (!(f in fields)) continue;
+		const v = fields[f];
+		if (typeof v !== "string")
+			throw new EditError(`A credit's ${f.replace("_", " ")} takes text`);
+		const t = v.trim();
+		if (/\p{Cc}/u.test(t) || t.length > (f === "identifier" ? 500 : 60))
+			throw new EditError(
+				f === "identifier"
+					? "An identifier is up to 500 characters, on one line"
+					: "An identifier's scheme is up to 60 characters, on one line",
+			);
+		fields[f] = f === "identifier_scheme" ? t.toLowerCase() : t;
+	}
+	const identifier = (fields.identifier ?? current.identifier) as string;
+	const scheme = (fields.identifier_scheme ??
+		current.identifier_scheme) as string;
+	if (identifier && !scheme)
+		throw new EditError(
+			"An identifier needs its scheme: which kind of identifier it is (orcid, isni, wikidata, url)",
+		);
+	if (scheme && !identifier)
+		throw new EditError("A scheme needs the identifier it is the scheme of");
+}
 
 /** Add a credit: who made the asset, in what role. The person adding it is who says so. */
 export function addCredit(
@@ -234,6 +275,7 @@ export function addCredit(
 	for (const f of ["role", "name"])
 		if (typeof fields[f] !== "string" || !(fields[f] as string).trim())
 			throw new EditError(`A credit needs a ${f}`);
+	identifierFields(fields, { identifier: "", identifier_scheme: "" });
 	if (fields.sort_order === undefined)
 		fields.sort_order = (
 			db
@@ -256,12 +298,21 @@ export function addCredit(
 	}
 }
 
-function creditOf(db: DatabaseSync, assetId: number, creditId: number): void {
+function creditOf(
+	db: DatabaseSync,
+	assetId: number,
+	creditId: number,
+): { identifier: string; identifier_scheme: string } {
 	const row = db
-		.prepare("SELECT asset_id FROM credits WHERE id = ?")
-		.get(creditId) as { asset_id: number } | undefined;
+		.prepare(
+			"SELECT asset_id, identifier, identifier_scheme FROM credits WHERE id = ?",
+		)
+		.get(creditId) as
+		| { asset_id: number; identifier: string; identifier_scheme: string }
+		| undefined;
 	if (!row || row.asset_id !== assetId)
 		throw new NotFoundError("There is no such credit on this asset");
+	return row;
 }
 
 export function editCredit(
@@ -272,13 +323,14 @@ export function editCredit(
 	opts: PersonEdit,
 ): string[] {
 	const fields = only(input, CREDIT_FIELDS, "A credit");
-	creditOf(db, assetId, creditId);
+	const current = creditOf(db, assetId, creditId);
 	for (const f of ["role", "name"])
 		if (
 			f in fields &&
 			(typeof fields[f] !== "string" || !(fields[f] as string).trim())
 		)
 			throw new EditError(`A credit needs a ${f}`);
+	identifierFields(fields, current);
 	try {
 		return editRow(db, "credits", creditId, fields, change(opts));
 	} catch (err) {
@@ -561,7 +613,7 @@ export function startFromEdit(
 		if (!has("SELECT 1 FROM credits WHERE asset_id = ?")) {
 			const rows = db
 				.prepare(
-					"SELECT role, name, on_behalf_of, sort_order FROM credits WHERE asset_id = ? ORDER BY sort_order, id",
+					"SELECT role, name, on_behalf_of, identifier_scheme, identifier, sort_order FROM credits WHERE asset_id = ? ORDER BY sort_order, id",
 				)
 				.all(fromId) as Array<Record<string, unknown>>;
 			for (const r of rows) {
@@ -599,7 +651,7 @@ export function startFromEdit(
 						organization: s.organization,
 						editedWith: s.edited_with,
 					},
-					{ now: opts.now },
+					{ now: opts.now, actor: opts.actor },
 				);
 				statement = true;
 			}

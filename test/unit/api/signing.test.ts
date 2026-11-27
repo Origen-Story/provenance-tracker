@@ -149,7 +149,12 @@ async function world() {
 			},
 			{ tool: TOOL },
 		);
-		saveStatement(p.db, film.id, { text: "One take.", author: "A. Maker" }, {});
+		saveStatement(
+			p.db,
+			film.id,
+			{ text: "One take.", author: "A. Maker" },
+			{ actor: { kind: "person", name: "Settings Person" } },
+		);
 	} finally {
 		p.db.close();
 	}

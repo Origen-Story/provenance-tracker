@@ -7,11 +7,11 @@ import {
 	inTransaction,
 	prepareConnection,
 } from "./format.ts";
-import { CATALOG_V2_SQL } from "./schema-v2.ts";
+import { CATALOG_V3_SQL } from "./schema-v3.ts";
 import { setMeta } from "./edit.ts";
 
 /** The SQL that creates a catalog of the current format. */
-export const CURRENT_SCHEMA_SQL = CATALOG_V2_SQL;
+export const CURRENT_SCHEMA_SQL = CATALOG_V3_SQL;
 
 export interface Tool {
 	/** The program writing to the catalog ("provenancetracker"). */

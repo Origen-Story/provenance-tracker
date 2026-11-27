@@ -167,13 +167,37 @@ describe("the asset pages' API client", () => {
 			role: "Photographer",
 			name: "A. Maker",
 			on_behalf_of: "",
+			// As the form sends them when no identifier is given.
+			identifier_scheme: "",
+			identifier: "",
 		});
 		const credit = added.asset.credits[0];
-		expect(credit).toMatchObject({ role: "Photographer", name: "A. Maker" });
+		expect(credit).toMatchObject({
+			role: "Photographer",
+			name: "A. Maker",
+			identifier_scheme: "",
+			identifier: "",
+		});
 		const edited = await assets.editCredit(w.projectId, w.still, credit.id, {
 			on_behalf_of: "Example Studio",
 		});
 		expect(edited.asset.credits[0].on_behalf_of).toBe("Example Studio");
+		// An identifier for who is credited, with its scheme (D75).
+		const identified = await assets.editCredit(
+			w.projectId,
+			w.still,
+			credit.id,
+			{ identifier_scheme: "orcid", identifier: "0000-0002-1825-0097" },
+		);
+		expect(identified.asset.credits[0]).toMatchObject({
+			identifier_scheme: "orcid",
+			identifier: "0000-0002-1825-0097",
+		});
+		await expect(
+			assets.editCredit(w.projectId, w.still, credit.id, {
+				identifier_scheme: "",
+			}),
+		).rejects.toThrow(/An identifier needs its scheme/);
 		expect(
 			(await assets.removeCredit(w.projectId, w.still, credit.id)).asset
 				.credits,
@@ -354,6 +378,9 @@ describe("the finished edit pages' API client", () => {
 		expect(saved.asset.statements[0]).toMatchObject({
 			text: "A cut of two clips.",
 			editedWith: "An editor",
+			// Who saved it is this machine's person, never what the page sends (D75).
+			savedBy: "Test Person",
+			savedByKind: "person",
 		});
 		const after = await outputs.preview(w.projectId, film);
 		expect(after.blockers).toEqual([]);

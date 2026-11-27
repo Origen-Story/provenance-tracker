@@ -15,17 +15,27 @@ import {
 import type { Tool } from "./create.ts";
 import { forgetColumns } from "./columns.ts";
 import { UPGRADE_1_TO_2_SQL } from "./schema-v2.ts";
+import { fillFoldedPaths, UPGRADE_2_TO_3_SQL } from "./schema-v3.ts";
 
 export interface UpgradeStep {
 	from: number;
 	to: number;
 	/** SQL that turns a catalog of format `from` into format `to`, ending with PRAGMA user_version = to. */
 	sql: string;
+	/**
+	 * What the step must do to the rows already there that SQL cannot (fold a
+	 * path's accents). Run after the SQL, in the same transaction: a step that
+	 * fails here rolls back whole.
+	 */
+	fill?: (db: DatabaseSync) => void;
 }
 
 export const UPGRADES: readonly UpgradeStep[] = [
 	// Where a signed copy is published (D56).
 	{ from: 1, to: 2, sql: UPGRADE_1_TO_2_SQL },
+	// Who saved a statement, an identifier for a credited person, folded
+	// paths, the identity link held to https (D75).
+	{ from: 2, to: 3, sql: UPGRADE_2_TO_3_SQL, fill: fillFoldedPaths },
 ];
 
 export interface UpgradeOptions {
@@ -78,6 +88,7 @@ export function upgradeCatalog(
 		const now = opts.now ?? new Date().toISOString();
 		inTransaction(db, () => {
 			db.exec(step.sql);
+			step.fill?.(db);
 			const reached = inspectCatalog(db);
 			if (reached.state === "foreign" || reached.state === "empty")
 				throw new Error(`Upgrade step ${step.from}→${step.to} broke the file`);

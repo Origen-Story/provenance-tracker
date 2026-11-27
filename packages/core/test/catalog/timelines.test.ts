@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import { createRow, type Actor } from "../../src/catalog/edit.ts";
+import { placeWriter } from "../../src/catalog/locations.ts";
 import {
 	addCredit,
 	editAsset,
@@ -23,6 +24,7 @@ import {
 	type NewTimeline,
 	type TimelineSegment,
 } from "../../src/catalog/timelines.ts";
+import { assetRecord } from "../../src/catalog/read.ts";
 import { PERSON, TEST_TOOL, sha } from "../helpers/catalog.ts";
 import { catalogsForTests } from "../helpers/catalog-tests.ts";
 
@@ -53,9 +55,13 @@ function world() {
 			{ sha256: sha(c), size: 100, asset_id: id, first_run_id: run },
 			{ actor: tool, now: AT },
 		);
-		db.prepare(
-			"INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id) VALUES (?, ?, ?, 0, ?, ?)",
-		).run(sha(c), root, path, run, run);
+		placeWriter(db)({
+			sha256: sha(c),
+			rootId: root,
+			path,
+			modifiedMs: 0,
+			runId: run,
+		});
 		return id;
 	};
 	const rec = asset(
@@ -435,6 +441,58 @@ describe("what changes what is on screen", () => {
 });
 
 describe("saveStatement", () => {
+	it("records who saved the words that get signed, a person or a tool (D75)", () => {
+		const w = world();
+		writeTimeline(w.db, timeline(w), { tool: TEST_TOOL, now: () => AT });
+		const byPerson = saveStatement(
+			w.db,
+			w.film,
+			{ text: "Made from a recording.", author: "A. Maker" },
+			{ now: AT, actor: { kind: "person", name: " B. Editor " } },
+		);
+		const byTool = saveStatement(
+			w.db,
+			w.film,
+			{ text: "Made from a recording.", author: "A. Maker" },
+			{ now: AT, actor: { kind: "tool", name: "provenancetracker 0.3.0" } },
+		);
+		expect(
+			w.db
+				.prepare(
+					"SELECT id, saved_by, saved_by_kind FROM statements ORDER BY id",
+				)
+				.all(),
+		).toEqual([
+			{ id: byPerson, saved_by: "B. Editor", saved_by_kind: "person" },
+			{
+				id: byTool,
+				saved_by: "provenancetracker 0.3.0",
+				saved_by_kind: "tool",
+			},
+		]);
+		// The saver is not the author: the author is whose words they are.
+		expect(assetRecord(w.db, w.film)!.statements).toMatchObject([
+			{
+				author: "A. Maker",
+				savedBy: "provenancetracker 0.3.0",
+				savedByKind: "tool",
+			},
+			{ author: "A. Maker", savedBy: "B. Editor", savedByKind: "person" },
+		]);
+		for (const name of ["", "   "])
+			expect(() =>
+				saveStatement(
+					w.db,
+					w.film,
+					{ text: "Words." },
+					{ actor: { kind: "person", name } },
+				),
+			).toThrow(/saved under somebody's name/);
+		expect(w.db.prepare("SELECT count(*) AS n FROM statements").get()).toEqual({
+			n: 2,
+		});
+	});
+
 	it("saves each version of an output's statement as a new row, and refuses one for anything else", () => {
 		const w = world();
 		writeTimeline(w.db, timeline(w), { tool: TEST_TOOL, now: () => AT });
@@ -442,7 +500,7 @@ describe("saveStatement", () => {
 			w.db,
 			w.film,
 			{ text: "  Made from a recording. ", author: "A. Maker" },
-			{ now: AT },
+			{ now: AT, actor: ME.actor },
 		);
 		const b = saveStatement(
 			w.db,
@@ -452,7 +510,7 @@ describe("saveStatement", () => {
 				author: "A. Maker",
 				editedWith: "Example Editor",
 			},
-			{ now: AT },
+			{ now: AT, actor: ME.actor },
 		);
 		expect(
 			w.db
@@ -466,15 +524,15 @@ describe("saveStatement", () => {
 				edited_with: "Example Editor",
 			},
 		]);
-		expect(() => saveStatement(w.db, w.rec, { text: "x" }, {})).toThrow(
-			/finished edit/,
-		);
-		expect(() => saveStatement(w.db, w.film, { text: "  " }, {})).toThrow(
-			/needs its words/,
-		);
-		expect(() => saveStatement(w.db, 999, { text: "x" }, {})).toThrow(
-			NotFoundError,
-		);
+		expect(() =>
+			saveStatement(w.db, w.rec, { text: "x" }, { actor: ME.actor }),
+		).toThrow(/finished edit/);
+		expect(() =>
+			saveStatement(w.db, w.film, { text: "  " }, { actor: ME.actor }),
+		).toThrow(/needs its words/);
+		expect(() =>
+			saveStatement(w.db, 999, { text: "x" }, { actor: ME.actor }),
+		).toThrow(NotFoundError);
 	});
 });
 
@@ -553,7 +611,12 @@ describe("startFromEdit (D50)", () => {
 			ME,
 		);
 		addCredit(w.db, w.film, { role: "director", name: "A. Maker" }, ME);
-		saveStatement(w.db, w.film, { text: "First words." }, { now: AT });
+		saveStatement(
+			w.db,
+			w.film,
+			{ text: "First words." },
+			{ now: AT, actor: ME.actor },
+		);
 		saveStatement(
 			w.db,
 			w.film,
@@ -562,7 +625,7 @@ describe("startFromEdit (D50)", () => {
 				author: "A. Maker",
 				editedWith: "Example Editor",
 			},
-			{ now: AT },
+			{ now: AT, actor: ME.actor },
 		);
 		const clips = timelineRecord(w.db, t.timelineId)!.clips;
 		setClipClass(w.db, t.timelineId, clips[0].id, "compositeSynthetic", ME);

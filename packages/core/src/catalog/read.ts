@@ -8,6 +8,7 @@
 
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import { EDITABLE, EDITABLE_META } from "./fields.ts";
+import { foldedLike } from "./locations.ts";
 import { ORIGIN_CLASS_DEFS, POSITIONS } from "../origin-vocabulary.js";
 import { readIdentity } from "../manifest/identity.ts";
 import { interpretReport } from "../manifest/verify.js";
@@ -245,14 +246,16 @@ export function listAssets(
 	if (q) {
 		const match = ftsQuery(q);
 		const like = `%${q.toLowerCase().replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+		// A path is searched by its folded form, so "pena" finds Peña.jpg (D75).
+		const folded = foldedLike(q);
 		where.push(`(
 			${match ? "a.id IN (SELECT rowid FROM assets_text WHERE assets_text MATCH ?) OR a.id IN (SELECT c.asset_id FROM credits c WHERE c.id IN (SELECT rowid FROM credits_text WHERE credits_text MATCH ?)) OR" : ""}
 			a.id IN (SELECT c.asset_id FROM contents c JOIN locations l ON l.content_sha256 = c.sha256
-			         WHERE l.gone_run_id IS NULL AND lower(l.path) LIKE ? ESCAPE '\\')
+			         WHERE l.gone_run_id IS NULL AND l.path_folded LIKE ? ESCAPE '\\')
 			OR lower(coalesce(a.code, '')) LIKE ? ESCAPE '\\'
 		)`);
 		if (match) params.push(match, match);
-		params.push(like, like);
+		params.push(folded, like);
 	}
 	const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
 	const total = (
@@ -409,6 +412,9 @@ export interface AssetRecord {
 		organization: string;
 		editedWith: string;
 		savedAt: string;
+		/** Who saved it, and whether a person or a tool; both empty when saved before that was recorded (format 3). */
+		savedBy: string;
+		savedByKind: string;
 	}>;
 	signatures: Array<{
 		id: number;
@@ -560,7 +566,8 @@ export function assetRecord(
 			.all(id) as AssetRecord["timelines"],
 		statements: db
 			.prepare(
-				`SELECT id, text, author, organization, edited_with AS editedWith, saved_at AS savedAt
+				`SELECT id, text, author, organization, edited_with AS editedWith, saved_at AS savedAt,
+				        saved_by AS savedBy, saved_by_kind AS savedByKind
 				 FROM statements WHERE asset_id = ? ORDER BY id DESC`,
 			)
 			.all(id) as AssetRecord["statements"],

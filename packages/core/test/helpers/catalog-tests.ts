@@ -23,8 +23,9 @@ export function catalogsForTests() {
 		try {
 			for (const { db, verify } of open) {
 				if (!verify || !db.isOpen) continue;
-				const state = inspectCatalog(db).state;
-				if (state === "empty" || state === "foreign") continue;
+				// verifyCatalog checks a catalog of the current format: one a test
+				// left at an earlier format (or made newer) has other columns.
+				if (inspectCatalog(db).state !== "current") continue;
 				expect(verifyCatalog(db), "verifyCatalog after the test").toEqual([]);
 			}
 		} finally {

@@ -236,7 +236,7 @@ async function world(opts: { signing?: boolean; statement?: boolean } = {}) {
 					p.db,
 					film.id,
 					{ text: "A still and a tone.", author: "A. Maker" },
-					{},
+					{ actor: ME },
 				);
 	const cert = opts.signing === false ? null : devCertificate(dir);
 	if (cert) await setSigning(m, p.projectId, cert);

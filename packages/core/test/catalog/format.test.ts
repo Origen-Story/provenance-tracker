@@ -14,7 +14,13 @@ import {
 } from "../../src/catalog/format.ts";
 import { createCatalog, CURRENT_SCHEMA_SQL } from "../../src/catalog/create.ts";
 import { CATALOG_V1_SQL } from "../../src/catalog/schema-v1.ts";
-import { PUBLICATIONS_SQL } from "../../src/catalog/schema-v2.ts";
+import {
+	CATALOG_V2_SQL,
+	PUBLICATIONS_SQL,
+} from "../../src/catalog/schema-v2.ts";
+import { CATALOG_V3_SQL, FORMAT_3_SQL } from "../../src/catalog/schema-v3.ts";
+import { foldForSearch } from "../../src/catalog/fields.ts";
+import { verifyCatalog } from "../../src/catalog/verify.ts";
 import { upgradeCatalog, UPGRADES } from "../../src/catalog/upgrade.ts";
 import { editRow, removeRow } from "../../src/catalog/edit.ts";
 import { editSettings } from "../../src/catalog/edits.ts";
@@ -249,10 +255,10 @@ describe("what the columns accept", () => {
 		const add = (p: string) =>
 			db
 				.prepare(
-					`INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id)
-					 VALUES (?, 1, ?, 0, 1, 1)`,
+					`INSERT INTO locations (content_sha256, root_id, path, path_folded, modified_ms, first_seen_run_id, last_seen_run_id)
+					 VALUES (?, 1, ?, lower(?), 0, 1, 1)`,
 				)
-				.run(sha("a"), p);
+				.run(sha("a"), p, p);
 		for (const bad of [
 			"",
 			"/abs/file.mp4",
@@ -272,8 +278,8 @@ describe("what the columns accept", () => {
 		const add = () =>
 			db
 				.prepare(
-					`INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id)
-					 VALUES (?, 1, 'exports/film.mp4', 0, 1, 1)`,
+					`INSERT INTO locations (content_sha256, root_id, path, path_folded, modified_ms, first_seen_run_id, last_seen_run_id)
+					 VALUES (?, 1, 'exports/film.mp4', 'exports/film.mp4', 0, 1, 1)`,
 				)
 				.run(sha("e"));
 		expect(add).toThrow(/UNIQUE/);
@@ -481,10 +487,16 @@ describe("the sample catalog of every format", () => {
 		});
 
 	it("keeps every published format's SQL as it was released", () => {
-		const v1 = path.join(ROOT, "spec", "catalog", "catalog.v1.sql");
-		expect(readFileSync(v1, "utf8").replaceAll("\r\n", "\n")).toBe(
-			CATALOG_V1_SQL,
-		);
+		for (const [n, sql] of [
+			[1, CATALOG_V1_SQL],
+			[2, CATALOG_V2_SQL],
+			[3, CATALOG_V3_SQL],
+		] as const) {
+			const file = path.join(ROOT, "spec", "catalog", `catalog.v${n}.sql`);
+			expect(readFileSync(file, "utf8").replaceAll("\r\n", "\n"), file).toBe(
+				sql,
+			);
+		}
 	});
 });
 
@@ -500,10 +512,12 @@ describe("format 1 to format 2 (D56)", () => {
 				Number(one(db, `SELECT count(*) AS n FROM "${t}"`).n),
 			]),
 		);
+		// To format 2 and no further: this is about that one step.
 		const applied = upgradeCatalog(db, {
 			backup: "backups/catalog.format-1.sqlite",
 			tool: TEST_TOOL,
 			now: AT,
+			target: 2,
 		});
 		return { db, counts, applied };
 	}
@@ -530,8 +544,8 @@ describe("format 1 to format 2 (D56)", () => {
 	});
 
 	it("is format 1's SQL with the publications table added", () => {
-		expect(CURRENT_SCHEMA_SQL).toContain(PUBLICATIONS_SQL);
-		expect(CURRENT_SCHEMA_SQL.replace(PUBLICATIONS_SQL, "")).toBe(
+		expect(CATALOG_V2_SQL).toContain(PUBLICATIONS_SQL);
+		expect(CATALOG_V2_SQL.replace(PUBLICATIONS_SQL, "")).toBe(
 			CATALOG_V1_SQL.replace("format 1.\n", "format 2.\n")
 				.replace("timelines) are", "timelines, publications) are")
 				.replace("user_version = 1;", "user_version = 2;"),
@@ -653,5 +667,254 @@ describe("one read of a catalog", () => {
 		rename(db, "Renamed");
 		db.exec("COMMIT");
 		expect(name(db)).toBe("Renamed");
+	});
+});
+
+describe("format 2 to format 3 (D75)", () => {
+	/** A sample of an earlier format, with a few rows the step has to carry. */
+	function upgraded(file: "v1.sqlite" | "v2.sqlite") {
+		const copy = path.join(tempDir(), file);
+		copyFileSync(path.join(SAMPLES, file), copy);
+		// The sample's rows are held to its own format's rules, not checked
+		// again as a current catalog until it has been upgraded.
+		const db = track(new DatabaseSync(copy));
+		prepareConnection(db);
+		// An accented name, as a real folder has them. Format 2 has no folded
+		// column yet, so this is written as format 2 writes a place.
+		db.prepare(
+			`INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id)
+			 VALUES (?, 1, 'Archivo/Peña Études.JPG', 0, 1, 1)`,
+		).run(sha("b"));
+		const counts = new Map(
+			dataTables(db).map((t) => [
+				t,
+				Number(one(db, `SELECT count(*) AS n FROM "${t}"`).n),
+			]),
+		);
+		const applied = upgradeCatalog(db, {
+			backup: "backups/catalog.before.sqlite",
+			tool: TEST_TOOL,
+			now: AT,
+		});
+		return { db, counts, applied };
+	}
+
+	it("is format 2's SQL with the step's statements added, and nothing reworded", () => {
+		expect(CURRENT_SCHEMA_SQL).toBe(CATALOG_V3_SQL);
+		expect(CATALOG_V3_SQL).toContain(FORMAT_3_SQL);
+		expect(CATALOG_V3_SQL.replace(FORMAT_3_SQL, "")).toBe(
+			CATALOG_V2_SQL.replace("format 2.\n", "format 3.\n").replace(
+				"user_version = 2;",
+				"user_version = 3;",
+			),
+		);
+		// Only additions: no table is dropped, renamed or rebuilt.
+		expect(FORMAT_3_SQL).not.toMatch(/\bDROP\b|\bRENAME\b|CREATE TABLE/i);
+	});
+
+	it("keeps every row, gives each place its folded path, and records the upgrade", () => {
+		const { db, counts, applied } = upgraded("v2.sqlite");
+		expect(applied).toEqual([{ from: 2, to: 3 }]);
+		for (const [table, n] of counts)
+			expect(
+				Number(one(db, `SELECT count(*) AS n FROM "${table}"`).n),
+				table,
+			).toBe(table === "runs" ? n + 1 : n);
+		// Every place, the accented one included, as foldForSearch folds it.
+		const places = db
+			.prepare("SELECT path, path_folded FROM locations ORDER BY id")
+			.all() as Array<{ path: string; path_folded: string }>;
+		expect(places.length).toBeGreaterThan(1);
+		for (const p of places)
+			expect(p.path_folded, p.path).toBe(foldForSearch(p.path));
+		expect(places.at(-1)).toEqual({
+			path: "Archivo/Peña Études.JPG",
+			path_folded: "archivo/pena etudes.jpg",
+		});
+		expect(verifyCatalog(db)).toEqual([]);
+		const run = one(
+			db,
+			"SELECT kind, summary FROM runs ORDER BY id DESC LIMIT 1",
+		);
+		expect(run.kind).toBe("upgrade");
+		expect(JSON.parse(String(run.summary))).toEqual({
+			from: 2,
+			to: 3,
+			backup: "backups/catalog.before.sqlite",
+		});
+	});
+
+	it("leaves what was saved before it as it was: no saver on an old statement, no identifier on an old credit", () => {
+		const { db } = upgraded("v2.sqlite");
+		expect(
+			db
+				.prepare("SELECT DISTINCT saved_by, saved_by_kind FROM statements")
+				.all(),
+		).toEqual([{ saved_by: "", saved_by_kind: "" }]);
+		expect(
+			db
+				.prepare("SELECT DISTINCT identifier, identifier_scheme FROM credits")
+				.all(),
+		).toEqual([{ identifier: "", identifier_scheme: "" }]);
+		// The words of an old statement are untouched, and still cannot be.
+		expect(() => db.exec("UPDATE statements SET saved_by = 'x'")).toThrow(
+			/save a new one/,
+		);
+	});
+
+	it("goes from format 1 in two steps, to the same place", () => {
+		const { db, applied } = upgraded("v1.sqlite");
+		expect(applied).toEqual([
+			{ from: 1, to: 2 },
+			{ from: 2, to: 3 },
+		]);
+		expect(schemaOf(db)).toEqual(schemaOf(track(memoryCatalog())));
+		expect(verifyCatalog(db)).toEqual([]);
+	});
+
+	it("rolls back whole when filling the folded paths fails, columns and all", () => {
+		const copy = path.join(tempDir(), "v2.sqlite");
+		copyFileSync(path.join(SAMPLES, "v2.sqlite"), copy);
+		const db = track(new DatabaseSync(copy));
+		prepareConnection(db);
+		const step = UPGRADES.find((s) => s.from === 2)!;
+		expect(() =>
+			upgradeCatalog(db, {
+				backup: "copy",
+				tool: TEST_TOOL,
+				steps: [
+					{
+						...step,
+						fill: () => {
+							throw new Error("the fill failed");
+						},
+					},
+				],
+				target: 3,
+			}),
+		).toThrow("the fill failed");
+		expect(one(db, "PRAGMA user_version").user_version).toBe(2);
+		expect(
+			one(
+				db,
+				"SELECT count(*) AS n FROM pragma_table_info('locations') WHERE name = 'path_folded'",
+			).n,
+		).toBe(0);
+	});
+});
+
+describe("what format 3 holds a catalog to", () => {
+	it("takes a statement's saver and their kind together, of a kind history knows", () => {
+		// Writes around the edit functions on purpose: this is about what SQLite allows.
+		const db = sample({ verify: false });
+		const film = Number(
+			one(db, "SELECT asset_id FROM statements LIMIT 1").asset_id,
+		);
+		const save = (by: string, kind: string) =>
+			db
+				.prepare(
+					`INSERT INTO statements (asset_id, text, saved_at, saved_by, saved_by_kind) VALUES (?, 'Words.', ?, ?, ?)`,
+				)
+				.run(film, AT, by, kind);
+		for (const [by, kind] of [
+			["A. Maker", ""],
+			["", "person"],
+			["A. Maker", "robot"],
+		])
+			expect(() => save(by, kind), `${by}/${kind}`).toThrow(/CHECK/);
+		expect(() => {
+			save("A. Maker", "person");
+			save("provenancetracker 0.3.0", "tool");
+			save("", "");
+		}).not.toThrow();
+	});
+
+	it("takes an identifier only with its scheme", () => {
+		const db = sample({ verify: false });
+		expect(() => db.exec("UPDATE credits SET identifier = 'Q42'")).toThrow(
+			/CHECK/,
+		);
+		expect(() =>
+			db.exec(
+				"UPDATE credits SET identifier = 'Q42', identifier_scheme = 'wikidata'",
+			),
+		).not.toThrow();
+		expect(() => db.exec("UPDATE credits SET identifier_scheme = ''")).toThrow(
+			/CHECK/,
+		);
+	});
+
+	it("takes an identity link only when it is an https address or empty, however it is written", () => {
+		const db = sample({ verify: false });
+		const insert = (value: string) =>
+			db
+				.prepare(
+					"INSERT INTO meta (key, value) VALUES ('cawg_identity_url', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+				)
+				.run(value);
+		for (const bad of [
+			"http://example.org/me",
+			"javascript:alert(1)",
+			"file:///C:/x",
+			"HTTPS://example.org/me",
+			"https://",
+			" https://example.org/me",
+		]) {
+			db.exec("DELETE FROM meta WHERE key = 'cawg_identity_url'");
+			expect(() => insert(bad), `insert ${bad}`).toThrow(
+				/identity link is a web address starting https:\/\//,
+			);
+			insert("https://example.org/me");
+			expect(() => insert(bad), `update ${bad}`).toThrow(/identity link/);
+			expect(
+				() =>
+					db
+						.prepare(
+							"UPDATE meta SET value = ? WHERE key = 'cawg_identity_url'",
+						)
+						.run(bad),
+				`set ${bad}`,
+			).toThrow(/identity link/);
+			// Nor by renaming another setting into it.
+			db.prepare(
+				"INSERT INTO meta (key, value) VALUES ('scratch', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+			).run(bad);
+			db.exec("DELETE FROM meta WHERE key = 'cawg_identity_url'");
+			expect(
+				() =>
+					db.exec(
+						"UPDATE meta SET key = 'cawg_identity_url' WHERE key = 'scratch'",
+					),
+				`rename ${bad}`,
+			).toThrow(/identity link/);
+		}
+		expect(() => {
+			insert("");
+			insert("https://example.org/me");
+		}).not.toThrow();
+		// Any other setting takes any text.
+		expect(() =>
+			db
+				.prepare("UPDATE meta SET value = ? WHERE key = 'name'")
+				.run("http://not-a-link"),
+		).not.toThrow();
+	});
+
+	it("is told by its own check when a place was written without its folded path", () => {
+		const db = sample({ verify: false });
+		expect(verifyCatalog(db)).toEqual([]);
+		db.prepare(
+			`INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id)
+			 VALUES (?, 1, 'Archivo/Peña.jpg', 0, 1, 1)`,
+		).run(sha("b"));
+		expect(verifyCatalog(db)).toEqual([
+			{
+				check: "folded",
+				table: "locations",
+				key: expect.any(String),
+				field: "path_folded",
+				detail: 'is "", should be "archivo/pena.jpg"',
+			},
+		]);
 	});
 });

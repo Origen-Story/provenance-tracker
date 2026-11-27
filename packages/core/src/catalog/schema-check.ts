@@ -18,6 +18,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { CATALOG_V1_SQL } from "./schema-v1.ts";
 import { CATALOG_V2_SQL } from "./schema-v2.ts";
+import { CATALOG_V3_SQL } from "./schema-v3.ts";
 
 /**
  * The SQL each released format was made with. A new catalog and one upgraded
@@ -27,6 +28,7 @@ import { CATALOG_V2_SQL } from "./schema-v2.ts";
 export const RELEASED_SQL: Readonly<Record<number, string>> = {
 	1: CATALOG_V1_SQL,
 	2: CATALOG_V2_SQL,
+	3: CATALOG_V3_SQL,
 };
 
 export interface SchemaObject {

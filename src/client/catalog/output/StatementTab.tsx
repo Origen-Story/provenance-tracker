@@ -155,7 +155,7 @@ function StatementForm({
 			/>
 			<p className="text-xs text-text-secondary">
 				{asset.statements.length
-					? `Saved ${when(asset.statements[0].savedAt)}. Each save is kept as a new version (${asset.statements.length} so far), so a signed statement never changes.`
+					? `Saved ${when(asset.statements[0].savedAt)}${asset.statements[0].savedBy ? ` by ${asset.statements[0].savedBy}` : ""}. Each save is kept as a new version (${asset.statements.length} so far), so a signed statement never changes.`
 					: "Not saved yet."}
 			</p>
 		</Card>

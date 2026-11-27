@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 import { createRow, type Actor } from "../../src/catalog/edit.ts";
+import { placeWriter } from "../../src/catalog/locations.ts";
 import {
 	EditError,
 	linkAssets,
@@ -41,10 +42,13 @@ function addFile(db: DatabaseSync, assetId: number, c: string, path: string) {
 		{ sha256: sha(c), size: 1000, asset_id: assetId, first_run_id: 1 },
 		PERSON,
 	);
-	db.prepare(
-		`INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id)
-		 VALUES (?, 1, ?, 0, 1, 1)`,
-	).run(sha(c), path);
+	placeWriter(db)({
+		sha256: sha(c),
+		rootId: 1,
+		path,
+		modifiedMs: 0,
+		runId: 1,
+	});
 }
 
 /**

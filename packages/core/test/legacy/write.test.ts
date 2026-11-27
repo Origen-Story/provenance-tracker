@@ -323,7 +323,14 @@ describe("writeMigration", () => {
 			organization: "Example Studio",
 			edited_with: "Example Editor 1",
 			saved_at: "2026-11-05T09:10:00.000Z",
+			// Who saved it in the old app was never recorded: the row says who
+			// brought it here (D75).
+			saved_by_kind: "legacy",
 		});
+		expect(statement.saved_by).toBe(
+			one(db, "SELECT actor FROM history WHERE actor_kind = 'legacy' LIMIT 1")
+				.actor,
+		);
 		expect(sig).toMatchObject({
 			asset_id: 4,
 			kind: "output",

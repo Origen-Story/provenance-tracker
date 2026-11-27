@@ -16,6 +16,7 @@ import type { Tool } from "./create.ts";
 import { createRow, type Actor } from "./edit.ts";
 import { EditError, NotFoundError } from "./errors.ts";
 import { inTransaction } from "./format.ts";
+import { placeWriter } from "./locations.ts";
 import { finishRun, startRun } from "./runs.ts";
 import { publicationOf } from "./publications.ts";
 
@@ -126,10 +127,7 @@ export function recordSigning(
 						},
 					},
 				);
-			const place = db.prepare(
-				`INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id)
-				 VALUES (?, ?, ?, ?, ?, ?)`,
-			);
+			const place = placeWriter(db);
 			if (input.moved) {
 				const gone = db
 					.prepare(
@@ -140,23 +138,21 @@ export function recordSigning(
 					throw new EditError(
 						`The catalog does not have ${input.moved.from} where the file moved from`,
 					);
-				place.run(
-					input.moved.sha256,
-					input.moved.rootId,
-					input.moved.to,
-					input.moved.modifiedMs,
+				place({
+					sha256: input.moved.sha256,
+					rootId: input.moved.rootId,
+					path: input.moved.to,
+					modifiedMs: input.moved.modifiedMs,
 					runId,
-					runId,
-				);
+				});
 			}
-			place.run(
-				input.signed.sha256,
-				input.signed.rootId,
-				input.signed.path,
-				input.signed.modifiedMs,
+			place({
+				sha256: input.signed.sha256,
+				rootId: input.signed.rootId,
+				path: input.signed.path,
+				modifiedMs: input.signed.modifiedMs,
 				runId,
-				runId,
-			);
+			});
 			const v = interpretReport((input.report ?? null) as object | null) as {
 				status: string;
 				signer: { commonName?: string; issuer?: string } | null;

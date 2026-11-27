@@ -7,6 +7,7 @@ import { readdirSync, statSync, type Stats } from "node:fs";
 import path from "node:path";
 import { createRow, type Actor } from "@provenancetracker/core/catalog/edit.ts";
 import { inTransaction } from "@provenancetracker/core/catalog/format.ts";
+import { placeWriter } from "@provenancetracker/core/catalog/locations.ts";
 import { isCatalogPath } from "@provenancetracker/core/catalog/paths.ts";
 import {
 	classifyFile,
@@ -252,10 +253,7 @@ export async function scanProject(
 		const assetOf = db.prepare(
 			"SELECT asset_id FROM contents WHERE sha256 = ?",
 		);
-		const insertLocation = db.prepare(
-			`INSERT INTO locations (content_sha256, root_id, path, modified_ms, first_seen_run_id, last_seen_run_id)
-			 VALUES (?, ?, ?, ?, ?, ?)`,
-		);
+		const insertLocation = placeWriter(db);
 		const markGone = db.prepare(
 			"UPDATE locations SET gone_run_id = ? WHERE id = ?",
 		);
@@ -348,14 +346,13 @@ export async function scanProject(
 						{ actor, now: now() },
 					);
 				}
-				insertLocation.run(
+				insertLocation({
 					sha256,
-					file.rootId,
-					file.path,
-					file.modifiedMs,
+					rootId: file.rootId,
+					path: file.path,
+					modifiedMs: file.modifiedMs,
 					runId,
-					runId,
-				);
+				});
 			});
 		}
 
